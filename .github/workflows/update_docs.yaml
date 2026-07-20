@@ -13,27 +13,25 @@ jobs:
       contents: write
 
     steps:
-      # 1. 自分のリポジトリ（docs-exporterブランチ）をチェックアウト
+      # 1. 自分の main ブランチをチェックアウト
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: docs-exporter
+          ref: main
 
-      # 2. 本家(NVIDIA/NemoClaw)の最新ドキュメント類だけを取得して上書き
+      # 2. 本家(NVIDIA/NemoClaw)からドキュメント類だけを同期（ワークフローファイルは触らない）
       - name: Fetch docs from Upstream
         run: |
-          # 一時フォルダに本家の main をクローン
           git clone --depth 1 https://github.com/NVIDIA/NemoClaw.git upstream_temp
           
-          # 必要なドキュメント・設定関係のディレクトリ・ファイルだけを上書きコピー
+          # 必要なディレクトリとファイルのみ最新化
           rsync -av --delete upstream_temp/docs/ docs/ || true
           rsync -av --delete upstream_temp/.agents/ .agents/ || true
           cp -f upstream_temp/*.md ./ || true
           
-          # 一時フォルダを削除
           rm -rf upstream_temp
 
-      # 3. 必要なツールのインストール (treeコマンド)
+      # 3. 必要なツールのインストール
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -44,18 +42,18 @@ jobs:
         run: |
           python3 scripts/export_notebooklm_docs.py
 
-      # 5. 変更があればコミット＆プッシュ（output_notebooklm フォルダのみ対象）
+      # 5. 生成物（output_notebooklm/）のみを main ブランチにプッシュ
       - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # output_notebooklm フォルダの変更だけをステージング
-          git add output_notebooklm/
+          # output_notebooklm と ドキュメント類のみをステージング
+          git add output_notebooklm/ docs/ .agents/ *.md
           
           if git diff --staged --quiet; then
             echo "No changes detected in generated docs."
           else
             git commit -m "chore: auto-update notebooklm docs [skip ci]"
-            git push origin docs-exporter
+            git push origin main
           fi
