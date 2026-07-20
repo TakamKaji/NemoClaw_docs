@@ -1,7 +1,141 @@
-﻿
+
 
 ========================================
-[FILE: .\docs\configure-agents\configure-agent-heartbeats.mdx]
+[FILE: README.md]
+========================================
+
+<!--
+  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-License-Identifier: Apache-2.0
+-->
+
+# NVIDIA NemoClaw: Reference Stack for Sandboxed AI Agents in OpenShell
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue)](https://github.com/NVIDIA/NemoClaw/blob/main/LICENSE)
+[![Security Policy](https://img.shields.io/badge/Security-Report%20a%20Vulnerability-red)](https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md)
+[![Discord](https://img.shields.io/badge/Discord-Join-7289da)](https://discord.gg/XFpfPv9Uvx)
+
+NVIDIA NemoClaw is an open source reference stack for running always-on AI agents more safely inside [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes.
+It provides guided onboarding, a hardened blueprint, routed inference, network policy, and lifecycle management through a single CLI.
+
+**Supported agents:**
+
+- [OpenClaw](https://openclaw.ai) (default)
+- [Hermes](https://get-hermes.ai/)
+- [LangChain Deep Agents Code](https://docs.langchain.com/oss/python/deepagents/code/overview)
+
+For capabilities, architecture, security controls, and the full feature list, see the [NemoClaw documentation](https://docs.nvidia.com/nemoclaw/latest/).
+
+## Get Started
+
+### Start with Your Coding Agent
+
+Use the starter prompt when you want Cursor, Claude Code, Codex, Copilot, or another local coding agent to install NemoClaw with you.
+
+**[Copy the NemoClaw starter prompt](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/home.html#from-your-coding-agent)**.
+
+The prompt tells your agent to use NemoClaw docs and skills, ask one question at a time, run commands only with your approval, and keep secrets out of chat.
+
+### Install Using the Interactive Installer in Your Terminal
+
+Review [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html) before installing.
+For Hermes, set `NEMOCLAW_AGENT=hermes` before running the installer, or use the `nemohermes` alias after install.
+When connecting to a Hermes sandbox from a light terminal, NemoClaw may install a managed `nemoclaw-light` Hermes skin for readable assistant text; it removes that managed skin state again when the terminal no longer needs it and preserves any user-selected Hermes skin.
+
+| Agent | Guide |
+|-------|-------|
+| OpenClaw (default) | [Quickstart with OpenClaw](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart.html) |
+| Hermes | [Quickstart with Hermes](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart-hermes.html) |
+| LangChain Deep Agents Code | [Quickstart with LangChain Deep Agents Code](https://docs.nvidia.com/nemoclaw/latest/user-guide/deepagents/get-started/quickstart.html) |
+
+## Documentation
+
+Refer to the following pages on the official documentation website for more information on NemoClaw.
+
+| Page | Description |
+|------|-------------|
+| [Overview](https://docs.nvidia.com/nemoclaw/latest/about/overview.html) | What NemoClaw does and how it fits together. |
+| [Architecture Overview](https://docs.nvidia.com/nemoclaw/latest/about/how-it-works.html) | High-level overview of Plugin, blueprint, sandbox lifecycle, and protection layers. |
+| [Ecosystem](https://docs.nvidia.com/nemoclaw/latest/about/ecosystem.html) | How OpenClaw, OpenShell, and NemoClaw form a stack and when to use NemoClaw versus OpenShell alone. |
+| [Architecture Details](https://docs.nvidia.com/nemoclaw/latest/reference/architecture.html) | Detailed description of Plugin structure, blueprint lifecycle, sandbox environment, and host-side state. |
+| [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html) | Hardware, software, and supported platforms, with any platform-specific pre-setup. |
+| [Choose an Inference Provider](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/inference/learn-and-choose/choose-inference-provider) | Supported providers, validation, and routed inference configuration. |
+| [Network Policies](https://docs.nvidia.com/nemoclaw/latest/reference/network-policies.html) | Baseline rules, operator approval flow, and egress control. |
+| [Customize Network Policy](https://docs.nvidia.com/nemoclaw/latest/network-policy/customize-network-policy.html) | Static and dynamic policy changes, presets. |
+| [Security Best Practices](https://docs.nvidia.com/nemoclaw/latest/security/best-practices.html) | Controls reference, risk framework, and posture profiles for sandbox security. |
+| [Sandbox Hardening](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/manage-sandboxes/configure-sandboxes/review-sandbox-hardening) | Container security measures, capability drops, process limits. |
+| [CLI Commands](https://docs.nvidia.com/nemoclaw/latest/reference/commands.html) | Full NemoClaw CLI command reference. |
+| [Troubleshooting](https://docs.nvidia.com/nemoclaw/latest/reference/troubleshooting.html) | Common issues and resolution steps. |
+
+## Community
+
+Join the NemoClaw community to ask questions, share feedback, and report issues.
+NemoClaw is an alpha project, so maintainers review issues, discussions, and pull requests on a best effort basis without guaranteed response timelines.
+
+| Need | Channel |
+|------|---------|
+| Setup or usage questions | [GitHub Discussions](https://github.com/NVIDIA/NemoClaw/discussions) or [Discord](https://discord.gg/XFpfPv9Uvx) |
+| Reproducible bugs | [GitHub Issues](https://github.com/NVIDIA/NemoClaw/issues) |
+| Feature proposals | Start with [GitHub Discussions](https://github.com/NVIDIA/NemoClaw/discussions), then open an issue when the scope is clear |
+| Current priorities | [Current Priorities](#current-priorities) |
+| Contribution help | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Security vulnerabilities | Use the private channels in [SECURITY.md](SECURITY.md); do not open public issues |
+
+## Contributing
+
+We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and the PR process.
+
+Prepare a source checkout without creating a runtime sandbox:
+
+```bash
+./scripts/dev-setup.sh
+```
+
+Or ask a compatible coding agent to use the repository's contributor-onboarding skill:
+
+> Set up this machine as a NemoClaw contributor and prepare it for a first PR.
+
+The contributor path is separate from the end-user installer above.
+The default and `--repair` modes change only repository-local dependencies, builds, and hooks.
+Use `./scripts/dev-setup.sh --expose-cli` only when you explicitly want a host-visible development CLI.
+Use `./scripts/dev-setup.sh --with-runtime` only when your change needs sandbox validation; that approved flow also opts into CLI exposure.
+
+## Security
+
+NVIDIA takes security seriously.
+If you discover a vulnerability in NemoClaw, **DO NOT open a public issue.**
+Use one of the private reporting channels described in [SECURITY.md](SECURITY.md):
+
+- Submit a report through the [NVIDIA Vulnerability Disclosure Program](https://www.nvidia.com/en-us/security/report-vulnerability/).
+- Send an email to [psirt@nvidia.com](mailto:psirt@nvidia.com) encrypted with the [NVIDIA PGP key](https://www.nvidia.com/en-us/security/pgp-key).
+- Use [GitHub's private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configuring-private-vulnerability-reporting-for-a-repository) to submit a report directly on this repository.
+
+For security bulletins and PSIRT policies, visit the [NVIDIA Product Security](https://www.nvidia.com/en-us/security/) portal.
+
+## Current Priorities
+
+NemoClaw's current priorities are maintained here as a public orientation point for contributors and community members.
+This list is not a delivery commitment, support promise, or fixed roadmap; priorities can change as maintainers respond to security, quality, platform readiness, and community feedback.
+
+- Improve install and onboarding reliability across tested platforms.
+- Strengthen sandbox hardening, credential handling, and network-policy defaults.
+- Validate local and routed inference behavior for supported provider paths.
+- Keep documentation, troubleshooting guidance, and agent skills aligned with supported workflows.
+
+For specific scoped work, use [GitHub Issues](https://github.com/NVIDIA/NemoClaw/issues) and start broader proposals in [GitHub Discussions](https://github.com/NVIDIA/NemoClaw/discussions).
+Security vulnerabilities must use the private reporting channels in [SECURITY.md](SECURITY.md), not public issues.
+
+## Notice and Disclaimer
+
+This software automatically retrieves, accesses or interacts with external materials. Those retrieved materials are not distributed with this software and are governed solely by separate terms, conditions and licenses. You are solely responsible for finding, reviewing and complying with all applicable terms, conditions, and licenses, and for verifying the security, integrity and suitability of any retrieved materials for your specific use case. This software is provided "AS IS", without warranty of any kind. The author makes no representations or warranties regarding any retrieved materials, and assumes no liability for any losses, damages, liabilities or legal consequences from your use or inability to use this software or any retrieved materials. Use this software and the retrieved materials at your own risk.
+
+## License
+
+Apache 2.0. See [LICENSE](LICENSE).
+
+
+========================================
+[FILE: docs/configure-agents/configure-agent-heartbeats.mdx]
 ========================================
 
 ---
@@ -55,9 +189,8 @@ nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 ```
 
 
-
 ========================================
-[FILE: .\docs\configure-agents\progressive-tool-disclosure.mdx]
+[FILE: docs/configure-agents/progressive-tool-disclosure.mdx]
 ========================================
 
 ---
@@ -147,9 +280,8 @@ Model-specific safety settings can disable progressive search for a model, but c
 - [Add an MCP Server](../manage-sandboxes/mcp-servers/add-an-mcp-server) to configure a managed tool source.
 
 
-
 ========================================
-[FILE: .\docs\configure-agents\understand-context-compaction.mdx]
+[FILE: docs/configure-agents/understand-context-compaction.mdx]
 ========================================
 
 ---
@@ -189,9 +321,8 @@ Recreate the sandbox when you need a new image to incorporate changed build-time
 For model context-window and output-token limits, refer to [Configure Model Limits](../inference/manage-inference/configure-model-limits).
 
 
-
 ========================================
-[FILE: .\docs\deployment\brev-web-ui.mdx]
+[FILE: docs/deployment/brev-web-ui.mdx]
 ========================================
 
 ---
@@ -360,9 +491,8 @@ After your agent is running, explore these related tasks:
 - [Troubleshooting](../reference/troubleshooting) to learn how to fix common setup and runtime issues.
 
 
-
 ========================================
-[FILE: .\docs\deployment\deploy-to-remote-gpu.mdx]
+[FILE: docs/deployment/deploy-to-remote-gpu.mdx]
 ========================================
 
 ---
@@ -588,9 +718,8 @@ nemoclaw deploy <instance-name>
 - [`nemoclaw deploy`](../reference/commands#nemoclaw-deploy) for the full `deploy` command reference.
 
 
-
 ========================================
-[FILE: .\docs\deployment\install-openclaw-plugins.mdx]
+[FILE: docs/deployment/install-openclaw-plugins.mdx]
 ========================================
 
 ---
@@ -899,9 +1028,8 @@ The following mistakes commonly mix plugin installation with other NemoClaw exte
 - Follow [issue #5998](https://github.com/NVIDIA/NemoClaw/issues/5998) for the no-source-checkout managed plugin lifecycle.
 
 
-
 ========================================
-[FILE: .\docs\deployment\sandbox-hardening.mdx]
+[FILE: docs/deployment/sandbox-hardening.mdx]
 ========================================
 
 ---
@@ -1063,9 +1191,8 @@ The `test/e2e/e2e-cloud-experimental/checks/04-landlock-readonly.sh` script vali
 - [#797](https://github.com/NVIDIA/NemoClaw/issues/797): Drop Linux capabilities
 
 
-
 ========================================
-[FILE: .\docs\deployment\set-up-mcp-bridge.mdx]
+[FILE: docs/deployment/set-up-mcp-bridge.mdx]
 ========================================
 
 ---
@@ -1253,9 +1380,8 @@ External credential values remain in OpenShell provider state, not sandbox files
 - [Troubleshoot MCP Servers](../../reference/troubleshoot-mcp-servers) for failure remediation.
 
 
-
 ========================================
-[FILE: .\docs\get-started\dgx-station-preparation.mdx]
+[FILE: docs/get-started/dgx-station-preparation.mdx]
 ========================================
 
 ---
@@ -1359,9 +1485,8 @@ Repeat qualification from a clean host and CI coverage remain pending before any
 After your host passes preparation or validation, continue with the [Quickstart](../quickstart).
 
 
-
 ========================================
-[FILE: .\docs\get-started\prerequisites.mdx]
+[FILE: docs/get-started/prerequisites.mdx]
 ========================================
 
 ---
@@ -1484,9 +1609,8 @@ If you are using Windows, follow [Prepare a Windows Machine to Install NemoClaw]
 - [Use NemoClaw Docs with Your Coding Agents](../resources/agent-skills) lets your AI coding assistant fetch NemoClaw Markdown docs before setup.
 
 
-
 ========================================
-[FILE: .\docs\get-started\quickstart-hermes.mdx]
+[FILE: docs/get-started/quickstart-hermes.mdx]
 ========================================
 
 ---
@@ -1785,9 +1909,8 @@ If `nemohermes` is unavailable after installing, reload your shell profile or fo
 - [Monitor Sandbox Activity](../monitoring/monitor-sandbox-activity) explains how to inspect OpenShell events and sandbox logs.
 
 
-
 ========================================
-[FILE: .\docs\get-started\quickstart-langchain-deepagents-code.mdx]
+[FILE: docs/get-started/quickstart-langchain-deepagents-code.mdx]
 ========================================
 
 ---
@@ -2510,9 +2633,8 @@ There is no dashboard port or long-running gateway process for this harness.
 - [Deep Agents Code overview](https://docs.langchain.com/oss/python/deepagents/code/overview) explains upstream `dcode` capabilities and commands.
 
 
-
 ========================================
-[FILE: .\docs\get-started\quickstart.mdx]
+[FILE: docs/get-started/quickstart.mdx]
 ========================================
 
 ---
@@ -2955,9 +3077,8 @@ Run `nemoclaw onboard`, then use [Troubleshooting](../reference/troubleshooting)
 - [Use NemoClaw Docs with Your Coding Agents](../resources/agent-skills) lets your AI coding assistant fetch NemoClaw Markdown docs.
 
 
-
 ========================================
-[FILE: .\docs\get-started\windows-preparation.mdx]
+[FILE: docs/get-started/windows-preparation.mdx]
 ========================================
 
 ---
@@ -3175,9 +3296,8 @@ Docker Desktop must be running before the NemoClaw install command can continue.
 For Windows-specific troubleshooting, refer to the [Windows Subsystem for Linux section](../../reference/troubleshooting#windows-subsystem-for-linux) in the Troubleshooting guide.
 
 
-
 ========================================
-[FILE: .\docs\inference\choose-compatible-inference-api.mdx]
+[FILE: docs/inference/choose-compatible-inference-api.mdx]
 ========================================
 
 ---
@@ -3267,9 +3387,8 @@ Rerun onboarding to persist the API choice in both the session and image.
 - [Understand Provider Validation](../validate-inference/understand-provider-validation) for validation behavior across providers.
 
 
-
 ========================================
-[FILE: .\docs\inference\choose-inference-provider.mdx]
+[FILE: docs/inference/choose-inference-provider.mdx]
 ========================================
 
 ---
@@ -3366,9 +3485,8 @@ The router registers as an OpenAI-compatible provider while the sandbox remains 
 After you select a provider class, [Choose a Model](choose-model) to compare curated hosted models by task fit.
 
 
-
 ========================================
-[FILE: .\docs\inference\choose-local-inference-server.mdx]
+[FILE: docs/inference/choose-local-inference-server.mdx]
 ========================================
 
 ---
@@ -3454,9 +3572,8 @@ NemoClaw supports servers that expose an OpenAI-compatible API and supports comp
 - [Verify the Inference Route](../validate-inference/verify-inference-route) after onboarding.
 
 
-
 ========================================
-[FILE: .\docs\inference\choose-model.mdx]
+[FILE: docs/inference/choose-model.mdx]
 ========================================
 
 ---
@@ -3533,9 +3650,8 @@ Choose the onboarding option that matches the host.
 - [Understand Provider Validation](../validate-inference/understand-provider-validation) explains how NemoClaw checks a selected model.
 
 
-
 ========================================
-[FILE: .\docs\inference\configure-inference-timeouts.mdx]
+[FILE: docs/inference/configure-inference-timeouts.mdx]
 ========================================
 
 ---
@@ -3632,9 +3748,8 @@ $$nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 - [Verify the Sandbox Inference Route](../validate-inference/verify-inference-route) after onboarding completes.
 
 
-
 ========================================
-[FILE: .\docs\inference\configure-model-capabilities.mdx]
+[FILE: docs/inference/configure-model-capabilities.mdx]
 ========================================
 
 ---
@@ -3690,9 +3805,8 @@ nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 For context-window and output-token settings, refer to [Configure Model Limits](configure-model-limits).
 
 
-
 ========================================
-[FILE: .\docs\inference\configure-model-limits.mdx]
+[FILE: docs/inference/configure-model-limits.mdx]
 ========================================
 
 ---
@@ -3791,9 +3905,8 @@ Use this recreation path for Deep Agents context-window or maximum-token changes
 - [Switch Models](switch-models) to change the model without changing model limits.
 
 
-
 ========================================
-[FILE: .\docs\inference\custom-endpoint-security.mdx]
+[FILE: docs/inference/custom-endpoint-security.mdx]
 ========================================
 
 ---
@@ -3858,9 +3971,8 @@ Verify the runtime route after onboarding when you use it.
 - [Verify the Inference Route](../validate-inference/verify-inference-route) after setup.
 
 
-
 ========================================
-[FILE: .\docs\inference\declarative-agents-manifest.mdx]
+[FILE: docs/inference/declarative-agents-manifest.mdx]
 ========================================
 
 ---
@@ -4066,9 +4178,8 @@ Continue with these resources:
 - Refer to [Understand Sandbox State](../manage-sandboxes/state-and-backups/understand-sandbox-state) to understand how per-agent `workspace-<id>` directories are provisioned and persisted across rebuilds.
 
 
-
 ========================================
-[FILE: .\docs\inference\how-inference-routing-works.mdx]
+[FILE: docs/inference/how-inference-routing-works.mdx]
 ========================================
 
 ---
@@ -4124,9 +4235,8 @@ The managed `dcode` runtime uses Chat Completions through OpenShell even when a 
 - [Verify the Sandbox Inference Route](validate-inference/verify-inference-route) tests the configured path.
 
 
-
 ========================================
-[FILE: .\docs\inference\model-capability-audit.mdx]
+[FILE: docs/inference/model-capability-audit.mdx]
 ========================================
 
 ---
@@ -4298,9 +4408,8 @@ Do not leave placeholder text in a completed row.
 - [Architecture](../../reference/architecture) for the model-specific setup registry location.
 
 
-
 ========================================
-[FILE: .\docs\inference\set-up-anthropic-compatible-endpoint.mdx]
+[FILE: docs/inference/set-up-anthropic-compatible-endpoint.mdx]
 ========================================
 
 ---
@@ -4392,9 +4501,8 @@ NEMOCLAW_PROVIDER=anthropicCompatible \
 - [Verify the Inference Route](../validate-inference/verify-inference-route) after setup.
 
 
-
 ========================================
-[FILE: .\docs\inference\set-up-model-router.mdx]
+[FILE: docs/inference/set-up-model-router.mdx]
 ========================================
 
 ---
@@ -4489,9 +4597,8 @@ NEMOCLAW_PROVIDER=routed NVIDIA_INFERENCE_API_KEY=<your-key> $$nemoclaw onboard 
 - [View the Active Inference Route](../manage-inference/view-active-inference-route) shows the active provider and model.
 
 
-
 ========================================
-[FILE: .\docs\inference\set-up-nvidia-nim.mdx]
+[FILE: docs/inference/set-up-nvidia-nim.mdx]
 ========================================
 
 ---
@@ -4579,9 +4686,8 @@ Set `NEMOCLAW_MODEL` to select a specific model.
 - [Verify the Inference Route](../validate-inference/verify-inference-route) after setup.
 
 
-
 ========================================
-[FILE: .\docs\inference\set-up-ollama.mdx]
+[FILE: docs/inference/set-up-ollama.mdx]
 ========================================
 
 ---
@@ -4779,6 +4885,15 @@ If the tag is absent from the rendered installed or starter list, the normal mem
 If a known bootstrap model does not fit, NemoClaw warns and falls back to the largest known model that does fit.
 Unknown or custom tags pass through to the Ollama runner for validation.
 
+OpenShell currently uses one inference route per gateway.
+If another sandbox on the same gateway already uses an Ollama model, onboarding names that required model instead of silently presenting it as a new choice.
+Use a separate gateway on an unused port to select a different model for the new agent.
+The following command uses `8990` as an example; choose another unused port when necessary:
+
+```bash
+NEMOCLAW_GATEWAY_PORT=8990 NEMOCLAW_MODEL=qwen3.5:9b $$nemoclaw onboard
+```
+
 Interactive onboarding filters installed registry-known tags that do not fit current GPU memory.
 If no installed known tag fits, NemoClaw displays starter choices and warns when even the smallest tag might not fit.
 After a model fails validation, NemoClaw excludes it from the next installed-model menu.
@@ -4818,9 +4933,8 @@ This cleanup runs on a best-effort basis and does not delete downloaded model fi
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\inference\set-up-openai-compatible-endpoint.mdx]
+[FILE: docs/inference/set-up-openai-compatible-endpoint.mdx]
 ========================================
 
 ---
@@ -4973,9 +5087,8 @@ An unlisted private host, a hostname suffix match, or a DNS failure also remains
 - [Verify the Inference Route](../validate-inference/verify-inference-route) after setup.
 
 
-
 ========================================
-[FILE: .\docs\inference\set-up-sub-agent.mdx]
+[FILE: docs/inference/set-up-sub-agent.mdx]
 ========================================
 
 ---
@@ -5213,9 +5326,8 @@ Continue with these resources:
 - Refer to [Understand Sandbox State](../manage-sandboxes/state-and-backups/understand-sandbox-state) to understand per-agent workspace directories.
 
 
-
 ========================================
-[FILE: .\docs\inference\set-up-vllm.mdx]
+[FILE: docs/inference/set-up-vllm.mdx]
 ========================================
 
 ---
@@ -5474,9 +5586,8 @@ If the selected image does not support an argument, the managed container exits 
 - [Verify the Inference Route](../validate-inference/verify-inference-route) after setup.
 
 
-
 ========================================
-[FILE: .\docs\inference\switch-models.mdx]
+[FILE: docs/inference/switch-models.mdx]
 ========================================
 
 ---
@@ -5564,9 +5675,8 @@ Use a sandbox-route verification when you also need to prove that the agent can 
 - [Verify the Sandbox Inference Route](../validate-inference/verify-inference-route) to test the agent path.
 
 
-
 ========================================
-[FILE: .\docs\inference\switch-providers.mdx]
+[FILE: docs/inference/switch-providers.mdx]
 ========================================
 
 ---
@@ -5684,9 +5794,8 @@ Runtime `inference set` also refuses a change that would leave another registere
 - [Set Up an OpenAI-Compatible Endpoint](../custom-endpoints/set-up-openai-compatible-endpoint) to register a custom route through onboarding.
 
 
-
 ========================================
-[FILE: .\docs\inference\understand-provider-validation.mdx]
+[FILE: docs/inference/understand-provider-validation.mdx]
 ========================================
 
 ---
@@ -5773,9 +5882,8 @@ Verify that route from inside the sandbox after onboarding.
 - [Set Up an OpenAI-Compatible Endpoint](../custom-endpoints/set-up-openai-compatible-endpoint) for custom endpoint setup.
 
 
-
 ========================================
-[FILE: .\docs\inference\use-anthropic.mdx]
+[FILE: docs/inference/use-anthropic.mdx]
 ========================================
 
 ---
@@ -5828,9 +5936,8 @@ The wizard retries transient upstream failures before it reports a provider fail
 - [Understand Provider Validation](../validate-inference/understand-provider-validation) describes provider validation behavior.
 
 
-
 ========================================
-[FILE: .\docs\inference\use-google-gemini.mdx]
+[FILE: docs/inference/use-google-gemini.mdx]
 ========================================
 
 ---
@@ -5886,9 +5993,8 @@ It skips the Responses API probe because Gemini does not support `/v1/responses`
 - [Understand Provider Validation](../validate-inference/understand-provider-validation) describes provider validation behavior.
 
 
-
 ========================================
-[FILE: .\docs\inference\use-hermes-provider.mdx]
+[FILE: docs/inference/use-hermes-provider.mdx]
 ========================================
 
 ---
@@ -5942,9 +6048,8 @@ The wizard validates the selected provider and model before sandbox creation.
 - [Switch Models](../manage-inference/switch-models) changes the model for an existing Hermes sandbox.
 
 
-
 ========================================
-[FILE: .\docs\inference\use-nvidia-endpoints.mdx]
+[FILE: docs/inference/use-nvidia-endpoints.mdx]
 ========================================
 
 ---
@@ -6000,9 +6105,8 @@ The wizard retries transient upstream failures before it reports a provider fail
 - [Understand Provider Validation](../validate-inference/understand-provider-validation) describes the onboarding checks across providers.
 
 
-
 ========================================
-[FILE: .\docs\inference\use-openai.mdx]
+[FILE: docs/inference/use-openai.mdx]
 ========================================
 
 ---
@@ -6055,9 +6159,8 @@ The wizard retries transient upstream failures before it reports a provider fail
 - [Understand Provider Validation](../validate-inference/understand-provider-validation) describes the validation sequence.
 
 
-
 ========================================
-[FILE: .\docs\inference\use-openrouter.mdx]
+[FILE: docs/inference/use-openrouter.mdx]
 ========================================
 
 ---
@@ -6119,9 +6222,8 @@ NemoClaw skips the Responses API probe and uses managed Chat Completions at runt
 - [Understand Provider Validation](../validate-inference/understand-provider-validation) describes provider validation behavior.
 
 
-
 ========================================
-[FILE: .\docs\inference\use-shared-gateway-routes.mdx]
+[FILE: docs/inference/use-shared-gateway-routes.mdx]
 ========================================
 
 ---
@@ -6197,9 +6299,8 @@ Refer to [Troubleshooting a Shared Inference Route Conflict](../../reference/tro
 - [Verify the Sandbox Inference Route](../validate-inference/verify-inference-route) to test the agent traffic path.
 
 
-
 ========================================
-[FILE: .\docs\inference\verify-inference-route.mdx]
+[FILE: docs/inference/verify-inference-route.mdx]
 ========================================
 
 ---
@@ -6277,9 +6378,8 @@ If the status route is reachable but a tool action returns JSON as normal assist
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\inference\view-active-inference-route.mdx]
+[FILE: docs/inference/view-active-inference-route.mdx]
 ========================================
 
 ---
@@ -6362,9 +6462,8 @@ Use the route verification workflow when you need to prove that an inference req
 - [Switch Providers](switch-providers) to move to another provider family.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\add-channels-after-onboarding.mdx]
+[FILE: docs/manage-sandboxes/add-channels-after-onboarding.mdx]
 ========================================
 
 ---
@@ -6510,9 +6609,8 @@ The lane does not automate an interactive inbound reply.
 - [Common Integration Policy Examples](../../network-policy/integration-policy-examples) for messaging presets.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\add-mcp-server.mdx]
+[FILE: docs/manage-sandboxes/add-mcp-server.mdx]
 ========================================
 
 ---
@@ -6640,9 +6738,8 @@ NemoClaw does not start, wrap, or translate them.
 - [About Managed MCP Servers](about-managed-mcp-servers) for the accepted security design.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\backup-restore.mdx]
+[FILE: docs/manage-sandboxes/backup-restore.mdx]
 ========================================
 
 ---
@@ -6831,9 +6928,8 @@ Use `$$nemoclaw <name> snapshot list` and `$$nemoclaw <name> snapshot restore` t
 - [Commands reference](../../reference/commands) for snapshot and backup flags.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\enable-channels-during-onboarding.mdx]
+[FILE: docs/manage-sandboxes/enable-channels-during-onboarding.mdx]
 ========================================
 
 ---
@@ -6915,9 +7011,8 @@ Refer to [Messaging bridge appears running but no messages arrive](../../referen
 - [Manage Messaging Channels](manage-messaging-channels) to pause, rotate, or remove a configured channel.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\gateway-lifecycle-control.mdx]
+[FILE: docs/manage-sandboxes/gateway-lifecycle-control.mdx]
 ========================================
 
 ---
@@ -6997,9 +7092,8 @@ $$nemoclaw <name> rebuild --yes
 - [Trusted Computing Base](../../security/trusted-computing-base) for the broader security boundary.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\install-plugins-hermes.mdx]
+[FILE: docs/manage-sandboxes/install-plugins-hermes.mdx]
 ========================================
 
 ---
@@ -7154,9 +7248,8 @@ The following places commonly mix Hermes plugin installation with other NemoClaw
 - Review [Understand Runtime Changes](configure-sandboxes/understand-runtime-changes) before changing shields or mutability settings for a plugin-enabled sandbox.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\lifecycle.mdx]
+[FILE: docs/manage-sandboxes/lifecycle.mdx]
 ========================================
 
 ---
@@ -7270,9 +7363,8 @@ The debug command gathers system information, Docker state, sandbox logs, and sa
 - [CLI Selection Guide](../../reference/cli-selection-guide) for the boundary between `$$nemoclaw` and lower-level OpenShell commands.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\manage-mcp-servers.mdx]
+[FILE: docs/manage-sandboxes/manage-mcp-servers.mdx]
 ========================================
 
 ---
@@ -7439,9 +7531,8 @@ Do not delete the lock file while ownership is ambiguous.
 - [Troubleshoot MCP Servers](../../reference/troubleshoot-mcp-servers) for failure remediation.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\manage-messaging-channels.mdx]
+[FILE: docs/manage-sandboxes/manage-messaging-channels.mdx]
 ========================================
 
 ---
@@ -7571,9 +7662,8 @@ Full stop preserves a shared gateway and fails closed without releasing its port
 - [Commands](../../reference/commands) for channel command flags.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\messaging-channels.mdx]
+[FILE: docs/manage-sandboxes/messaging-channels.mdx]
 ========================================
 
 ---
@@ -7646,9 +7736,8 @@ Refer to [Run Sandboxes](../operate-sandboxes/run-sandboxes) for tunnel manageme
 - [Manage Messaging Channels](manage-messaging-channels) to rotate, pause, resume, or remove a channel.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\recover-rebuild-sandboxes.mdx]
+[FILE: docs/manage-sandboxes/recover-rebuild-sandboxes.mdx]
 ========================================
 
 ---
@@ -7733,6 +7822,19 @@ Use `nemo-deepagents <sandbox-name> status`, `logs`, `connect`, and `rebuild` fo
 If the terminal runtime reports degraded health, rebuild the sandbox instead of using `recover` or `gateway restart`.
 </AgentOnly>
 
+<AgentOnly variant="openclaw,hermes">
+### Host OpenShell Gateway Versus In-Sandbox Agent Recovery
+
+`recover` and `start` repair the in-sandbox agent gateway and the host-side port forwards for one named sandbox.
+`connect --probe-only` waits for that sandbox to become ready, rechecks it on its recorded gateway, and then verifies or repairs the same sandbox-scoped processes and forwards.
+These commands do not restart, replace, or reap the shared host OpenShell gateway process.
+If the host gateway RPC returns an error while these sandbox-scoped commands run, they surface the error with explicit next-step guidance and exit rather than swapping the shared gateway out from under other sandboxes.
+
+To repair the host gateway itself, use `openshell status`, `openshell gateway start --name <gateway>`, or run `$$nemoclaw onboard` again.
+Other workflows, including onboarding, rebuild, and `doctor --fix`, can explicitly recover the named host gateway when their operation requires it.
+`$$nemoclaw <name> gateway restart` instead restarts only the supported agent gateway inside the named sandbox.
+</AgentOnly>
+
 ## Rebuild While Preserving State
 
 <AgentOnly variant="openclaw">
@@ -7800,9 +7902,8 @@ Refer to [`$$nemoclaw <name> rebuild`](../../reference/commands#$$nemoclaw-name-
 - [Troubleshooting](../../reference/troubleshooting) for `privileged control unavailable`, stopped sandboxes, and failed rebuilds.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\run-sandboxes.mdx]
+[FILE: docs/manage-sandboxes/run-sandboxes.mdx]
 ========================================
 
 ---
@@ -7987,9 +8088,8 @@ $$nemoclaw tunnel start
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\runtime-controls.mdx]
+[FILE: docs/manage-sandboxes/runtime-controls.mdx]
 ========================================
 
 ---
@@ -8116,9 +8216,8 @@ Retry a command that the auto-restore deadline interrupts after you open a new s
 - [CLI Commands Reference](../../reference/commands) for command flags and environment variables.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\set-up-discord.mdx]
+[FILE: docs/manage-sandboxes/set-up-discord.mdx]
 ========================================
 
 ---
@@ -8165,9 +8264,8 @@ Continue with [Enable Channels During Onboarding](enable-channels-during-onboard
 If the bot logs in but delivery fails, refer to [Discord bot logs in, but the channel still does not work](../../reference/troubleshooting#discord-bot-logs-in-but-the-channel-still-does-not-work).
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\set-up-microsoft-teams.mdx]
+[FILE: docs/manage-sandboxes/set-up-microsoft-teams.mdx]
 ========================================
 
 ---
@@ -8226,9 +8324,8 @@ export MSTEAMS_PORT=3978
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\set-up-slack.mdx]
+[FILE: docs/manage-sandboxes/set-up-slack.mdx]
 ========================================
 
 ---
@@ -8295,9 +8392,8 @@ export SLACK_ALLOWED_CHANNELS="<your-slack-channel-id>"
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\set-up-telegram.mdx]
+[FILE: docs/manage-sandboxes/set-up-telegram.mdx]
 ========================================
 
 ---
@@ -8354,9 +8450,8 @@ export TELEGRAM_REQUIRE_MENTION=1
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\set-up-wechat.mdx]
+[FILE: docs/manage-sandboxes/set-up-wechat.mdx]
 ========================================
 
 ---
@@ -8399,9 +8494,8 @@ Review your organization's terms-of-service, compliance, and data-residency cons
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\set-up-whatsapp.mdx]
+[FILE: docs/manage-sandboxes/set-up-whatsapp.mdx]
 ========================================
 
 ---
@@ -8460,9 +8554,8 @@ Hermes also uses these values as its WhatsApp sender allowlist.
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\transfer-state-manually.mdx]
+[FILE: docs/manage-sandboxes/transfer-state-manually.mdx]
 ========================================
 
 ---
@@ -8654,9 +8747,8 @@ memory/
 - [CLI Selection Guide](../../reference/cli-selection-guide) for NemoClaw and OpenShell command boundaries.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\uninstall-nemoclaw.mdx]
+[FILE: docs/manage-sandboxes/uninstall-nemoclaw.mdx]
 ========================================
 
 ---
@@ -8728,9 +8820,8 @@ curl -fsSL https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/uni
 - [Create and Restore Snapshots](../state-and-backups/create-and-restore-snapshots) before removing state you may need later.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\update-sandboxes.mdx]
+[FILE: docs/manage-sandboxes/update-sandboxes.mdx]
 ========================================
 
 ---
@@ -8833,9 +8924,8 @@ Runtime changes outside the manifest-defined state paths, such as packages insta
 - [`$$nemoclaw update`](../../reference/commands#$$nemoclaw-update) and [`$$nemoclaw upgrade-sandboxes`](../../reference/commands#$$nemoclaw-upgrade-sandboxes) for command flags.
 
 
-
 ========================================
-[FILE: .\docs\manage-sandboxes\workspace-files.mdx]
+[FILE: docs/manage-sandboxes/workspace-files.mdx]
 ========================================
 
 ---
@@ -9085,9 +9175,8 @@ Create project-specific virtual environments under `/sandbox` when a task needs 
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\monitoring\monitor-sandbox-activity.mdx]
+[FILE: docs/monitoring/monitor-sandbox-activity.mdx]
 ========================================
 
 ---
@@ -9225,2238 +9314,3 @@ If the request fails, check these items.
 - [Commands](../reference/commands) for the full CLI reference.
 - [Approve or Deny Agent Network Requests](../network-policy/approve-network-requests) for the operator approval flow.
 - [Switch Inference Providers](../inference/manage-inference/switch-providers) to change the active provider.
-
-
-
-========================================
-[FILE: .\nemoclaw-blueprint\model-specific-setup\hermes\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Hermes Model-Specific Setup
-
-Hermes-specific model/provider compatibility manifests belong in this directory and must declare `"agent": "hermes"`.
-
-This directory intentionally has no Kimi K2.6 manifest yet. Add one only after a Hermes-specific failure or acceptance test proves Hermes needs a compatibility layer. Hermes executable wrappers and runtime code belong under `agents/hermes/`; registry manifests should stay declarative.
-
-
-
-========================================
-[FILE: .\nemoclaw-blueprint\model-specific-setup\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Model-Specific Setup Registry
-
-This registry is the ownership boundary for model/provider compatibility work that has to differ by agent runtime. Every manifest declares exactly one `agent` and lives under the matching directory:
-
-- `model-specific-setup/openclaw/` for OpenClaw compatibility.
-- `model-specific-setup/hermes/` for Hermes compatibility.
-
-Do not add shared multi-agent manifests in v1. OpenClaw and Hermes have different config files, plugin systems, replay behavior, and E2E paths, so a fix should be proven and reviewed for one agent at a time.
-
-## Manifest Shape
-
-Manifests follow `schema.json`:
-
-- `id`: stable registry id.
-- `agent`: exact agent id, for example `openclaw` or `hermes`.
-- `description`: human-readable reason for the setup.
-- `match`: model/provider route predicates.
-- `effects`: declarative, agent-scoped effects.
-
-The first OpenClaw entry is `openclaw/kimi-k2.6-managed-inference.json`. It preserves the Kimi K2.6 managed `inference.local` compatibility behavior from PR #3046.
-
-## Contributor Guidance
-
-Put model-specific sandbox compatibility here, not directly in generator conditionals:
-
-- Match logic belongs in a manifest.
-- OpenClaw executable wrappers belong under `nemoclaw-blueprint/openclaw-plugins/`.
-- Hermes executable wrappers belong under `agents/hermes/`.
-- Runtime transformations stay in agent-owned code or plugins; registry manifests stay declarative.
-
-Only add Hermes-specific Kimi behavior after a Hermes-specific failure or acceptance test proves it is needed.
-
-
-
-========================================
-[FILE: .\scripts\bench\README.md]
-========================================
-
-<!--
-SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0
--->
-
-# NemoClaw value benchmark
-
-A small, developer- and agent-runnable benchmark that answers "is NemoClaw fast
-enough on this machine?". It measures core first-use and inference-path timings
-and emits both machine-readable JSON and a concise Markdown value report.
-
-It addresses [#5604](https://github.com/NVIDIA/NemoClaw/issues/5604). v1 is
-deliberately **advisory**: it does not ship owner-approved pass/warn/fail
-thresholds (those are tracked by #3776), so the numbers are for comparing runs,
-not for gating.
-
-> The harness only sends requests to the inference endpoint you configure. It
-> never uploads results or sends telemetry to any external service.
-
-The configured endpoint must use HTTPS, except that HTTP is allowed for loopback
-hosts (`localhost`, `127.0.0.0/8`, and `::1`) so local inference stays easy to
-benchmark. URL userinfo is rejected. Redirects are refused, query values are
-redacted from shareable reports, remote error bodies are never copied into
-reports, and a successful sample must contain a valid OpenAI-compatible chat
-completion rather than an arbitrary HTTP 2xx body.
-
-## Metrics
-
-| Metric | Source | Notes |
-|--------|--------|-------|
-| `inference-round-trip` | live request | Times N OpenAI-compatible `/v1/chat/completions` calls (warm-up + samples), reports min/median/p95/mean/max. |
-| `sandbox-cold-start` | onboard trace | Total duration of the emitted `nemoclaw.onboard.phase.sandbox` span, which encloses sandbox creation and readiness. The nested `nemoclaw.sandbox.readiness_wait` span is reported as an optional breakdown without being added twice. |
-| `policy-shield-overhead` | onboard trace | Marked `unsupported` in v1: the available `nemoclaw.policy.application` span measures setup, not request-path shield overhead. Interactive traces can also include human think time. |
-
-Trace metrics require a completed NemoClaw onboard trace with successful root
-and metric spans. A valid trace without a selected metric reports that metric as
-`unsupported`; a malformed trace or failed metric span reports `error` and exits
-non-zero.
-
-## Prerequisites
-
-- Node `>=22.19` (`tsx` is a dev dependency; run via `npm`/`npx`).
-- An OpenAI-compatible inference endpoint and model you can reach from the host
-  (e.g. an NVIDIA endpoint, a local vLLM/Ollama server, or — from inside a
-  sandbox — `https://inference.local/v1`).
-- The API key in `OPENAI_API_KEY` or `NVIDIA_INFERENCE_API_KEY` (the value is
-  never passed as a flag). Put a compatible provider's key in one of these
-  benchmark-specific names rather than selecting an unrelated process secret.
-- Optional: an onboard trace artifact for the sandbox/policy metrics. Produce one
-  by running `NEMOCLAW_TRACE=1 nemoclaw onboard --non-interactive ...`; the trace
-  file path is printed and also controlled by `NEMOCLAW_TRACE_FILE` /
-  `NEMOCLAW_TRACE_DIR`. Non-interactive collection provides more comparable
-  context; request-path policy overhead remains unsupported until dedicated
-  instrumentation exists.
-
-## Usage
-
-One documented command produces both outputs:
-
-```bash
-export OPENAI_API_KEY=...            # or NVIDIA_INFERENCE_API_KEY
-npm run bench -- \
-  --base-url https://integrate.api.nvidia.com/v1 \
-  --model nvidia/nemotron-3-super-120b-a12b \
-  --samples 10 \
-  --json bench-result.json
-```
-
-This prints the Markdown report to stdout and writes structured JSON to
-`bench-result.json`. Add the sandbox/policy metrics by pointing at an onboard
-trace:
-
-```bash
-npm run bench -- \
-  --base-url https://inference.local/v1 --model <model> \
-  --trace .e2e/traces/onboard.json \
-  --report bench-report.md --json bench-result.json
-```
-
-Trace-only run (no live inference):
-
-```bash
-npm run bench -- --no-inference --trace .e2e/traces/onboard.json
-```
-
-Run `npm run bench -- --help` for all flags.
-
-## How an agent should use this
-
-1. Confirm a provider is configured (`nemoclaw <name> status`) and export the key.
-2. Run `npm run bench -- --base-url <url> --model <model> --json bench.json`.
-3. Read `bench.json` (`schema_version: nemoclaw.bench.v1`). Summarize each
-   metric's `status` and `stats` (median + p95) and surface any `error`/
-   `unsupported` `reason`. Do not present the timings as pass/fail — they are
-   advisory until thresholds land (#3776).
-4. On `error` exit status, report the `reason` and the troubleshooting pointers
-   from the Markdown report.
-
-## Output schema (`nemoclaw.bench.v1`)
-
-```jsonc
-{
-  "schema_version": "nemoclaw.bench.v1",
-  "generated_at": "<ISO-8601>",
-  "environment": { "os", "arch", "node", "cpus", "cpu_model", "total_mem_gib" },
-  "target": { "base_url": "<redacted>", "model": "...", "api_key_present": true },
-  "metrics": [
-    { "id": "inference-round-trip", "status": "ok", "unit": "ms",
-      "source": "live-request", "interpretation": "advisory-non-normative",
-      "samples": 10, "stats": { "min_ms", "median_ms", "p95_ms", "mean_ms", "max_ms" } }
-  ]
-}
-```
-
-Trace-backed metrics also include a sanitized `context` object when available
-(`provider`, `model`, `agent`, `non_interactive`, and `fresh`) so runs can be
-compared without exposing sandbox names or credentials.
-
-The harness exits non-zero when a selected metric errors, a supplied trace is
-invalid, or required prerequisites (endpoint, model, API key) are missing.
-
-
-
-========================================
-[FILE: .\skills\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# NemoClaw Catalog Skills
-
-This directory is the optional NVSkills CI watched location for customer-facing skill publication.
-NemoClaw keeps source skills under `.agents/skills/` and copies publishable customer-facing skills here.
-Do not put generated documentation copies here.
-
-NemoClaw currently maintains one customer-facing source skill:
-
-- `.agents/skills/nemoclaw-user-guide/`, copied to `skills/nemoclaw-user-guide/`.
-
-When publishing or refreshing it in the catalog, follow `.github/catalog-skills-signing-flow.md`.
-
-
-
-========================================
-[FILE: .\src\commands\internal\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Internal commands
-
-Hidden `nemoclaw internal ...` commands are compatibility entrypoints for repo-owned scripts and migration helpers. They are not a public API.
-
-Keep command files thin:
-
-```text
-src/commands/internal/<area>/<verb>.ts
-  -> parse flags/args
-  -> call src/lib/actions/<area>/<verb>.ts
-```
-
-Behavior belongs in `src/lib/actions/**`, pure decisions belong in `src/lib/domain/**`, and process/filesystem/Docker/OpenShell boundaries belong in `src/lib/adapters/**`.
-
-
-
-========================================
-[FILE: .\src\commands\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# `src/commands`
-
-This tree is the oclif discovery surface for the packaged `nemoclaw` CLI.
-Command entrypoint files define the oclif command class directly. Do not add new
-public command shims that only re-export from `src/lib/**`, and do not recreate a
-parallel command layer under `src/lib`. Prefer `src/lib/<feature>/**` for shared
-parser helpers.
-
-```text
-src/commands/<public command path>.ts
-  -> parse flags/args
-  -> call src/lib/actions/** or small src/lib/<feature> command-support helpers
-```
-
-Keep product behavior out of this tree. Command classes should stay thin: product
-behavior belongs in `src/lib/actions/**`, pure planning and classification belongs in
-`src/lib/domain/**`, and host/runtime boundaries belong in `src/lib/adapters/**`.
-
-Hidden `nemoclaw internal ...` entrypoints live under `src/commands/internal/**`; see
-`src/commands/internal/README.md` for their narrower compatibility contract.
-
-
-
-========================================
-[FILE: .\src\lib\actions\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Actions
-
-Actions orchestrate CLI workflows. They may compose domain helpers, adapters, state modules, and user-facing output, but they should stay independent of oclif command classes.
-
-Preferred layout for migrated workflows:
-
-```text
-src/lib/actions/<area>/<verb>.ts
-src/lib/actions/<area>/<verb>.test.ts
-```
-
-Examples:
-
-```text
-dns/index.ts                    # internal dns fix-coredns/setup-proxy orchestration
-dev/npm-link-or-shim.ts          # prepare-time dev shim orchestration
-installer/plan.ts                # deterministic installer planning
-uninstall/plan.ts                # host uninstall planning
-uninstall/run-plan.ts            # uninstall plan application
-sandbox/*.ts                     # public sandbox workflows
-```
-
-Use `src/lib/domain/**` for pure decisions and `src/lib/adapters/**` for process/filesystem/network boundaries.
-
-
-
-========================================
-[FILE: .\src\lib\adapters\http\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# HTTP adapters
-
-HTTP adapter modules isolate host-side network probes and subprocess-backed HTTP
-checks from action/domain logic. Keep pure response classification in domain or
-feature modules; keep `curl`, temporary files, and network-boundary behavior here.
-
-
-
-========================================
-[FILE: .\src\lib\adapters\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Adapters
-
-Adapters isolate process, filesystem, Docker, OpenShell, and other host-boundary calls from action and domain logic.
-
-Use adapters when code needs to cross a boundary that is hard to unit test directly. Actions can depend on adapters, but domain helpers should stay pure and receive already-collected inputs.
-
-
-
-========================================
-[FILE: .\src\lib\core\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Core helpers
-
-`src/lib/core` is for tiny cross-cutting primitives with minimal dependencies. These helpers should be safe to import from actions, domain modules, adapters, and CLI infrastructure.
-
-Good candidates:
-
-```text
-version.ts
-ports.ts
-json-types.ts
-errno.ts
-wait.ts
-url-utils.ts
-shell-quote.ts
-```
-
-Keep product workflows out of this directory. If a helper starts depending on Docker, OpenShell, filesystem state, or a specific command workflow, move it to an adapter, action, domain area, or feature folder instead.
-
-
-
-========================================
-[FILE: .\src\lib\deploy\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Deploy
-
-Deploy modules support remote/Brev compatibility flows and build-image setup that
-has not yet been split into action/domain/adapter layers. Prefer new orchestration
-in `src/lib/actions/**` and pure deploy planning helpers in `src/lib/domain/**`.
-
-
-
-========================================
-[FILE: .\src\lib\domain\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Domain helpers
-
-Domain modules contain pure policy and decision logic. They should not import oclif, spawn processes, read host state directly, or call Docker/OpenShell.
-
-Preferred layout:
-
-```text
-src/lib/domain/<area>/<topic>.ts
-src/lib/domain/<area>/<topic>.test.ts
-```
-
-Flat files are acceptable for small cross-cutting helpers, but workflow-specific logic should live under an area directory that matches the command/action stack when practical:
-
-```text
-src/commands/internal/<area>/<verb>.ts
-src/lib/actions/<area>/<verb>.ts
-src/lib/domain/<area>/<topic>.ts
-```
-
-
-
-========================================
-[FILE: .\src\lib\inference\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Inference
-
-`src/lib/inference` is for model/provider configuration, inference health checks, local runtime support, and model catalog helpers.
-
-Suggested homes:
-
-```text
-config.ts                 inference config parsing and normalization
-health.ts                 inference endpoint health checks
-local.ts                  local inference orchestration helpers
-provider-models.ts        provider model catalog support
-nvidia-featured-models.ts NVIDIA featured catalog parsing and fallback
-model-prompts.ts          prompt/model display helpers
-nim.ts                    NIM catalog and lifecycle support
-ollama/model-size.ts      Ollama model size parsing
-ollama/proxy.ts           Ollama auth proxy support
-ollama/windows.ts         Windows Ollama support
-vllm.ts                   vLLM support
-web-search.ts             web-search capability helpers
-onboard-probes.ts         onboarding-time inference validation probes
-```
-
-Longer term, pure inference decisions should move under `src/lib/domain/inference/**`, and HTTP/process boundaries should move under `src/lib/adapters/**`.
-
-
-
-========================================
-[FILE: .\src\lib\inventory\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Inventory
-
-Inventory modules shape sandbox registry, live inference, service, and messaging
-health data into the rows printed by `nemoclaw list` and `nemoclaw status`.
-Command parser glue should stay in `src/commands/**`; registry I/O should stay in
-`src/lib/state/**`.
-
-
-
-========================================
-[FILE: .\src\lib\messaging\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Messaging Architecture
-
-`src/lib/messaging` owns NemoClaw's manifest-first messaging channel system.
-It turns channel declarations into a serializable `SandboxMessagingPlan`, then applies that plan during onboard, channel lifecycle commands, rebuild, image build, runtime setup, diagnostics, status, and conflict checks.
-
-The core rule is that manifests and plans are data.
-Channel-specific behavior belongs in manifests, template resolvers, hook handlers, runtime assets, and policy metadata before it belongs in shared onboard or rebuild code.
-
-## Architecture Flow
-
-```mermaid
-flowchart TD
-  manifest["channels/<channel>/manifest.ts"]
-  registry["ChannelManifestRegistry"]
-  planner["MessagingWorkflowPlanner"]
-  compiler["ManifestCompiler"]
-  plan["SandboxMessagingPlan"]
-  setup["MessagingSetupApplier"]
-  dockerfile["src/lib/onboard/dockerfile-patch.ts"]
-  build["applier/build/messaging-build-applier.mts"]
-  openshell["OpenShell providers, policy, forwards, and config files"]
-  state["MessagingHostStateApplier and sandbox registry"]
-  rebuild["rebuild hydration"]
-
-  manifest --> registry
-  registry --> planner
-  planner --> compiler
-  compiler --> plan
-  plan --> setup
-  setup --> openshell
-  setup --> dockerfile
-  dockerfile --> build
-  build --> openshell
-  setup --> state
-  state --> rebuild
-  rebuild --> planner
-```
-
-The workflow has these stages.
-
-1. Built-in manifests live under `channels/<channel>/manifest.ts` and are registered by `channels/built-ins.ts`.
-2. `MessagingWorkflowPlanner` chooses the workflow shape for onboard, add, remove, start, stop, or rebuild.
-3. `ManifestCompiler` filters supported channels, resolves inputs, runs compiler-time hooks, and compiles a `SandboxMessagingPlan`.
-4. `MessagingSetupApplier` serializes the plan through `NEMOCLAW_MESSAGING_PLAN_B64` and applies provider, policy, agent config, and hook phases on the host side.
-5. `src/lib/onboard/dockerfile-patch.ts` passes the encoded plan into image builds.
-6. `applier/build/messaging-build-applier.mts` applies build-time package installs, render entries, post-agent-install files, and the reduced runtime plan artifact.
-7. `MessagingHostStateApplier` persists compact plan state under the sandbox registry entry.
-8. Rebuild hydrates persisted plans from current manifests so compacted render, host-forward, package, runtime, and hook fields stay current.
-   Non-empty persisted `networkPolicy` entries are preserved and regenerated only when they are absent or empty.
-
-## Class Diagram
-
-```mermaid
-classDiagram
-  class ChannelManifest {
-    <<interface>>
-    schemaVersion: 1
-    id: MessagingChannelId
-    supportedAgents: MessagingAgentId[]
-    auth: ChannelAuthSpec
-    inputs: ChannelInputSpec[]
-    credentials: ChannelCredentialSpec[]
-    policyPresets?: ChannelPolicyPresetReference[]
-    render: ChannelRenderSpec[]
-    hostForward?: ChannelHostForwardSpec
-    runtime?: ChannelRuntimeByAgentSpec
-    agentPackages?: ChannelAgentPackageSpec[]
-    hooks: ChannelHookSpec[]
-  }
-
-  class SandboxMessagingPlan {
-    <<interface>>
-    schemaVersion: 1
-    sandboxName: string
-    agent: MessagingAgentId
-    workflow: MessagingCompilerWorkflow
-    channels: SandboxMessagingChannelPlan[]
-    disabledChannels: MessagingChannelId[]
-    credentialBindings: SandboxMessagingCredentialBindingPlan[]
-    networkPolicy: SandboxMessagingNetworkPolicyPlan
-    agentRender: SandboxMessagingAgentRenderPlan[]
-    buildSteps: SandboxMessagingBuildStepPlan[]
-    runtimeSetup: SandboxMessagingRuntimeSetupPlan
-    stateUpdates: SandboxMessagingStateUpdatePlan[]
-    healthChecks: SandboxMessagingHealthCheckPlan[]
-  }
-
-  class ChannelManifestRegistry {
-    -manifests: Map
-    +register(manifest)
-    +get(channelId)
-    +list()
-    +listAvailable(ctx)
-  }
-
-  class MessagingWorkflowPlanner {
-    -compiler: ManifestCompiler
-    +buildPlan(context)
-    +buildChannelAddPlanFromSandboxEntry(context)
-    +buildChannelStartPlanFromSandboxEntry(context)
-    +buildChannelStopPlanFromSandboxEntry(context)
-    +buildChannelRemovePlanFromSandboxEntry(context)
-    +buildRebuildPlanFromSandboxEntry(context)
-  }
-
-  class ManifestCompiler {
-    -registry: ChannelManifestRegistry
-    -hooks: MessagingHookRegistry
-    +compile(context)
-  }
-
-  class MessagingHookRegistry {
-    -handlers: Map
-    +register(id, handler)
-    +get(id)
-    +require(id)
-    +listIds()
-  }
-
-  class MessagingSetupApplier {
-    +encodePlan(plan)
-    +decodePlan(encoded)
-    +writePlanToEnv(plan)
-    +readPlanFromEnv(options)
-    +listHookRequests(plan, phase)
-    +applyHooksForPhase(plan, phase, options)
-    +applyPreEnableChecks(plan, options)
-    +applyHealthChecks(plan, options)
-    +applyCredentialsAtOpenShell(plan, options)
-    +applyPolicyAtOpenShell(plan, options)
-    +applyAgentConfigAtOpenShell(plan, options)
-  }
-
-  class MessagingHostStateApplier {
-    +buildStateFromPlan(plan)
-    +readPlanStateFromEnv(options)
-    +applyPlanFromEnv(sandboxName, options)
-    +applyPlanToRegistry(sandboxName, plan, options)
-  }
-
-  ChannelManifestRegistry "1" o-- "*" ChannelManifest
-  MessagingWorkflowPlanner --> ManifestCompiler
-  ManifestCompiler --> ChannelManifestRegistry
-  ManifestCompiler --> MessagingHookRegistry
-  ManifestCompiler ..> SandboxMessagingPlan
-  ChannelManifest ..> SandboxMessagingPlan : compiles into
-  MessagingSetupApplier ..> SandboxMessagingPlan
-  MessagingHostStateApplier ..> SandboxMessagingPlan
-```
-
-## Package Map
-
-| Path | Role |
-|---|---|
-| `manifest/` | Serializable manifest and plan contracts plus `ChannelManifestRegistry`. |
-| `channels/` | Built-in channel manifests, channel metadata, template resolvers, runtime preload assets, and channel hook implementations. |
-| `compiler/` | Manifest-to-plan compilation for inputs, credentials, policy, render, host forwards, build steps, runtime setup, state, and health checks. |
-| `hooks/` | Hook contracts, registries, runner validation, common handlers, and conflict errors. |
-| `applier/` | Host/OpenShell side effects for credentials, policy, config writes, hook phase execution, plan env serialization, filtering, conflicts, registry persistence, and build-time application. |
-| `persistence.ts` | Compact persisted plan shape plus hydration from current manifests. |
-| `plan-validation.ts` | Defensive parsing for persisted or env-provided plans. |
-| `diagnostics.ts` | Manifest-derived channel diagnostics used by status and doctor paths. |
-| `host-forward.ts` | Active host-forward extraction from a hydrated plan. |
-| `utils.ts` | Agent and channel availability helpers. |
-
-## Plan Contents
-
-`SandboxMessagingPlan` is the boundary between planning and side effects.
-It must be JSON-serializable because it is written to env, persisted in registry state, and consumed by sandbox build scripts.
-
-Important plan sections are:
-
-| Plan field | Source | Consumer |
-|---|---|---|
-| `channels` | Manifest metadata plus resolved inputs, disabled state, hooks, and optional host-forward data. | Lifecycle commands, hook request builders, status, diagnostics, host-forward setup. |
-| `credentialBindings` | `manifest.credentials`. | OpenShell provider creation or reuse and agent config placeholder preservation. |
-| `networkPolicy` | `manifest.policyPresets`. | Policy application during onboard and channel lifecycle changes. |
-| `agentRender` | `manifest.render` after template and credential placeholder resolution. | Host config applier and build-time config applier. |
-| `buildSteps` | `manifest.agentPackages` and hook outputs of kind `build-arg`, `build-file`, or `package-install`. | Image build and post-agent-install application. |
-| `runtimeSetup` | `manifest.runtime`. | Runtime preload, env alias, secret scan, and reduced runtime artifact generation. |
-| `stateUpdates` | Config inputs with `statePath`. | Registry persistence and rebuild hydration. |
-| `healthChecks` | Health-check hook declarations. | Lifecycle success gates. |
-
-Disabled channels must not produce side effects.
-Use `enabledPlanChannels()` and `filterEnabledPlanEntries()` before applying providers, policy, render entries, runtime setup, hooks, host forwards, or conflict checks.
-
-## Hooks Architecture
-
-Hooks let manifests name behavior without importing behavior.
-A manifest declares a hook with a stable `handler` string, and `MessagingHookRegistry` maps that string to a `MessagingHookHandler`.
-
-```mermaid
-flowchart LR
-  spec["ChannelHookSpec in manifest"]
-  registry["MessagingHookRegistry"]
-  runner["runMessagingHook"]
-  handler["MessagingHookHandler"]
-  outputs["validated hook outputs"]
-  plan["SandboxMessagingPlan entries"]
-
-  spec --> registry
-  registry --> runner
-  runner --> handler
-  handler --> outputs
-  outputs --> plan
-```
-
-Hook declarations use this shape.
-
-```ts
-{
-  id: "teams-host-forward-port-conflict",
-  phase: "pre-enable",
-  handler: "teams.hostForwardPortConflict",
-  inputs: ["webhookPort"],
-  onFailure: "abort",
-}
-```
-
-The runner enforces three invariants.
-
-- The handler ID must exist in the registry.
-- Required outputs declared by the manifest must be present.
-- Every output must use the declared output kind and be JSON-serializable.
-
-### Hook Registration
-
-Register built-in handlers in the channel's `hooks/index.ts`, then add the channel registration factory to `hooks/builtins.ts`.
-
-```ts
-export function createTeamsHookRegistrations(
-  options: TeamsHookOptions = {},
-): readonly MessagingHookRegistration[] {
-  return [
-    createTeamsHostForwardPortConflictHookRegistration(options.hostForwardPortConflict),
-    createTeamsHostForwardPortStatusHookRegistration(options.hostForwardPortStatus),
-  ];
-}
-```
-
-Tests should create a small `MessagingHookRegistry` with injected handlers when the behavior does not need the full built-in registry.
-
-### Hook Inputs
-
-The applier and compiler build hook inputs from serializable plan data.
-
-| Input source | Key shape |
-|---|---|
-| Config inputs | `<inputId>`, such as `webhookPort`. |
-| Config state paths | `<statePath>`, such as `teamsConfig.webhookPort`. |
-| Credential placeholders | `credential.<credentialId>.placeholder`. |
-| Pre-enable context | `currentSandbox`, `currentGatewayName`, and `registryEntries`. |
-
-If a hook declares `inputs`, the runner receives only those keys.
-If `inputs` is omitted, the hook receives the available input map for that channel.
-
-### Hook Phases
-
-| Phase | Where it runs | Purpose |
-|---|---|---|
-| `enroll` | `ManifestCompiler` during onboard and add-channel. | Collect or derive secret and config inputs. |
-| `reachability-check` | `ManifestCompiler` after required inputs are available. | Validate external API or gateway reachability before a channel is enabled. |
-| `pre-enable` | Host applier before enabling channel effects. | Abort on conflicts such as reused gateway names or host-forward port overlap. |
-| `render` | `ManifestCompiler` through `common.staticOutputs`. | Convert static manifest render declarations into `agentRender` plan entries. |
-| `agent-install` | Compiler and build applier. | Produce or apply package installs, build args, or build files needed before agent config generation. |
-| `apply` | Host config applier before static render writes. | Perform host-side config work that cannot be expressed as static render data. |
-| `post-agent-install` | Host config applier or build applier after package install. | Write files or repair config after agent tooling rewrites config. |
-| `health-check` | Lifecycle success gate. | Confirm a channel is usable before reporting success. |
-| `diagnostic` | Diagnostics command paths. | Return structured diagnostic output. |
-| `status` | Status and inventory paths. | Return status output, including cross-sandbox conflict summaries. |
-
-`onFailure: "abort"` is the default behavior because an unexpected hook failure should stop the workflow.
-Use `onFailure: "skip-channel"` only for enrollment paths where a channel can be omitted without breaking the rest of the sandbox.
-
-## Manifest Definition
-
-`ChannelManifest` is defined in `manifest/types.ts`.
-It is a serializable declaration for one channel and one set of supported agents.
-
-| Field | Meaning |
-|---|---|
-| `schemaVersion` | Manifest schema version. Use `1`. |
-| `id` | Stable channel ID used by CLI, plans, persistence, and tests. |
-| `displayName` | Human-readable name for prompts, status, and diagnostics. |
-| `description`, `enrollmentHelp`, `enrollmentNotes` | Optional operator-facing guidance. |
-| `supportedAgents` | Agents that can consume this channel, such as `openclaw` or `hermes`. |
-| `auth` | High-level enrollment mode: `none`, `token-paste`, `host-qr`, or `in-sandbox-qr`. |
-| `inputs` | Secret and config inputs, env keys, prompts, validation, and persistence paths. |
-| `credentials` | Provider bindings derived from secret inputs. |
-| `policyPresets` | Optional network policy presets and policy keys required by the channel. |
-| `render` | Agent config fragments or env-file lines to render when the channel is active. |
-| `hostForward` | Optional host-side forward for inbound webhooks. |
-| `runtime` | Optional runtime visibility, preload, env alias, and secret scan metadata. |
-| `agentPackages` | Optional build-time agent package installs. |
-| `hooks` | Hook references for enrollment, checks, render, apply, status, and diagnostics. |
-
-Secret inputs cannot declare `statePath` or defaults.
-Plans may carry `credentialAvailable`, `credentialHash`, and placeholders, but they must not carry raw tokens.
-
-## Manifest Skeleton
-
-Use `satisfies ChannelManifest` so TypeScript checks the manifest while preserving literal IDs and template strings.
-
-```ts
-import type { ChannelManifest } from "../../manifest";
-
-export const exampleManifest = {
-  schemaVersion: 1,
-  id: "example",
-  displayName: "Example",
-  supportedAgents: ["openclaw"],
-  auth: { mode: "token-paste" },
-  inputs: [
-    {
-      id: "apiToken",
-      kind: "secret",
-      required: true,
-      envKey: "EXAMPLE_API_TOKEN",
-      prompt: {
-        label: "Example API token",
-      },
-    },
-    {
-      id: "allowedUsers",
-      kind: "config",
-      required: false,
-      envKey: "EXAMPLE_ALLOWED_USERS",
-      statePath: "allowedIds.example",
-    },
-  ],
-  credentials: [
-    {
-      id: "exampleApiToken",
-      sourceInput: "apiToken",
-      providerName: "{sandboxName}-example",
-      providerEnvKey: "EXAMPLE_API_TOKEN",
-      placeholder: "openshell:resolve:env:EXAMPLE_API_TOKEN",
-      primary: true,
-    },
-  ],
-  policyPresets: [{ name: "example", policyKeys: ["example"] }],
-  render: [
-    {
-      id: "example-openclaw-channel",
-      kind: "json-fragment",
-      agent: "openclaw",
-      target: "openclaw.json",
-      fragment: {
-        path: "channels.example",
-        value: {
-          enabled: true,
-          token: "{{credential.exampleApiToken.placeholder}}",
-          allowFrom: "{{allowedIds.example.values}}",
-        },
-      },
-    },
-  ],
-  hooks: [
-    {
-      id: "example-token-paste",
-      phase: "enroll",
-      handler: "common.tokenPaste",
-      outputs: [{ id: "apiToken", kind: "secret", required: true }],
-      onFailure: "skip-channel",
-    },
-  ],
-} as const satisfies ChannelManifest;
-```
-
-## Template Resolution
-
-Render values may contain template references such as `{{credential.exampleApiToken.placeholder}}` or `{{allowedIds.example.values}}`.
-The compiler resolves credential placeholders generically from `manifest.credentials`.
-Channel-specific derived values belong in `channels/<channel>/template-resolver.ts` and are registered from `channels/template-resolver.ts`.
-
-Template resolvers should return `undefined` when a reference belongs to a different channel.
-They should validate derived values near the channel boundary, such as checking that a webhook port is an integer between `1` and `65535`.
-
-## Host Forwarding
-
-Channels with inbound webhooks can declare `hostForward`.
-The compiler converts it to `SandboxMessagingHostForwardPlan` only when the channel is active and any `when` template is truthy.
-
-```ts
-hostForward: {
-  port: "{{teamsConfig.webhookPort}}",
-  label: "Microsoft Teams webhook",
-}
-```
-
-Host-forward plans are consumed by onboard and recovery helpers to start OpenShell forwards.
-Conflict checks that need cross-sandbox registry state should be channel-owned `pre-enable` hooks.
-For example, the Teams channel uses `teams.hostForwardPortConflict` and `teams.hostForwardPortStatus` to prevent and report duplicate webhook ports.
-
-## Using the Planner
-
-Most callers should use `MessagingWorkflowPlanner`, not `ManifestCompiler` directly.
-The planner understands lifecycle workflows and persisted sandbox state.
-
-```ts
-import {
-  createBuiltInChannelManifestRegistry,
-  createBuiltInMessagingHookRegistry,
-  createBuiltInRenderTemplateResolver,
-  MessagingWorkflowPlanner,
-} from "../messaging";
-
-const planner = new MessagingWorkflowPlanner(
-  createBuiltInChannelManifestRegistry(),
-  createBuiltInMessagingHookRegistry(),
-  createBuiltInRenderTemplateResolver(),
-);
-
-const plan = await planner.buildPlan({
-  sandboxName: "dev-sandbox",
-  agent: "openclaw",
-  workflow: "onboard",
-  isInteractive: true,
-  configuredChannels: ["slack", "teams"],
-  credentialAvailability: {
-    SLACK_BOT_TOKEN: true,
-    MSTEAMS_APP_PASSWORD: true,
-  },
-});
-```
-
-Use the lifecycle helpers when an existing sandbox entry is available.
-
-```ts
-await planner.buildChannelAddPlanFromSandboxEntry({
-  sandboxName,
-  agent,
-  sandboxEntry,
-  channelId: "teams",
-  isInteractive: true,
-});
-```
-
-## Applying a Plan
-
-`MessagingSetupApplier` is the host-side facade for plan application.
-
-```ts
-MessagingSetupApplier.writePlanToEnv(plan);
-
-MessagingSetupApplier.applyCredentialsAtOpenShell(plan, credentialOptions);
-MessagingSetupApplier.applyPolicyAtOpenShell(plan, policyOptions);
-await MessagingSetupApplier.applyPreEnableChecks(plan, hookOptions);
-await MessagingSetupApplier.applyAgentConfigAtOpenShell(plan, configOptions);
-await MessagingSetupApplier.applyHealthChecks(plan, hookOptions);
-```
-
-Build-time code should read `NEMOCLAW_MESSAGING_PLAN_B64` through `applier/build/messaging-build-applier.mts`.
-Do not duplicate channel-specific rendering in `scripts/generate-openclaw-config.mts` or `agents/hermes/generate-config.ts`.
-
-## Adding a Built-In Channel
-
-Add the channel through the manifest-first path.
-
-1. Create `channels/<channel>/manifest.ts`.
-2. Add template derivation in `channels/<channel>/template-resolver.ts` only when static manifest data needs computed values.
-3. Add hook handlers under `channels/<channel>/hooks/` only for side effects, enrollment, checks, diagnostics, status, or host-only conflict detection.
-4. Register the manifest in `channels/built-ins.ts`.
-5. Register template resolution in `channels/template-resolver.ts`.
-6. Register hook handlers in `channels/<channel>/hooks/index.ts` and `hooks/builtins.ts`.
-7. Add runtime preload assets under `channels/<channel>/runtime/` only when the agent runtime needs boot or connect-time shims.
-8. Add `src/lib/messaging/channels/<channel>/policy/<agent>.yaml` when `policyPresets` declares a new policy preset.
-9. Add manifest, compiler, applier, lifecycle, build-applier, and policy tests for the behavior you changed.
-
-## Invariants
-
-- Manifests, plans, hook inputs, and hook outputs must stay JSON-serializable.
-- Secret values must remain outside manifests and persisted plans.
-- Hook handlers are resolved by stable string IDs and should be injected in tests.
-- Hook output declarations must exist before code consumes the output.
-- Agent render and hook build-file targets must stay inside `/sandbox/.openclaw`, `/sandbox/.hermes`, or `/sandbox/.deepagents`.
-- Disabled channels must be filtered before side effects run.
-- Rebuild should hydrate compacted or missing derived fields from current manifests instead of trusting stale persisted render, package, host-forward, runtime, or hook data.
-- Rebuild preserves non-empty persisted `networkPolicy` entries and regenerates policy only when entries are absent or empty.
-
-
-
-========================================
-[FILE: .\src\lib\onboard\machine\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Onboard finite-state machine
-
-This directory contains the transitional onboarding finite-state-machine (FSM) layer. The current implementation records coarse state snapshots and emits machine events while the legacy `src/lib/onboard.ts` entrypoint is split into explicit state handlers.
-
-## Target architecture
-
-The target shape is a machine-driven onboarding runner:
-
-1. Normalize CLI flags, environment, session locking, and consent in `src/lib/onboard.ts`.
-2. Build an onboarding context that contains sanitized operator choices, runtime dependencies, and mutable values returned by states.
-3. Enter `runOnboardMachine(context)`.
-4. Dispatch the current machine state to a handler.
-5. Let the handler return an explicit state result such as advance, retry, branch, pause, complete, or failed.
-6. Apply the result through `OnboardRuntime`, which validates the transition, updates the persisted session snapshot, and emits redacted machine events.
-7. Continue until the machine reaches `complete` or `failed`, or a handler pauses at a retryable non-terminal state.
-
-In that final shape, `src/lib/onboard.ts` should be a thin entrypoint. State handlers should own state-specific prompts, resume validation, repair decisions, and side effects.
-
-## State ownership
-
-Machine states are coarse user-visible onboarding phases, not every subprocess or probe inside a phase. The current vocabulary is intentionally limited to major boundaries:
-
-- `init`
-- `preflight`
-- `gateway`
-- `provider_selection`
-- `inference`
-- `sandbox`
-- `openclaw` or `agent_setup`
-- `policies`
-- `finalizing`
-- `post_verify`
-- `complete` or `failed`
-
-A state handler may perform many smaller operations, but it should expose only stable, redacted state transitions and context updates to the FSM.
-
-## Session steps versus machine state
-
-The persisted onboarding session still tracks step-level progress for resumability. Step recording is older than the FSM and is currently used as a compatibility bridge.
-
-Long term:
-
-- `OnboardRuntime` should own machine transitions and machine revision increments.
-- Session step helpers should record only step status (`pending`, `in_progress`, `complete`, `failed`, `skipped`).
-- State handlers should return explicit results instead of implicitly moving the machine by calling step helpers.
-
-Until that migration completes, step helpers may still infer machine snapshots for compatibility with older sessions and tests.
-
-## Handler contract
-
-Each state handler should eventually follow this shape:
-
-```ts
-type OnboardStateHandler = (
-  context: OnboardContext,
-) => Promise<OnboardStateResult | readonly OnboardStateResult[]>;
-```
-
-A handler should:
-
-- validate whether the state can be resumed or skipped;
-- run state-local repairs before declaring a cached step reusable;
-- perform the phase side effects;
-- return the next state explicitly;
-- keep secrets out of returned metadata and event context.
-
-A handler should not:
-
-- mutate the machine snapshot directly;
-- jump to states outside the declared transition graph;
-- rely on console output as the only observable diagnostic;
-- store raw credentials, provider URLs with secrets, or other sensitive values in machine context.
-
-Handlers may return a result sequence only when one composite handler deliberately owns the
-covered state transitions, such as provider selection plus inference retry. Every result in a
-sequence must declare its source state in `metadata.state`, and that source must match the
-machine's current state when the result is applied. The runner also checks the handler's sequence
-ownership allowlist; add a new entry in `DEFAULT_SEQUENCE_OWNERSHIP` before introducing another
-composite handler that crosses into a later state. Terminal results (`complete` or `failed`) end
-the sequence immediately. A `pause` result persists any supplied safe context and returns control
-without a state transition so a later process can resume the same non-terminal state.
-
-## Runtime responsibilities
-
-`OnboardRuntime` is the intended authority for:
-
-- validating transitions against `transitions.ts`;
-- applying safe session context updates;
-- marking terminal states;
-- emitting redacted lifecycle, state, repair, resume-conflict, and hook events;
-- preserving compatibility with normalized older sessions.
-
-The runtime should reject invalid transitions before they can be persisted.
-
-## Event semantics
-
-Machine events are diagnostics and automation hooks. They must be safe to write to JSONL logs and attach to CI/E2E artifacts.
-
-Event payloads should include only stable, redacted context such as:
-
-- selected agent;
-- sandbox name;
-- provider and model names;
-- endpoint origin, not full secret-bearing URLs;
-- credential environment variable name, not credential value;
-- policy presets and messaging channel names.
-
-Observers and hooks must not change onboarding behavior. A failing hook should emit hook failure diagnostics and let onboarding continue.
-
-## Migration stages
-
-The FSM migration is considered complete when:
-
-1. state metadata is defined once and derived by session, event, progress, and transition code;
-2. live onboarding emits `onboard.started`, `onboard.resumed`, `resume.conflict`, terminal, state, skip, repair, and context events consistently;
-3. handlers return explicit state results;
-4. the runner applies all handler results through `OnboardRuntime`;
-5. step helpers no longer implicitly own machine transitions;
-6. `src/lib/onboard.ts` contains entrypoint setup and dependency wiring rather than state sequencing.
-
-## Characterization traces
-
-`transition-traces.test.ts` in this directory pins fresh, resumed, recreate, and failed path-level event streams that the unit suites (`transitions.test.ts`, `runtime.test.ts`, `runner.test.ts`) do not already cover (#6225). The recreate trace composes the runner with the real sandbox handler seam; detailed selection and repair cases remain in `handlers/sandbox-resume.test.ts` and `handlers/sandbox.test.ts`. Update a pinned trace only in the same PR as an intentional behavior change (for example #6226, #6227, or #6228), never as a side effect. The journey-level lifecycle contract map lives in [`../lifecycle-contracts.md`](../lifecycle-contracts.md).
-
-
-
-========================================
-[FILE: .\src\lib\onboard\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Onboard support
-
-`src/lib/onboard` is the transitional home for onboarding support modules while the large legacy `src/lib/onboard.ts` flow is split over time.
-
-The lifecycle contract map for the onboarding and runtime-mutation journeys (desired-state sources, destructive boundaries, checkpoints, divergences) lives in [`lifecycle-contracts.md`](lifecycle-contracts.md) (#6225).
-
-Good candidates:
-
-```text
-types.ts
-providers.ts
-preflight.ts
-usage-notice.ts
-command.ts
-```
-
-Related modules may live outside this folder when their ownership is clearer:
-
-```text
-src/lib/state/onboard-session.ts          persisted onboarding session state
-src/lib/inference/onboard-probes.ts       inference validation probes used by onboarding
-src/lib/inference/ollama/proxy.ts         Ollama proxy lifecycle helpers
-src/lib/inference/vllm.ts                 vLLM onboarding helpers
-src/lib/inference/ollama/windows.ts       Windows Ollama support
-```
-
-Do not move `src/lib/onboard.ts` casually. It is high-import and high-risk; if it moves, keep a compatibility re-export path or split it through focused behavior-preserving PRs.
-
-
-
-========================================
-[FILE: .\src\lib\policy\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Policy
-
-Policy modules own sandbox network-policy preset loading, tier resolution, and
-policy application helpers. They may orchestrate OpenShell policy commands while
-legacy flows are being migrated, but pure selection/planning helpers should move
-under `src/lib/domain/**` when they can be isolated.
-
-
-
-========================================
-[FILE: .\src\lib\sandbox\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Sandbox support
-
-`src/lib/sandbox` is for sandbox configuration, build context, create-stream, version, and channel support that is not already owned by an action/domain module.
-
-Suggested homes:
-
-```text
-config.ts                 sandbox config download/upload and mutation support
-build-context.ts          sandbox build context construction
-create-stream.ts          sandbox create progress parsing
-version.ts                sandbox/agent version helpers
-channels.ts               sandbox channel support, unless moved to messaging
-```
-
-Command workflows should continue to live under `src/lib/actions/sandbox/**`. Pure validation/classification helpers should live under `src/lib/domain/sandbox/**`.
-
-
-
-========================================
-[FILE: .\src\lib\security\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Security helpers
-
-`src/lib/security` is for reusable redaction, secret-pattern, credential-hash, and credential-filter helpers.
-
-Suggested homes:
-
-```text
-credential-filter.ts
-credential-hash.ts
-redact.ts
-secret-patterns.ts
-```
-
-Credential storage belongs under `src/lib/credentials/**`; security helpers should not own persistence or user prompts.
-
-
-
-========================================
-[FILE: .\src\lib\tunnel\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Tunnel and host services
-
-This folder contains host-side service lifecycle helpers used by `nemoclaw start`,
-`nemoclaw stop`, and tunnel/port-forward related commands. Keep oclif parser glue
-in `src/commands/**`; service orchestration that starts or stops host processes
-belongs here or in `src/lib/actions/**` when it is command-specific.
-
-
-
-========================================
-[FILE: .\src\lib\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# `src/lib` layout
-
-`src/lib` is organized by architectural role first, then by product area. Use this map when adding new code or when moving legacy flat modules into clearer homes.
-
-## Primary layers
-
-```text
-src/commands/**      oclif adapter classes and parser glue
-src/lib/actions/**   workflow orchestration and user-facing command behavior
-src/lib/domain/**    pure decisions, policy, classification, and planning
-src/lib/adapters/**  host boundaries: process, fs, Docker, OpenShell, HTTP
-src/lib/state/**     persisted local state and state-file I/O
-src/lib/cli/**       CLI framework, metadata, routing, and help infrastructure
-src/lib/core/**      tiny cross-cutting primitives with minimal dependencies
-```
-
-Layering rules:
-
-- Command classes should parse argv and call actions; they should not own product logic.
-- Actions may compose domain helpers, adapters, state modules, and output.
-- Domain helpers should stay pure and avoid direct process, filesystem, Docker, OpenShell, or network calls.
-- Adapters isolate host-boundary calls so actions and tests can inject fakes.
-- State modules own persisted local files and registry/session I/O.
-
-## Transitional feature folders
-
-Some older modules are still too large or coupled to split directly into actions/domain/adapters. Use these feature folders as intermediate homes while preserving behavior:
-
-```text
-src/lib/agent/**        agent definition, agent-specific onboarding, runtime helpers
-src/lib/credentials/**  credential storage and credential command support
-src/lib/dashboard/**    dashboard contract, health, and recovery helpers
-src/lib/deploy/**       deploy/build-image support that is not yet action-shaped
-src/lib/diagnostics/**  debug collection and diagnostic report helpers
-src/lib/inference/**    inference config, health probes, local runtime helpers
-src/lib/inventory/**    list/status inventory shaping and presentation models
-src/lib/messaging/**    channel/messaging policy and message filtering helpers
-src/lib/onboard/**      onboarding support modules around the large legacy flow
-src/lib/policy/**       policy preset loading, tier selection, and application support
-src/lib/runtime/**      sandbox/runtime recovery helpers
-src/lib/sandbox/**      sandbox config, build, stream, channel, version, and command support
-src/lib/security/**     redaction, secret patterns, and credential filtering
-src/lib/shields/**      shields orchestration, timers, and audit helpers
-src/lib/tunnel/**       local service/tunnel command support
-```
-
-Prefer small mechanical PRs that move one cluster at a time. High-import legacy files such as `onboard.ts`, `runner.ts`, and any remaining large top-level modules should either move late or keep temporary compatibility re-export files at their old paths.
-
-## Suggested migration sequence
-
-1. Document the target map and conventions before moving more code.
-2. Move low-risk feature clusters such as `agent`, `dashboard`, `diagnostics`, and `shields`.
-3. Move security/credentials/core helpers.
-4. Move inference/model/local-runtime helpers.
-5. Move onboarding support files before considering the large `onboard.ts` flow.
-
-
-
-========================================
-[FILE: .\test\e2e\docs\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# NemoClaw E2E Fixtures
-
-NemoClaw E2E now has one target execution model, Vitest as the harness and
-GitHub Actions as the matrix. Vitest owns discovery, filtering, timeouts,
-reporters, fixture lifecycle, skips, and CI integration. NemoClaw owns the
-domain layer: target metadata, phase fixtures, product clients, evidence
-artifacts, redaction, cleanup, expected-state probes, and typed assertion
-helpers.
-
-The retired typed-shell target runner is documented in
-[`RETIREMENT.md`](./RETIREMENT.md). Do not add new durable behavior to the old
-YAML/bash runner shape.
-
-Direct E2E implementations now live in Vitest. The former
-`test/e2e/test-*.sh` entry points have been removed.
-
-## Sources Of Truth
-
-| Task | Source |
-| --- | --- |
-| Live target IDs and metadata | `test/e2e/registry/registry.ts`, `test/e2e/registry/definitions/baseline.ts` |
-| GitHub Actions matrix emission | `test/e2e/registry/run.ts --emit-live-matrix` |
-| Live target execution | `test/e2e/live/registry-targets.test.ts` |
-| Phase fixtures and clients | `test/e2e/fixtures/` |
-| Expected-state probes | `test/e2e/registry/expected-states.ts` |
-| Product-facing setup/onboarding state | `test/e2e/manifests/*.yaml` |
-| Migration status and retirement decisions | GitHub issues and pull requests |
-
-## Target Model
-
-The typed registry still describes targets as layered metadata:
-
-```text
-base environment
-  -> onboarding profile / manifest
-    -> expected state
-      -> optional lifecycle profile
-        -> suite metadata for migration tracking
-```
-
-Live execution happens through shared fixtures:
-
-- `environment` checks CLI/install/runtime readiness.
-- `onboard` performs supported onboarding profiles.
-- `lifecycle` performs supported post-onboard mutations.
-- `stateValidation` probes host-observable expected state.
-- `artifacts`, `secrets`, `cleanup`, and `shellProbe` provide shared fixture
-  services.
-
-The `test/e2e/fixtures/` path is fixture/support code, not a test
-harness or runner. Vitest remains the only test harness.
-
-`suiteIds` remain metadata for reporting and migration planning. They do not
-dispatch shell validation suites.
-
-## How To Run
-
-```bash
-# List canonical target ids
-npx tsx test/e2e/registry/run.ts --list
-
-# Emit the GitHub Actions fan-out matrix payload
-npx tsx test/e2e/registry/run.ts --emit-live-matrix
-
-# Emit the matrix for selected target ids
-npx tsx test/e2e/registry/run.ts --emit-live-matrix --targets ubuntu-repo-cloud-openclaw
-
-# Fixture/support tests
-npx vitest run --project e2e-support --silent=false --reporter=default
-
-# Opt-in live E2E targets
-npm run test:live-e2e -- --silent=false --reporter=default
-```
-
-The aggregate live command rebuilds the CLI before Vitest starts and runs live
-test files serially.
-Live E2E projects do not retry an entire failed test.
-These tests mutate host, Docker, gateway, and sandbox state, so re-entering one
-on the same runner can replace the original failure with stale-lock,
-storage-exhaustion, or ownership noise. A target may retry a transient operation
-only inside its own cleanup boundary.
-Retry a full target by starting a fresh workflow run and runner.
-
-The retired `--emit-matrix` and `--plan-only` paths must not be reintroduced.
-
-When adding or changing a live test, update `test/e2e/mock-parity.json` with
-the fast PR-collected test that covers its mockable contract. If the behavior
-cannot be reproduced without real infrastructure, record a concise
-`liveOnlyReason` instead. The PR and `main` CLI coverage shards enforce this
-changed-file policy alongside the `e2e-support` project without requiring an
-immediate backfill of untouched tests.
-
-## Repository Layout
-
-```text
-test/e2e/
-  docs/                  # Fixture guide, migration notes, retirement record
-  fixtures/              # Vitest fixtures, clients, redaction, artifacts, cleanup
-  live/                  # Opt-in live E2E target tests
-  manifests/             # Product-facing NemoClawInstance desired state
-  mock-parity.json        # Changed live-test to fast-test parity decisions
-  registry/              # Typed registry, matrix helpers, expected states
-  support/               # Fast fixture/support and metadata tests
-```
-
-## CI Entry Points
-
-- `tools/advisors/risk-plan.mts` is the small deterministic selection policy
-  shared by PR Review Advisor and the PR E2E controller. It maps
-  changed runtime surfaces to invariant families and
-  canonical `e2e.yaml` jobs; it is not a second test runner or migration-status
-  ledger. The advisor uses it as recommendation context, while the controller
-  applies it independently without model output.
-
-- `.github/workflows/pr-e2e-gate.yaml` reserves the internal
-  `E2E / PR Gate Coordination` check on every exact PR head, including forks,
-  before `CI / Pull Request` completes. Its default-branch
-  `pull_request_target` path also publishes the native GitHub Actions job named
-  `E2E / PR Gate`. The read-only observer runs from `github.workflow_sha`,
-  validates the live PR head and base, waits for the matching trusted
-  coordination identity, and mirrors the terminal verdict into the required
-  job. Its summary is static, while the job log includes the validated trusted
-  controller-run link. Authorization states remain pending while the maintainer
-  decision is recorded. During rollout, the observer also accepts the former
-  `E2E / PR Gate` custom-check name for the same exact-diff identity. The
-  controller builds the risk plan from GitHub's complete file list. Internal
-  revisions normally dispatch every selected job and verify each expected
-  `risk-signal.json`; this remains automatic when their `e2e-control-plane`
-  matches are drawn only from the trusted controller workflow and scripts.
-  Other or mixed internal
-  control-plane revisions require a maintainer-authorized exact-SHA run; only
-  its verified evidence can pass coordination. Risky forks retain the audited
-  credentialed-E2E skip approval. See [NemoClaw E2E CI](../README.md) for the
-  full lifecycle.
-
-- `.github/workflows/e2e.yaml` runs selected or all supported
-  live E2E targets and uploads an explicit artifact allowlist with
-  JSON summaries plus action, log, and shell command-evidence directories under
-  14-day retention.
-  The allowlist includes each target's sanitized onboard timing summary at
-  `e2e-artifacts/live/<target>/cloud-onboard-trace-timing-summary.json`.
-  Raw onboard traces stay under the runner temporary directory and are deleted
-  before artifact upload.
-  These per-target timing summaries are artifact evidence only.
-  The Slack and GitHub scorecard timing comparison remains scoped to the
-  dedicated `cloud-onboard` artifact.
-  PR E2E dispatches validate the PR head commit and controller metadata before
-  preparation, attach `test/e2e/risk-signal-reporter.ts` to live Vitest
-  invocations, and suppress PR reporting and scorecards. The workflow boundary
-  requires every selected job shard to upload its evidence artifact.
-- `.github/workflows/e2e-branch-validation.yaml`, `macos-e2e.yaml`,
-  `wsl-e2e.yaml`, and `regression-e2e.yaml` call focused E2E targets directly
-  for their E2E coverage. Individual repository-hosted targets, including
-  `ollama-auth-proxy`, are selected through `.github/workflows/e2e.yaml`.
-- `vitest.config.ts` contains `e2e-support` for fast fixture/support tests and
-  `e2e-live` for opt-in live target execution. The PR and `main` CLI coverage
-  shards include `e2e-support` for code changes; they never opt into live
-  targets.
-
-## Migration Tracking
-
-Migration status is tracked outside the repository. GitHub issues and pull
-requests are the source of truth for script-by-script state, ownership,
-replacement E2E coverage, and retirement decisions.
-
-GitHub issues and PRs own changing migration status. The key issues are:
-
-- #3588: parent layered E2E architecture epic
-- #4941: Vitest fixtures as the target execution model
-- #4990: phase fixtures and registry-driven live discovery
-- #5098: direct former bash-suite migration epic
-
-The former repo-local migration ledger and generated assertion inventories are
-removed because they duplicated live GitHub state and drifted quickly. The
-durable guardrails are workflow contract tests and source-shape checks that
-verify CI calls Vitest directly and the removed shell suite does not come back.
-
-Prefer new E2E coverage in Vitest fixtures. When shell, installer, process,
-platform, or full user-flow behavior is the contract, invoke that real boundary
-from the E2E test rather than preserving a second durable runner.
-
-
-
-========================================
-[FILE: .\test\e2e\e2e-cloud-experimental\features\skill\lib\README.md]
-========================================
-
-# E2E helper libraries (e2e-cloud-experimental)
-
-| File | Role |
-|------|------|
-| `validate_repo_skills.sh` | Ensures `.agents/skills/*/SKILL.md` has YAML frontmatter (`name`, `description`) and a non-trivial body. Stdlib only. |
-| `validate_sandbox_openclaw_skills.sh` | SSH: `/sandbox/.openclaw` + `openclaw.json` required; prints `SKILLS_SUBDIR=present` or `absent`. |
-
-Used by the skill-agent Vitest coverage and standalone sandbox-skill helpers.
-
-
-
-========================================
-[FILE: .\test\e2e\e2e-cloud-experimental\skip\README.md]
-========================================
-
-# Opt-in checks (`skip/`)
-
-Scripts here are not part of the default E2E flow.
-
-Use when a check is useful but flaky, slow, or environment-specific — run manually:
-
-```bash
-export SANDBOX_NAME=…
-bash test/e2e/e2e-cloud-experimental/skip/05-network-policy.sh
-```
-
-
-
-========================================
-[FILE: .\test\e2e\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# NemoClaw E2E CI
-
-Direct E2E coverage runs through Vitest.
-
-Interactive TUI targets require `expect`. The unified workflow installs it
-before those targets run; local runners must provide it themselves.
-
-- `.github/workflows/e2e.yaml` is the scheduled, manually dispatchable, and
-  selectively dispatched live target workflow.
-- `.github/workflows/pr-e2e-gate.yaml` runs as `E2E / PR Gate Controller` and
-  publishes the trusted exact-diff `E2E / PR Gate Coordination` check and the
-  native `E2E / PR Gate` job that mirrors coordination into the PR's required
-  GitHub Actions check suite.
-- `.github/workflows/e2e-branch-validation.yaml` provisions Brev instances and
-  runs focused E2E targets from source on a clean machine.
-- Platform workflows such as macOS, WSL, sandbox image, and regression E2E
-  call their target E2E tests directly. The Ollama auth proxy target is
-  selected through `.github/workflows/e2e.yaml`.
-
-The former top-level `test/e2e/test-*.sh` suite has been removed. Keep real
-shell, installer, process, Docker, OpenShell, `/proc`, and sandbox boundaries in
-E2E tests when those boundaries are the behavior under test.
-
-## Credential-free tests
-
-Credential-free tests that can use the standard Ubuntu runner, CLI build, and
-artifact policy opt into the shared E2E job with a tag beside the test:
-
-```typescript
-// @module-tag e2e/credential-free
-```
-
-Discovery reads tagged files from the `e2e-live` and `integration` Vitest
-projects. It derives each test ID from the filename and supplies only the ID,
-repository-relative file, and Vitest project to the test matrix. Keep the
-filename stem unique and lowercase kebab-case. Do not add the test to a separate
-catalog or manually maintained workflow matrix.
-
-The E2E workflow owns the shared job's runner, timeout, setup, permissions,
-secrets, and artifact handling. Keep a dedicated workflow job when a test needs
-different capabilities, such as credentials, a custom runner, additional setup,
-or a different timeout.
-
-Both `jobs` and `targets` selectors continue to accept the test ID. Run the
-discovery command locally to inspect the generated test matrix:
-
-```bash
-npx tsx tools/e2e/credential-free-tests.mts
-```
-
-## Scheduled operations
-
-The consolidated workflow keeps its operational reporting in the same job
-graph as the live targets:
-
-- GitHub Actions run history is the authoritative record for scheduled and
-  manual E2E results.
-- Automated issue routing and the workflow's `issues: write` capability are
-  retired. Any future issue escalation should use a separately reviewed
-  exceptional threshold, such as the same lane failing twice consecutively or
-  remaining broken for 24 hours, rather than posting on every failed schedule.
-- `scorecard` writes the scheduled/manual result summary, compares the trusted
-  cloud-onboard timing summary with the latest prior-release `e2e.yaml` run,
-  and posts to the daily or full-run Slack route.
-- Selective dispatches remain silent unless they run on `main` with
-  `post_to_slack=true`, which uses the preview Slack route. Branch-dispatched
-  runs never receive Slack webhook secrets.
-
-Raw cloud-onboard traces stay under the runner temporary directory. Before
-artifact upload, `scripts/e2e/sanitize-trace-timing.py` reduces them to the
-allowlisted `cloud-onboard-trace-timing-summary.json` timing schema and deletes
-the raw directory. Aggregation ratchets require `report-to-pr` and `scorecard`
-to wait for the same execution-job set.
-
-Registry-driven Vitest targets also enable onboard trace collection. Each live
-matrix target writes raw traces under the runner temporary directory, sanitizes
-them before upload, deletes the raw trace directory, and uploads only
-`e2e-artifacts/live/<target>/cloud-onboard-trace-timing-summary.json` with the
-target artifact. These per-target summaries are artifact evidence only; the
-Slack/GitHub scorecard comparison remains tied to the dedicated `cloud-onboard`
-artifact so baseline aggregation stays stable.
-Older issue references to Vitest target artifacts under `e2e-artifacts/vitest/`
-map to this consolidated `e2e-artifacts/live/` registry-target artifact layout.
-
-## PR E2E gate
-
-The controller, coordination check, and required job deliberately use
-different names and report different parts of the lifecycle.
-`E2E / PR Gate Controller` reports whether the trusted controller handled its
-event. The controller publishes the internal custom check
-`E2E / PR Gate Coordination` as its exact-diff verdict.
-The default-branch `pull_request_target` path publishes the native GitHub
-Actions job named `E2E / PR Gate`. It checks out the controller at
-`github.workflow_sha`, validates that the PR still has the observed head and
-base, waits for the matching trusted coordination identity, and exits with its
-terminal verdict. It also writes that verdict and the trusted run link to the
-job log and keeps the job summary free of network-derived content. During
-rollout, the observer accepts the former custom-check name
-`E2E / PR Gate` for the same exact-diff external identity so in-flight PRs do
-not lose their gate.
-
-A handled prerequisite-CI failure, selected E2E failure or timeout, stale
-revision, or closed PR can leave the controller green while coordination is
-failed or cancelled and the native job is non-passing. Only a successful native
-`E2E / PR Gate` for the current head and base satisfies the required check. An
-eligible prerequisite-CI failure records the versioned retry reason
-`prerequisite-ci`. A selected child records `child-cancelled` only when the
-workflow is cancelled or a complete job listing shows that every non-passing
-job was cancelled. Assertion failures and other selected-E2E outcomes do not
-receive a retry reason. An unexpected controller error still fails the
-controller workflow and fails coordination closed, which prevents the native
-job from passing.
-
-On open, synchronization, reopen, transition out of draft, or base retarget,
-`.github/workflows/pr-e2e-gate.yaml` reserves `E2E / PR Gate Coordination` for
-the exact PR head and base commits, including fork heads. The read-only native
-observer starts for every configured non-closed PR event; metadata-only edits
-mirror the existing exact-diff coordination result instead of publishing a
-skipped success. A base retarget fails any still-active earlier coordination
-result in that head's lineage, preserves completed audit history, and then
-reserves the new exact-diff identity. The
-`CI / Pull Request` run name binds its PR number, head SHA, base SHA, and gate
-eligibility so the trusted controller can authenticate the completed run even
-when a fork `workflow_run` payload omits pull-request metadata. The controller
-also requires the completed run's workflow path to be
-`.github/workflows/pr.yaml`. Metadata-only edits are marked ineligible and are
-ignored by the controller and PR Review Advisor; base edits are eligible. PR CI
-and advisor concurrency groups include that eligibility, so an ignored
-metadata-edit run cannot cancel an eligible run for the same PR. The trusted
-controller reads all changed files after eligible PR CI completes and builds
-the deterministic risk plan.
-Runtime families and changes to workflow-wired live tests select
-canonical selectors from the trusted `e2e.yaml` inventory independently of
-advisor output. Ordinary internal changes execute those focused selections.
-Gate initialization and CI coordination share one non-cancelling concurrency
-group for the head repository and branch. Before the controller creates or
-updates coordination for the current revision, it reads the live PR and
-requires the event's exact head and base, including when PR CI failed. The
-native observer performs the same live exact-revision check before waiting and
-again before accepting a terminal verdict. This keeps a stale seed, completed
-CI run, or observer from being applied to a newer exact diff. A completed CI
-event for an older revision is handled without creating or updating the current
-revision's coordination check.
-If the older revision still has an in-progress coordination check, the
-controller completes it as cancelled with `Superseded by PR update` or
-`PR closed — gate no longer applies` and identifies the obsolete head and base.
-The closed-PR outcome also applies when a fork repository was deleted and
-GitHub consequently returns no head-repository object.
-Shared sandbox-boundary changes have a floor of `full-e2e`, `hermes-e2e`, and
-`security-posture`. E2E control-plane changes select `cloud-onboard`,
-`credential-sanitization`, and `security-posture`. The `e2e-control-plane`
-family is a conservative path boundary that includes non-documentation files
-under `tools/e2e/` and `test/e2e/`, plus the E2E and PR-CI workflows, risk
-policy, dependency and test configuration, and preparation and upload actions.
-The Deep Agents Code headless-inference check additionally selects the exact
-`ubuntu-repo-cloud-langchain-deepagents-code` typed target. That target is
-hashed into the risk plan beside the control-plane floor jobs, so the
-controller dispatches both selector types in one correlated workflow run.
-An internal revision whose matched control-plane files are drawn only from the
-trusted controller and observer boundaries—`.github/workflows/pr-e2e-gate.yaml`,
-`tools/e2e/pr-e2e-gate.mts`, and `tools/e2e/pr-e2e-required.mts`—automatically
-dispatches those selected jobs.
-Any other or mixed internal control-plane revision requires the exact-SHA
-maintainer authorization below before credentialed execution begins. If no job
-or target is selected, coordination passes without an E2E run and the native
-required job mirrors that success.
-
-Before dispatch, the controller verifies that the live PR still matches the CI
-run's exact head and base. It uses its own workflow commit when that commit is
-still `main`. If `main` advanced, the controller accepts the current commit
-only when GitHub reports it as a descendant whose merge base is the workflow
-commit, the comparison contains fewer than 300 fully enumerated files, neither
-side of a rename enters the `e2e-control-plane` risk family, and a second read
-confirms that `main` did not move again. Any divergence, incomplete comparison,
-control-plane change, or second advance fails closed. The accepted `main`
-commit is recorded as the workflow SHA and passed as `workflow_sha`. Before
-matrix or secret-bearing jobs can run, `e2e.yaml` requires
-`github.workflow_sha` to match that accepted commit. Each selected job checks
-out `checkout_sha`. The same validation verifies that the PR remains open,
-belongs to `NVIDIA/NemoClaw`, and still has both the dispatched head and base
-commits. The dispatch includes selected jobs, allowlisted typed targets, and
-valid plan and correlation metadata. Controller-bound targets are restricted
-to the trusted allowlist. Before checking out PR code, the trusted workflow
-projects each controller-selected target into a fixed target ID and hosted
-runner mapping. The generated live matrix must exactly match those trusted IDs
-and runners, and only the trusted projection can configure credential-bearing
-typed-target jobs. Ordinary branch dispatch is not an acceptable substitute.
-The controller uses GitHub's returned run ID for
-waiting, evidence download, and completion, then revalidates that the PR is
-still open with the live head, base, and exact-diff coordination identity before
-recording a final result. The native observer revalidates the live revision
-before mirroring that terminal result.
-
-An internal revision whose control-plane matches include a file outside the
-trusted controller and observer boundaries leaves coordination in progress
-with `Maintainer authorization required to run E2E`. The native required job
-keeps waiting for the authorization flow. No selected job or target runs and no
-repository secret is exposed. After reviewing the exact revision, a repository
-maintainer or administrator chooses **Run workflow** on `main`, selects
-`run-control-plane`, and supplies the PR number, current 40-character head SHA
-as `expected_head_sha`, current 40-character base SHA as `expected_base_sha`,
-and a specific 10–500-character `review_reason`. The authorization requires the
-first workflow attempt and revalidates the actor's `maintain` or `admin`
-permission, internal repository origin, open PR, exact head and base, risk
-plan, matching pending coordination state, compatible trusted controller
-commit, and final live revision. It then updates coordination to
-`Running <count> E2E check(s)` and dispatches the selected jobs and targets in
-one workflow run. If authorization
-fails before a child run is dispatched, the controller restores the
-authorization title and leaves coordination in progress so a maintainer can
-correct the problem and launch a fresh first-attempt authorization. After a
-child is dispatched, a startup failure requests cancellation. Whether or not
-cancellation is confirmed, the controller completes coordination as
-`Authorized E2E run requires reconciliation`; that exact-diff authorization
-cannot be retried because the child may still execute and a retry could start
-duplicate credential-bearing work. Inspect the linked run, then update the PR
-and run fresh CI before authorizing again.
-The native required job treats authorization and running titles as intermediate
-waiting states only while coordination remains in progress. It also keeps
-polling when the current exact-diff coordination check is a completed failure
-with a validated current-version retry marker, so it can follow a later
-validated replacement for the same unchanged head and base. That completed
-failure remains immutable and cannot be changed by manual authorization. A
-later eligible `CI / Pull Request` run can create a fresh coordination check for
-the same unchanged open head and base only when the newest failed coordination
-check carries a current-version retry reason:
-`prerequisite-ci` after the later CI run succeeds, `child-cancelled` after a
-conclusively cancelled child, or `evidence-download` after a successful child
-whose evidence download failed, was cancelled, or was skipped. The trusted
-controller leaves the completed check as audit history, creates and validates a
-new `in_progress` check with the same exact-diff external identity, and rebuilds
-the deterministic plan before exposing a fresh authorization state. The
-controller and native observer select the highest check-run ID only when every
-older duplicate is a completed failure with a recognized versioned retry
-marker. An unexpected app or mismatched mutation identity, duplicate ID, older
-unmarked or otherwise non-retryable terminal state, or multiple active
-candidates fails closed. Selected-job product or
-assertion failures, evidence policy or integrity failures, schema or identity
-mismatches, traversal or provenance failures, reconciliation, controller
-errors, unknown states, and failures recorded before retry reasons existed
-remain terminal for that exact diff. Fork approval failures are not retried by
-PR CI; follow the protected or manual skip path, or update the PR to create a
-new head. Update the PR and run fresh CI for the other terminal outcomes. The
-normal wait, evidence download, and finish path is the only path that can record
-success; the authorization itself cannot make the gate green. A changed head or
-base requires a new authorization.
-
-A fork revision that selects jobs or typed targets completes coordination as
-failed while the native required job waits for the skip-approval flow. The
-controller does not dispatch the selected credential-bearing jobs or targets
-or expose repository secrets.
-Non-secret PR CI remains required. The failed coordination summary
-embeds an explicit link to the same `E2E / PR Gate Controller` run; maintainers
-follow that link rather than relying on the coordination check's **Details**
-destination. The coordination check publishes only allowlisted skip-approval
-metadata for its PR number, mode, head SHA, and base SHA. The native required
-job recognizes the approval-required title as an intermediate waiting state.
-That controller run starts
-`Approve credentialed E2E skip for fork PR`, which waits on the protected
-`approve-credentialed-e2e-skip-for-fork-pr` environment. With
-`deployment: false`, the job does not create a deployment record. A maintainer
-opens the linked run, chooses **Review deployments**, selects that environment,
-and approves it. The approval records that the selected credential-bearing
-jobs and targets will not run; it does not authorize fork code to run with
-repository secrets. The comment is optional, and the workflow reads both the
-reviewer and comment from GitHub's run approval history rather than accepting
-an actor supplied by the job.
-
-Before rollout, create `approve-credentialed-e2e-skip-for-fork-pr` in the
-repository with one or more required reviewers whose approving members have
-repository `maintain` or `admin` permission. Do not add environment secrets,
-variables, or custom protection apps; this job records the skip approval and
-runs no PR-controlled code. Prefer disabling administrator bypass so every
-decision appears in the approval history. If **Review deployments** is absent,
-the environment may be missing or unprotected, or the run may no longer be
-waiting. Configure the environment, update the PR to create a new head, and
-trigger fresh upstream PR CI to create a new gate run, or use the manual
-fallback described below. GitHub approval
-history is not bound to a run attempt, so the controller rejects reruns of an
-approval run. Per-PR approval concurrency cancels an older waiting job when a
-newer revision reaches the gate.
-
-For the fork button path, the controller requires a first-attempt, in-progress run
-of this exact workflow on `main`, at the trusted workflow SHA and with the
-`workflow_run` event. It requires exactly one approved review that names only
-the exact environment, then verifies that the recorded reviewer still has
-repository `maintain` or `admin` permission. The shared resolver revalidates
-the open PR, repository origin, exact head and base SHAs, deterministic plan,
-matching failed coordination check, and that the controller commit is either
-still `main` or
-has only a compatible safe descendant as described above. Immediately before
-recording success, it reads the live PR again and requires the same exact head
-and base. The result records the reviewer, bounded optional comment, validated
-approval-run URL, plan hash, and jobs and targets that did not run. The
-successful skip coordination check is titled
-`Credentialed E2E skipped for fork PR — approved by @<maintainer>` and begins
-with `Outcome: APPROVED SKIP — credentialed E2E did not run.` It never claims
-that the selected checks passed. The native required job mirrors this
-approved-skip success.
-
-The manual fork skip approval on `main` remains available as a fallback. Choose
-`approve-fork-e2e-skip` and provide the PR number, current `expected_head_sha`,
-current `expected_base_sha`, a 10–500-character `review_reason`, and optionally
-an Actions run URL in the exact form
-`https://github.com/NVIDIA/NemoClaw/actions/runs/<run-id>`. Leave
-`evidence_url` blank when no supporting run exists. PR, issue, comment, job, and
-external URLs are rejected. The controller validates the optional URL's shape
-but does not inspect that run's contents. It applies the same PR, role, plan,
-failed-check, compatible-`main`, and final stale-revision checks. Any new commit
-receives a different gate and requires a new decision; a base change also
-invalidates the decision.
-
-The Vitest reporter writes one `risk-signal.json` for each selected job shard
-and typed target. Typed targets bind the signal identity to the exact matrix ID
-and use the `default` evidence shard. The checked workflow boundary requires
-every policy-selected execution path to expose its matching identity, attach
-the reporter to every Vitest invocation, and always upload its evidence
-artifact.
-Each signal binds the observed checkout SHA, expected SHA, plan hash,
-correlation ID, and pass, failure, skip, pending, and unhandled-error counts.
-The controller retains `pr-e2e-risk-plan-<sha>` for 14 days, while each
-signal travels in the selected job or target's existing E2E artifact.
-Its private dispatch state is protected by a SHA-256 digest that is verified
-before downloaded evidence is classified.
-
-When the plan selects jobs or targets, coordination passes only when the E2E
-run succeeds and every expected job shard and target uploads one complete
-passing signal with no skips or pending tests. The native required job passes
-only after observing that
-trusted success. For the current exact diff, every other dispatched outcome
-fails. A failed coordination result links the selected E2E run and up to 10
-non-passing jobs, including up to three failed step names per job. If GitHub
-truncates the job listing or the controller cannot load it, the coordination
-check directs the maintainer to the complete run.
-The coordinator has a 180-minute job budget and gives the selected E2E run 105
-minutes to finish. When that limit expires, finalization cancels the child and
-records the non-passing result in the coordination check. The native observer
-has a 170-minute job budget and waits up to 165 minutes for a trusted terminal
-verdict. Evidence download has its own 10-minute limit. If the selected child
-succeeds but the `Download evidence` step fails, is cancelled, or is skipped,
-the controller cannot authenticate the child's artifacts. It fails
-coordination closed as
-`Evidence could not be verified` and leaves `E2E / PR Gate Controller` red so
-maintainers inspect that infrastructure failure. This download-only outcome
-records `evidence-download`, so a later successful eligible PR CI run can create
-a fresh coordination check for the same exact diff. If the download step
-succeeds but signals are missing, duplicated, skipped, pending, or report a test
-failure, the controller has
-completed its work: it publishes the handled red PR verdict and remains green
-without a retry reason. Malformed or unsafe evidence, schema or exact-identity
-mismatches, and traversal-limit violations remain terminal controller
-verification errors, so coordination, the native required job, and the
-controller fail closed.
-These dispatches suppress PR comments and the scheduled or manual
-scorecard, including scorecard Slack reporting.
-
-Synchronizing, reopening, or closing an internal PR cancels its active E2E
-runs. A new dispatch also cancels the previous run. The previous controller
-then completes the old exact-diff coordination check as cancelled when the PR
-revision moved or closed, or as failed when the current revision's selected E2E
-did not pass. Native observer concurrency cancels the old required-job run and
-starts a new one when a configured non-closed PR event identifies the current
-revision. Metadata-only edits restart the observer against the unchanged
-exact-diff identity.
-The controller does not read PR Review Advisor output, so model availability
-and recommendations are not part of merge authority.
-
-## Onboard performance budget
-
-The scheduled/manual scorecard evaluates the trusted `cloud-onboard` timing
-summary against `ci/onboard-performance-budget.json`. The budget covers the
-warm-system path and is advisory: exceeding the total-duration cap or a
-regression threshold emits a GitHub Actions warning and adds details to the run
-summary, but does not fail the scorecard job.
-
-The config separates the absolute total-duration budget from total and phase
-regression thresholds. Phase regressions are diagnostic and are only compared
-when the current run and prior-release baseline contain the same known onboard
-phase names. Cold image pulls, first-time model downloads, provider outages,
-and runner or network incidents can still affect the signal, so maintainers
-should inspect the timing table before acting on a warning.
-
-For PRs, the unified PR Review Advisor builds and renders guidance from the
-deterministic risk plan for the PR head commit and changed-file set. It
-recommends jobs for known regression families and includes `cloud-onboard` when
-changes affect onboard behavior, trace timing, scorecard analysis, budget
-configuration, or the unified E2E workflow. Compatibility schema fields may
-classify that guidance as required, but rendered advisor guidance remains
-non-authoritative. Model advice is additive and cannot downgrade the
-deterministic floor. The independent PR E2E controller rebuilds the plan rather
-than consuming those recommendations, and the scorecard remains the source of
-truth for advisory warm-system trend evaluation.
-
-The `full-e2e` target enforces a separate hard acceptance contract for the
-first fresh onboarding path in that job. It measures from the onboard root span
-(a conservative anchor before wizard step `[1/8]`) through the first non-empty
-agent response, requires the local BuildKit prebuild for the NemoClaw-generated
-context without a gateway-builder fallback, limits the total to 205 seconds,
-and limits the longest onboard output gap to 60 seconds. A violation fails
-`full-e2e`, and the target writes its evidence to `onboard-progress-budget.json`.
-
-These assertions run inside the existing `full-e2e` lifecycle instead of a
-second standalone onboarding run. This keeps the measurement on the job's first
-sandbox build, avoids warming Docker layers before a duplicate performance
-test, and makes `full-e2e` the source of truth for the hard cold-path contract.
-
-
-
-========================================
-[FILE: .\tools\advisors\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Advisor shared utilities
-
-Shared implementation helpers for the unified NemoClaw PR Review Advisor.
-
-`tools/pr-review-advisor/` owns the only model-backed PR advisor entrypoint.
-This directory owns reusable trusted infrastructure, including:
-
-- repo-confined read-only Pi SDK session execution. The shared `read`, `grep`, `find`, and `ls` overrides mirror Pi's `@`, `~`, and Unicode-space normalization before lexical and realpath checks, reject unstable or outside paths, and delegate only canonical in-workspace paths;
-- deterministic turn-scoped context tools supplied through the `AdvisorContextToolResult` and `contextToolResults` contract after each user prompt, plus reusable validation for visible analysis turns and atomic commit turns that expose only their mutation tool and allow one bounded tool-only retry;
-- Git diff and metadata helpers;
-- JSON extraction and sanitization helpers;
-- artifact path and file I/O helpers;
-- GitHub API and sticky-comment helpers;
-- the session-free E2E recommendation normalizer, which restores the
-  deterministic risk-plan floor, rejects unsupported target and job IDs, and
-  emits selector-only guidance for the PR advisor.
-
-The E2E normalizer does not open an agent session or dispatch tests. The PR E2E
-controller independently rebuilds the deterministic plan and remains the only
-merge-authoritative E2E gate. Its trusted inventory reader uses only Node.js
-built-ins and checked-in TypeScript modules, so the production advisor does not
-need repository development dependencies such as TypeScript or Vitest.
-
-GitHub workflows must execute the advisor entrypoint from the trusted
-`ADVISOR_DIR` checkout. PR workspaces remain inert analysis data only.
-
-
-
-========================================
-[FILE: .\tools\pr-review-advisor\README.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# PR Review Advisor
-
-The PR Review Advisor is an SDK-powered, NemoClaw-specific pull request reviewer. It runs as a
-trusted GitHub Actions job, inspects PRs as read-only data, and posts a sticky comment with blockers,
-warnings, and suggestions. Artifacts retain
-acceptance coverage, security notes, and other review context.
-
-It complements the existing PR surfaces by keeping a NemoClaw maintainer code-review lens focused on the patch itself and by including E2E coverage and target guidance in the same model session:
-
-- sandbox and workflow security review;
-- acceptance coverage for observable outcomes, current constraints and non-goals, supported
-  contracts, and explicit maintainer decisions in linked issues. Proposed designs, implementation
-  ideas, and ordinary discussion remain context; `Refs #...`, `References #...`, and
-  `Follow-up to #...` relations do not make an entire issue binding;
-- codebase drift and architecture review grounded in current behavior and contracts;
-- source-of-truth review for fallback, recovery, tolerant parsing, monkeypatching, and other localized workaround behavior;
-- static test-inventory context from changed test files and nearby test names;
-- simplification review for safe delete/stdlib/native/YAGNI/shrink opportunities;
-- E2E coverage, job, target, and fan-out selections normalized against the checked-in
-  deterministic plan and supported inventory;
-- correctness and test-quality checks that CI cannot prove.
-
-It intentionally does not report GitHub mergeability, branch protection, CI status, reviewer state, CodeRabbit state, or E2E pass/fail status; those are handled elsewhere in the PR UI.
-
-## Workflow
-
-`.github/workflows/pr-review-advisor.yaml`:
-
-1. Runs on `pull_request_target` for internal and fork PRs, plus `workflow_dispatch`.
-2. Checks out advisor implementation code at the immutable trusted `github.workflow_sha` into `advisor/`.
-3. Fetches the event's PR base and head SHAs into an isolated analysis workspace without running PR-controlled actions, hooks, submodules, LFS filters, package setup, scripts, or tests.
-4. Installs and verifies pinned `ripgrep` and `fd-find` packages on a pinned Ubuntu runner, then installs a pinned Pi SDK package with lifecycle scripts disabled.
-5. Builds the deterministic regression risk plan and E2E inventory in trusted code and injects them into the review contexts.
-6. Runs `tools/pr-review-advisor/analyze.mts` from the trusted checkout.
-7. Runs the same advisor conversation in parallel for the primary GPT-5.6 Terra lane and an artifact-only Nemotron Ultra evaluation lane.
-8. Opens one Pi session per model variant and reviews the PR in 14 bounded turns: six small analysis/commit pairs for scope/risk, correctness/state, security/trust, tests/regressions, CI/operations, and reconciliation, followed by draft and validation JSON synthesis turns in that same session. The tests/regressions turn analyzes E2E coverage and new-test gaps, while the CI/operations turn selects supported E2E jobs, targets, or fan-out. Only trusted identifiers from these receipts reach normalized E2E output; free-form model E2E prose is discarded. No second advisor session is opened, including for synthesis repair.
-9. Gives each commit turn one job: apply one successful atomic ledger commit for the preceding analysis. The model-facing commit is one flat object with homogeneous additions, updates, resolutions, and supersessions arrays plus a no-change reason; legacy nested operation unions and stringified arrays are rejected. Additions require a structured observed-versus-expected basis, a file and line, and eligibility for the active stage. Positives, advisor/provider state, prior-review process state, open-PR overlap, merge coordination, and live CI/E2E status stay in prose receipts rather than becoming findings. The ledger mutation tool is the turn's only active tool, and the runner rejects prose, other tool calls, or activity after the successful commit. Rejected attempts do not mutate the ledger and may be corrected before one success. If a commit turn ends with no successful call and every attempt settled without mutating state, the runner permits one tool-only retry and then fails closed. Ledger findings receive stable `F-...` IDs, and conclusion changes require a reason plus new evidence; final synthesis can only read the ledger.
-10. Treats open ledger records as the canonical finding set. Final synthesis cannot silently add, drop, merge, reword, or reclassify those findings. Unresolved source-of-truth review entries must reference their covering open ledger ID structurally rather than relying on prose matching.
-11. Logs each turn start and settled status and writes the assistant response immediately, preserving partial failed/timed-out turn evidence and the raw transcript. If a later stage fails, already-committed canonical findings remain in the low-confidence incomplete result instead of being replaced by a generic unavailable finding.
-12. Retries transient provider failures such as HTTP 429 within the same session using one bounded exponential-backoff layer. GPT waits 6s, 12s, 24s, and 48s; Nemotron waits 9s, 18s, 36s, and 72s so parallel lanes do not retry in lockstep. The workflow still publishes the primary comment and lane artifacts after an incomplete analysis. An incomplete primary review fails its outcome step; the artifact-only evaluation lane does not affect the workflow result.
-13. Validates and repairs the draft synthesis in the final turn of the same session. If that turn fails or emits malformed output, the runner preserves a schema-valid canonical draft with a limitation; a post-validation ledger mismatch still fails closed.
-14. Writes artifacts under the model-specific artifact directory, for example `artifacts/pr-review-advisor/` and `artifacts/pr-review-advisor-nemotron-ultra/`.
-15. Uploads each lane's artifacts from the read-only analysis job. A separate publisher job receives no model credential or untrusted worktree, validates the primary artifact and live PR head/base, then posts or updates one combined sticky PR comment marked by `<!-- nemoclaw-pr-review-advisor -->`. The evaluation lane does not publish another review. Previous sticky-comment ingestion is disabled for both lanes.
-
-The ordered stage array in `buildPromptTurns` is the source of truth for stage order, evidence, and
-prompt text. Runtime numbering and prompt artifact names derive from that array, so adding or
-reordering a stage does not require parallel orchestration changes.
-
-Provider failures and timeouts settle the active turn before the analysis fails, so its status and
-partial response remain available beside the raw transcript. Turn-artifact persistence failures are
-also fatal. A finding mismatch after same-session synthesis validation is fatal as well. Fatal runs remain
-visibly incomplete, but their final-result artifact preserves any open canonical findings committed
-before the failure so later runs and reviewers do not lose substantive review history.
-
-The workflow is advisory and must not be configured as an E2E-required status check. Its combined
-comment lists trusted E2E recommendations, but does not dispatch or report pass/fail for E2E jobs.
-Model availability must not become the authority
-for whether a pull request can merge.
-For PRs from this repository, the PR E2E controller separately rebuilds the plan from GitHub's
-changed-file list and dispatches every selected job after `CI / Pull Request` completes. `E2E / PR
-Gate` does not consume advisor output.
-
-Required-check status is point-in-time context, not a settled-CI gate. Earlier
-`PR_REVIEW_ADVISOR_WAIT_*` workflow variables were inert and have been removed; any future waiting
-behavior must be implemented and tested before the workflow claims to provide it.
-
-## Author and agent follow-up
-
-Authors and coding agents should follow the shared [PR CI and Review Follow-Up](../../.agents/skills/_shared/pr-follow-up.md) workflow after opening a PR or pushing follow-up commits. If SSH, authentication, remote access, authorization, or permission problems prevent reading comments or pushing fixes, follow [Git and GitHub Access Hard Stop](../../.agents/skills/_shared/git-github-hard-stop.md).
-
-## Safety model
-
-- Static analysis only.
-- PR-provided scripts, tests, package lifecycle hooks, and build tools are never executed.
-- The advisor receives repo-confined read-only repository tools plus deterministic context tools. Repository paths must remain inside the checked-out analysis workspace after lexical and symlink resolution. Its only mutation tool updates the in-memory finding ledger; it cannot change repository or GitHub state.
-- PR bodies, comments, titles, branch names, and diffs are treated as untrusted evidence, never as instructions.
-- Manual target analysis validates the repository token, decimal PR number, and base-ref token before running any `git` command.
-- Generated advisor credential config is written under `/tmp`, not uploaded artifacts.
-- The analysis job is limited to `NVIDIA/NemoClaw`, has read-only GitHub permissions, and is the only job that receives the model secret.
-- The analyzer collects deterministic GitHub context before model work, then removes GitHub tokens from the process environment.
-  After registering the model credential in the in-memory SDK auth store, it also removes that credential from the process environment before model turns begin.
-- The separate publisher has pull-request write permission, but receives neither the model secret nor the untrusted PR worktree. It accepts only the bounded primary artifact from the same workflow run and rechecks the live PR head and base before commenting. Before rendering E2E guidance, it independently allowlists coverage IDs and selector tuples and ignores artifact-authored E2E prose. A newly added credential-free test can extend the job allowlist only through trusted-normalizer evidence bound to the same head SHA, changed-file path, and basename-derived selector ID.
-- Sticky publication updates only a marker-bearing comment owned by `github-actions[bot]`; a user-authored marker cannot claim the update target.
-  The rendered comment preserves its hidden identity metadata while enforcing a 60 KiB UTF-8 limit, and publication errors remain visible in the publisher logs.
-- The workflow posts advisory comments only; it does not approve, request changes, merge, push, label, or dispatch E2E.
-- Previous sticky-comment ingestion is disabled because issue comments are mutable and GitHub does not expose a durable comment-to-workflow ownership binding. Any future follow-up context must come from a verified immutable run artifact rather than comment metadata.
-- During rollout, non-default advisor lanes may see an older trusted `main` checkout that has the workflow matrix but not the matching model support. The workflow treats that as trusted-main rollout skew and writes low-confidence skip artifacts in the lane-specific artifact directory. Do not run PR-controlled advisor code to bypass this gate; remove the gate only after the trusted `main` implementation always supports the parallel advisor lane.
-- The checked-in risk plan is deterministic and additive. PR Review Advisor reviews every listed
-  invariant and required job for missing evidence. The trusted E2E normalizer restores any listed
-  job that the model omits or downgrades. The PR E2E controller separately dispatches every listed
-  job without consuming the advisor's normalized result.
-
-## Required secret
-
-Configure this repository secret for review analysis:
-
-- `PR_REVIEW_ADVISOR_API_KEY`
-
-The analyzer uses the OpenAI-compatible `https://inference-api.nvidia.com/v1` service.
-The primary lane uses `azure/openai/gpt-5.6-terra`; the parallel Nemotron lane sets
-`PR_REVIEW_ADVISOR_MODEL=nvidia/nvidia/nemotron-3-ultra` and reuses the same analyzer,
-prompts, schema, safety boundary, and credential secret.
-
-If advisor credentials are unavailable, the advisor writes a low-confidence unavailable result
-instead of failing closed without artifacts.
-
-## Artifacts
-
-- `prompts/00-system.md` — system prompt sent to the advisor.
-- `prompts/01-scope-risk-map-analysis.md` through `prompts/14-validate-synthesis-json.md` — six alternating analysis/commit pairs followed by draft and validation synthesis turns in the same session, in execution order.
-- `prompts/*.tool-results/` — bounded deterministic, domain-specific context payloads exposed as real tools after the matching user turn. The untrusted truncated diff appears only in the first turn, and repeated risk-plan projections use capped path samples.
-- `turns/01-scope-risk-map-analysis.txt` through `turns/14-validate-synthesis-json.txt` — assistant output and completed/failed/timed-out status written as each turn settles.
-- `context/drift-context.json` — deterministic drift and overlap context.
-- `context/security-context.json` — deterministic security-risk context and the risk plan for the
-  PR head commit.
-- `context/validation-context.json` — deterministic acceptance, source-of-truth, static
-  test-inventory, simplification-signal, and risk plan for the PR head commit, including the
-  regression invariants reviewed for the PR.
-- `context/pr.diff` — truncated PR diff used by the advisor.
-- `pr-review-advisor-raw-output.txt` — raw multi-turn advisor transcript and diagnostics.
-- `pr-review-advisor-result.json` — normalized advisor result with findings projected from the canonical open ledger records, or execution metadata when analysis is unavailable.
-- `pr-review-advisor-final-result.json` — normalized canonical result used for comments.
-- `pr-review-advisor-finding-ledger.json` — all open, resolved, and superseded finding records with stable IDs and reasoned transition history, refreshed after every settled turn.
-- `pr-review-advisor-summary.md` — markdown summary used in the job summary.
-- `pr-review-advisor-detailed-review.md` — expanded acceptance, security, and source-of-truth review details.
-- `pr-review-advisor-session.html` — exported advisor session transcript showing each user instruction before its context tools, the visible stage analysis before its ledger update, and the final read-only ledger synthesis.
-
-The parallel Nemotron Ultra lane writes the same filenames under
-`artifacts/pr-review-advisor-nemotron-ultra/` and uploads them as the
-`pr-review-advisor-nemotron-ultra` artifact.
-
-## Manual run
-
-```bash
-node --experimental-strip-types tools/pr-review-advisor/analyze.mts \
-  --base origin/main \
-  --head HEAD \
-  --schema tools/pr-review-advisor/schema.json \
-  --out-dir artifacts/pr-review-advisor
-```
-
-Set `PR_REVIEW_ADVISOR_API_KEY` locally, or configure the repository
-`PR_REVIEW_ADVISOR_API_KEY` secret. Add `PR_REVIEW_ADVISOR_MODEL=nvidia/nvidia/nemotron-3-ultra`
-to exercise the Nemotron Ultra lane locally. Run `npm install` first so the Pi SDK dependency is
-available.
-
-## Output contract
-
-`tools/pr-review-advisor/schema.json` defines the normalized JSON result shape used for the PR
-comment and future reporting work. Findings include probe-shaped fields for impact, verification
-hints, and missing regression-test guidance so agents know what to check rather than treating findings
-as generic commentary. Every source-of-truth review item includes a `findingId`: unresolved items
-reference their covering open ledger finding, while satisfied and not-applicable items use `null`.
-Every result also includes nested `e2e.coverage` and `e2e.targets` guidance. The fields stay
-separate in JSON, but comments and summaries combine their IDs into one `Recommended E2E` list and
-one optional list. Duplicate IDs appear once. If a list is longer than the display limit, the output
-reports how many more IDs exist. The trusted normalizer
-restores deterministic requirements before model selections, retains only allowlisted coverage IDs
-and supported selector tuples, and replaces model-authored reasons with trusted
-reasons. It discards free-form E2E domains, new-test recommendations, and no-selection explanations.
-For a changed credential-free test, the normalizer also records structured head evidence only
-after the trusted module-tag parser accepts the source; model-provided evidence is overwritten. The
-trusted publisher independently repeats the ID and tuple checks, verifies that evidence against the
-result head and changed-file identity, and renders only trusted IDs.
-The compatibility schema retains `requiredTests` and `targets.required`, but those names describe
-the normalized advisory tier, not merge requirements. Rendered comments label them as recommended;
-the independent PR E2E controller does not consume advisor output.
-Findings can also include safe simplification metadata with delete, stdlib,
-native, YAGNI, or shrink tags; those suggestions must keep validation, security, data-loss prevention,
-and required tests intact. Only blockers set a blocking advisory recommendation; results without
-blockers are info-only unless superseded. That recommendation is review input, never merge
-authorization. Warnings do not block. Suggestions do not require a response. Every result includes
-limitations and requires maintainer review.
-
-
-
-========================================
-[FILE: .\README.md]
-========================================
-
-<!--
-  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-  SPDX-License-Identifier: Apache-2.0
--->
-
-# NVIDIA NemoClaw: Reference Stack for Sandboxed AI Agents in OpenShell
-
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue)](https://github.com/NVIDIA/NemoClaw/blob/main/LICENSE)
-[![Security Policy](https://img.shields.io/badge/Security-Report%20a%20Vulnerability-red)](https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md)
-[![Discord](https://img.shields.io/badge/Discord-Join-7289da)](https://discord.gg/XFpfPv9Uvx)
-
-NVIDIA NemoClaw is an open source reference stack for running always-on AI agents more safely inside [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes.
-It provides guided onboarding, a hardened blueprint, routed inference, network policy, and lifecycle management through a single CLI.
-
-**Supported agents:**
-
-- [OpenClaw](https://openclaw.ai) (default)
-- [Hermes](https://get-hermes.ai/)
-- [LangChain Deep Agents Code](https://docs.langchain.com/oss/python/deepagents/code/overview)
-
-For capabilities, architecture, security controls, and the full feature list, see the [NemoClaw documentation](https://docs.nvidia.com/nemoclaw/latest/).
-
-## Get Started
-
-### Start with Your Coding Agent
-
-Use the starter prompt when you want Cursor, Claude Code, Codex, Copilot, or another local coding agent to install NemoClaw with you.
-
-**[Copy the NemoClaw starter prompt](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/home.html#from-your-coding-agent)**.
-
-The prompt tells your agent to use NemoClaw docs and skills, ask one question at a time, run commands only with your approval, and keep secrets out of chat.
-
-### Install Using the Interactive Installer in Your Terminal
-
-Review [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html) before installing.
-For Hermes, set `NEMOCLAW_AGENT=hermes` before running the installer, or use the `nemohermes` alias after install.
-When connecting to a Hermes sandbox from a light terminal, NemoClaw may install a managed `nemoclaw-light` Hermes skin for readable assistant text; it removes that managed skin state again when the terminal no longer needs it and preserves any user-selected Hermes skin.
-
-| Agent | Guide |
-|-------|-------|
-| OpenClaw (default) | [Quickstart with OpenClaw](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart.html) |
-| Hermes | [Quickstart with Hermes](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart-hermes.html) |
-| LangChain Deep Agents Code | [Quickstart with LangChain Deep Agents Code](https://docs.nvidia.com/nemoclaw/latest/user-guide/deepagents/get-started/quickstart.html) |
-
-## Documentation
-
-Refer to the following pages on the official documentation website for more information on NemoClaw.
-
-| Page | Description |
-|------|-------------|
-| [Overview](https://docs.nvidia.com/nemoclaw/latest/about/overview.html) | What NemoClaw does and how it fits together. |
-| [Architecture Overview](https://docs.nvidia.com/nemoclaw/latest/about/how-it-works.html) | High-level overview of Plugin, blueprint, sandbox lifecycle, and protection layers. |
-| [Ecosystem](https://docs.nvidia.com/nemoclaw/latest/about/ecosystem.html) | How OpenClaw, OpenShell, and NemoClaw form a stack and when to use NemoClaw versus OpenShell alone. |
-| [Architecture Details](https://docs.nvidia.com/nemoclaw/latest/reference/architecture.html) | Detailed description of Plugin structure, blueprint lifecycle, sandbox environment, and host-side state. |
-| [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html) | Hardware, software, and supported platforms, with any platform-specific pre-setup. |
-| [Choose an Inference Provider](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/inference/learn-and-choose/choose-inference-provider) | Supported providers, validation, and routed inference configuration. |
-| [Network Policies](https://docs.nvidia.com/nemoclaw/latest/reference/network-policies.html) | Baseline rules, operator approval flow, and egress control. |
-| [Customize Network Policy](https://docs.nvidia.com/nemoclaw/latest/network-policy/customize-network-policy.html) | Static and dynamic policy changes, presets. |
-| [Security Best Practices](https://docs.nvidia.com/nemoclaw/latest/security/best-practices.html) | Controls reference, risk framework, and posture profiles for sandbox security. |
-| [Sandbox Hardening](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/manage-sandboxes/configure-sandboxes/review-sandbox-hardening) | Container security measures, capability drops, process limits. |
-| [CLI Commands](https://docs.nvidia.com/nemoclaw/latest/reference/commands.html) | Full NemoClaw CLI command reference. |
-| [Troubleshooting](https://docs.nvidia.com/nemoclaw/latest/reference/troubleshooting.html) | Common issues and resolution steps. |
-
-## Community
-
-Join the NemoClaw community to ask questions, share feedback, and report issues.
-NemoClaw is an alpha project, so maintainers review issues, discussions, and pull requests on a best effort basis without guaranteed response timelines.
-
-| Need | Channel |
-|------|---------|
-| Setup or usage questions | [GitHub Discussions](https://github.com/NVIDIA/NemoClaw/discussions) or [Discord](https://discord.gg/XFpfPv9Uvx) |
-| Reproducible bugs | [GitHub Issues](https://github.com/NVIDIA/NemoClaw/issues) |
-| Feature proposals | Start with [GitHub Discussions](https://github.com/NVIDIA/NemoClaw/discussions), then open an issue when the scope is clear |
-| Current priorities | [Current Priorities](#current-priorities) |
-| Contribution help | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Security vulnerabilities | Use the private channels in [SECURITY.md](SECURITY.md); do not open public issues |
-
-## Contributing
-
-We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and the PR process.
-
-Prepare a source checkout without creating a runtime sandbox:
-
-```bash
-./scripts/dev-setup.sh
-```
-
-Or ask a compatible coding agent to use the repository's contributor-onboarding skill:
-
-> Set up this machine as a NemoClaw contributor and prepare it for a first PR.
-
-The contributor path is separate from the end-user installer above.
-The default and `--repair` modes change only repository-local dependencies, builds, and hooks.
-Use `./scripts/dev-setup.sh --expose-cli` only when you explicitly want a host-visible development CLI.
-Use `./scripts/dev-setup.sh --with-runtime` only when your change needs sandbox validation; that approved flow also opts into CLI exposure.
-
-## Security
-
-NVIDIA takes security seriously.
-If you discover a vulnerability in NemoClaw, **DO NOT open a public issue.**
-Use one of the private reporting channels described in [SECURITY.md](SECURITY.md):
-
-- Submit a report through the [NVIDIA Vulnerability Disclosure Program](https://www.nvidia.com/en-us/security/report-vulnerability/).
-- Send an email to [psirt@nvidia.com](mailto:psirt@nvidia.com) encrypted with the [NVIDIA PGP key](https://www.nvidia.com/en-us/security/pgp-key).
-- Use [GitHub's private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configuring-private-vulnerability-reporting-for-a-repository) to submit a report directly on this repository.
-
-For security bulletins and PSIRT policies, visit the [NVIDIA Product Security](https://www.nvidia.com/en-us/security/) portal.
-
-## Current Priorities
-
-NemoClaw's current priorities are maintained here as a public orientation point for contributors and community members.
-This list is not a delivery commitment, support promise, or fixed roadmap; priorities can change as maintainers respond to security, quality, platform readiness, and community feedback.
-
-- Improve install and onboarding reliability across tested platforms.
-- Strengthen sandbox hardening, credential handling, and network-policy defaults.
-- Validate local and routed inference behavior for supported provider paths.
-- Keep documentation, troubleshooting guidance, and agent skills aligned with supported workflows.
-
-For specific scoped work, use [GitHub Issues](https://github.com/NVIDIA/NemoClaw/issues) and start broader proposals in [GitHub Discussions](https://github.com/NVIDIA/NemoClaw/discussions).
-Security vulnerabilities must use the private reporting channels in [SECURITY.md](SECURITY.md), not public issues.
-
-## Notice and Disclaimer
-
-This software automatically retrieves, accesses or interacts with external materials. Those retrieved materials are not distributed with this software and are governed solely by separate terms, conditions and licenses. You are solely responsible for finding, reviewing and complying with all applicable terms, conditions, and licenses, and for verifying the security, integrity and suitability of any retrieved materials for your specific use case. This software is provided "AS IS", without warranty of any kind. The author makes no representations or warranties regarding any retrieved materials, and assumes no liability for any losses, damages, liabilities or legal consequences from your use or inability to use this software or any retrieved materials. Use this software and the retrieved materials at your own risk.
-
-## License
-
-Apache 2.0. See [LICENSE](LICENSE).
-

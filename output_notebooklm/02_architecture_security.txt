@@ -1,7 +1,85 @@
-﻿
+
 
 ========================================
-[FILE: .\docs\about\ecosystem-deepagents.mdx]
+[FILE: SECURITY.md]
+========================================
+
+<!-- markdownlint-disable MD041 -->
+## Security
+
+NVIDIA is dedicated to the security and trust of its software products and services, including all source code repositories managed through our organization.
+
+If you need to report a security issue, use the appropriate contact points outlined below.
+**DO NOT report security vulnerabilities through public GitHub issues or pull requests.**
+If a potential security issue is inadvertently reported through a public channel, NVIDIA maintainers may limit public discussion and redirect the reporter to the appropriate private disclosure channels.
+
+## How to Report a Vulnerability
+
+Report a potential security vulnerability in NemoClaw or any NVIDIA product through one of the following channels.
+
+### NVIDIA Vulnerability Disclosure Program
+
+Submit a report through the [NVIDIA Vulnerability Disclosure Program](https://www.nvidia.com/en-us/security/report-vulnerability/).
+This is the preferred method for reporting security concerns across all NVIDIA products.
+
+### Email
+
+Send an encrypted email to [psirt@nvidia.com](mailto:psirt@nvidia.com).
+Use the [NVIDIA public PGP key](https://www.nvidia.com/en-us/security/pgp-key) to encrypt the message.
+
+### GitHub Private Vulnerability Reporting
+
+You can use [GitHub's private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configuring-private-vulnerability-reporting-for-a-repository) to submit a report directly on this repository.
+Navigate to the **Security** tab and select **Report a vulnerability**.
+
+## What to Include
+
+Provide as much of the following information as possible:
+
+- Product name and version or branch that contains the vulnerability.
+- Type of vulnerability (code execution, denial of service, buffer overflow, privilege escalation, etc.).
+- Step-by-step instructions to reproduce the vulnerability.
+- Proof-of-concept or exploit code.
+- Potential impact, including how an attacker could exploit the vulnerability.
+
+Detailed reports help NVIDIA evaluate and address issues faster.
+
+## What to Expect
+
+NVIDIA's Product Security Incident Response Team (PSIRT) triages all incoming reports.
+After submission:
+
+1. NVIDIA acknowledges receipt and begins analysis.
+2. NVIDIA validates the report and determines severity.
+3. NVIDIA develops and tests corrective actions.
+4. NVIDIA publishes a security bulletin and releases a fix.
+
+Visit the [PSIRT Policies](https://www.nvidia.com/en-us/security/) page for details on timelines and acknowledgement practices.
+
+While NVIDIA does not currently have a public bug bounty program, we do offer acknowledgement when an externally reported security issue is addressed under our coordinated vulnerability disclosure policy.
+
+## NVIDIA Product Security
+
+For security bulletins, PSIRT policies, and all security-related concerns, visit the [NVIDIA Product Security](https://www.nvidia.com/en-us/security/) portal.
+Subscribe to notifications on that page to receive alerts when new bulletins are published.
+
+## Documented Risk Acceptances
+
+The following security-relevant defaults are intentional. Each item names the code path that carries the constraint and the compensating controls that make the trade-off acceptable.
+
+### Deep Agents Code proxy env file is world-readable (mode `0444`)
+
+- **Location:** [`agents/langchain-deepagents-code/start.sh`](agents/langchain-deepagents-code/start.sh) (`prepare_runtime_env`)
+- **Constraint:** `/tmp/nemoclaw-proxy-env.sh` is sandbox-user-owned convenience state, not an integrity boundary. It is created with mode `0444` so independent login and exec shells can source the same credential-free settings. The Deep Agents Code runtime deliberately runs as the non-root sandbox user, unlike the root-supervised OpenClaw and Hermes startup paths.
+- **Compensating controls:**
+  1. The file is credential-free by construction. `prepare_runtime_env` writes normalized proxy config and inherited trust-store paths. It does not persist LangSmith tracing, project, or API key variables.
+  2. A regression test in [`test/langchain-deepagents-code-image.test.ts`](test/langchain-deepagents-code-image.test.ts) injects token-shaped values through LangSmith tracing and both project variables, scans the emitted env file against canonical token shapes, and fails CI if any secret-shaped value is present.
+  3. The root-owned, image-baked proxy host/port files and direct `dcode-launcher.sh` boundary remain the routing source of truth. Focused and live login-shell checks compare the sourced convenience values with that root-owned source; file metadata checks detect accidental drift but do not claim sandbox-owner tamper resistance.
+- **When to revisit:** If a future change adds credential-shaped values to the env-file writer, or if the Deep Agents Code runtime moves back to the root-supervised startup model, revisit the mode and the compensating controls together.
+
+
+========================================
+[FILE: docs/about/ecosystem-deepagents.mdx]
 ========================================
 
 ---
@@ -109,9 +187,8 @@ Use the following table to choose NemoClaw or custom OpenShell integration.
 - [Community Solutions](../resources/community-contributions) explains how to contribute community-driven examples, showcases, and complete blueprint patterns.
 
 
-
 ========================================
-[FILE: .\docs\about\ecosystem-hermes.mdx]
+[FILE: docs/about/ecosystem-hermes.mdx]
 ========================================
 
 ---
@@ -219,9 +296,8 @@ Use the following table to choose NemoHermes or OpenShell.
 - [Community Solutions](../resources/community-contributions) explains how to contribute community-driven examples, showcases, and complete blueprint patterns.
 
 
-
 ========================================
-[FILE: .\docs\about\ecosystem.mdx]
+[FILE: docs/about/ecosystem.mdx]
 ========================================
 
 ---
@@ -328,9 +404,8 @@ Use the following table to choose NemoClaw or OpenShell.
 - [Community Solutions](../resources/community-contributions) explains how to contribute community-driven examples, showcases, and complete blueprint patterns.
 
 
-
 ========================================
-[FILE: .\docs\about\how-it-works.mdx]
+[FILE: docs/about/how-it-works.mdx]
 ========================================
 
 ---
@@ -557,9 +632,8 @@ NemoClaw's runtime context tells supported agents to try allowed network and fil
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\about\overview.mdx]
+[FILE: docs/about/overview.mdx]
 ========================================
 
 ---
@@ -684,9 +758,8 @@ Use these topics to learn more about NemoClaw and how to install and use it.
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\network-policy\approve-network-requests.mdx]
+[FILE: docs/network-policy/approve-network-requests.mdx]
 ========================================
 
 ---
@@ -818,9 +891,8 @@ It attaches to an existing sandbox.
 - [Monitor Sandbox Activity](../monitoring/monitor-sandbox-activity) for general sandbox monitoring.
 
 
-
 ========================================
-[FILE: .\docs\network-policy\customize-network-policy.mdx]
+[FILE: docs/network-policy/customize-network-policy.mdx]
 ========================================
 
 ---
@@ -1308,9 +1380,8 @@ For `unsupported`, surface the limitation to the user without retrying.
 - OpenShell [Sandbox Policies](https://docs.nvidia.com/openshell/latest/sandboxes/policies.html) for applying, iterating, and debugging policies at the OpenShell layer.
 
 
-
 ========================================
-[FILE: .\docs\network-policy\integration-policy-examples.mdx]
+[FILE: docs/network-policy/integration-policy-examples.mdx]
 ========================================
 
 ---
@@ -1911,9 +1982,8 @@ Use `$$nemoclaw my-assistant policy-add` for maintained NemoClaw presets.
 - [Commands](../reference/commands) for the full `policy-get`, `policy-add`, `policy-list`, `policy-remove`, and `channels` command reference.
 
 
-
 ========================================
-[FILE: .\docs\reference\architecture.mdx]
+[FILE: docs/reference/architecture.mdx]
 ========================================
 
 ---
@@ -2264,9 +2334,8 @@ Do not treat `NEMOCLAW_DISABLE_DEVICE_AUTH` as a runtime setting for an already-
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\reference\cli-selection-guide.mdx]
+[FILE: docs/reference/cli-selection-guide.mdx]
 ========================================
 
 ---
@@ -2574,9 +2643,8 @@ Use `openshell sandbox upload` and `openshell sandbox download` for manual file 
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\reference\commands.mdx]
+[FILE: docs/reference/commands.mdx]
 ========================================
 
 ---
@@ -2992,6 +3060,7 @@ Three tiers are available:
 After selecting a tier, the wizard shows a combined preset and access-mode screen where you can include or exclude individual presets and toggle each between read and read-write access.
 For details on tiers and the presets each includes, refer to [Network Policies](network-policies#policy-tiers).
 When you finish the policy step, NemoClaw records the finalized built-in preset selection for that sandbox.
+When onboarding creates or recreates a sandbox with presets, NemoClaw prints the exact finalized create-time policy scope before registering providers or creating the sandbox.
 Later re-onboard runs seed from that finalized selection, so presets you intentionally removed stay removed unless you select them again or override the policy mode.
 
 In non-interactive mode, set the tier with `NEMOCLAW_POLICY_TIER` (default: `balanced`):
@@ -3402,7 +3471,7 @@ If only pending registrations remain, the command exits non-zero and tells you t
 If the registry remains empty after recovery, it tells you to run `$$nemoclaw onboard`.
 A registered sandbox literally named `connect` keeps the name-first reading.
 If the sandbox is not yet in the `Ready` phase, `connect` polls `openshell sandbox list` every few seconds and prints the current phase. This gives you progress output right after onboarding, when the 2.4 GB image is still pulling, instead of a silent hang.
-Control the wait budget with `NEMOCLAW_CONNECT_TIMEOUT` (integer seconds, default `120`). When the deadline expires, `connect` exits non-zero with the last-seen phase.
+Control the wait budget with `NEMOCLAW_CONNECT_TIMEOUT` in integer seconds. An interactive connection defaults to `120` seconds, while `--probe-only` defaults to `300` seconds so a scripted health check can wait through a cold sandbox start. When the deadline expires, `connect` exits non-zero with the last-seen phase.
 
 On a TTY, a one-shot hint prints before dropping into the sandbox shell.
 The hint is agent-aware. It names the correct TUI command for the sandbox's agent and reminds you to use `/exit` to leave the chat before `exit` returns you to the host shell.
@@ -3434,7 +3503,8 @@ $$nemoclaw my-assistant connect [--probe-only]
 $$nemoclaw connect
 ```
 
-The `--probe-only` flag verifies the sandbox is reachable over SSH and exits without opening a shell.
+The `--probe-only` flag waits for the sandbox to become ready, verifies or repairs its in-sandbox agent process and host-side forward, and exits without opening a shell.
+It rechecks the sandbox on its recorded OpenShell gateway after the readiness wait and never restarts the shared host gateway.
 Use it for health checks and scripted readiness probes.
 
 ### `$$nemoclaw <name> exec`
@@ -4220,6 +4290,8 @@ Do not pass `--raw` output to `openshell policy set` because the metadata header
 Add a policy preset to a sandbox.
 Presets extend the baseline network policy with additional endpoints.
 Before applying, the command shows which endpoints the preset would open and prompts for confirmation.
+The scope comes from the exact preset YAML and includes each endpoint's host, port, access, protocol, TLS, and enforcement settings, allowed methods and paths, and binary allowlist.
+When a lifecycle operation reapplies a preset, NemoClaw compares it with the live policy and reports whether the preset opens new egress, replaces a drifted entry, or is already effective with no new egress.
 
 ```bash
 $$nemoclaw my-assistant policy-add
@@ -4426,6 +4498,9 @@ The operation is idempotent.
 Channel names are trimmed and lowercased before NemoClaw stores credentials, names bridge providers, or prints rebuild messages.
 NemoClaw requires the matching built-in network policy preset YAML to be present.
 A missing or malformed preset YAML (no `network_policies:` section) aborts `channels add` before any token prompt, registry write, or rebuild prompt.
+After validating that preset, NemoClaw discloses its effect before prompting for credentials or changing gateway or registry state.
+It prints the exact effective egress scope when the preset would open or replace access, or reports that no new egress would be opened when the preset is already effective.
+The `--dry-run` path prints the same disclosure without collecting credentials or applying changes.
 With the preset file in place, NemoClaw applies it to the sandbox before the rebuild so the bridge has egress to its upstream API.
 When the apply step itself fails after the registry write on a fresh add, NemoClaw attempts to roll back the bridge providers, the `messagingChannels` entry, and any staged environment credentials, then exits without prompting for a rebuild; if any gateway-side step (provider detach or delete) fails the rollback continues and prints a `Rollback could not fully clean <surfaces>` warning so the operator can clean up manually.
 When the same failure happens on a re-add of an already-enabled channel, NemoClaw restores the prior `messagingChannels` entry, restores staged environment credentials when available, restores registry credential hashes, and attempts to re-upsert the prior bridge providers, but flags `gateway-providers` as residual because the in-flight upsert may have left the gateway with the new token; verify the gateway bridge before relying on the channel.
@@ -4497,6 +4572,7 @@ Use `channels stop` instead of `channels remove` when you want to pause a bridge
 
 Re-enable a channel previously paused with `channels stop`. The channel is removed from the disabled list, the sandbox is rebuilt, and the bridge registers with the gateway again using the stored credentials.
 Before the rebuild, NemoClaw reapplies the matching built-in network policy preset so the restored bridge has egress to its upstream API.
+Before updating the disabled list or applying the policy, NemoClaw prints the exact effective egress scope when the preset would open or replace access, or reports that no new egress would be opened when the preset is already effective.
 If policy restoration fails, NemoClaw rolls the channel back to disabled and exits without rebuilding into a partially active state.
 
 ```bash
@@ -5040,6 +5116,7 @@ Upgrade a sandbox to the current agent version while preserving workspace state.
 The command backs up workspace state, destroys the old sandbox (including its host-side Docker image), recreates it with the current image via `onboard --resume`, and restores workspace state into the new sandbox.
 Credentials are stripped from backups before storage.
 Policy presets applied to the old sandbox are reapplied to the new one so your egress rules survive the rebuild.
+Before creating the replacement sandbox, NemoClaw prints the finalized create-time policy scope whenever presets are included.
 The replacement uses the recorded compatible-endpoint reasoning mode and web search selection instead of ambient shell values.
 Rebuild preserves the recorded sandbox GPU enablement mode and, for an explicitly enabled sandbox, its recorded device selector.
 It re-resolves the Docker-driver GPU route from the current host and current `NEMOCLAW_DOCKER_GPU_PATCH` value, so native-only, explicitly authorized native-with-fallback, and compatibility-only routing may differ from the original onboarding run.
@@ -5654,6 +5731,9 @@ Earlier releases only stopped `openshell forward` processes, so those orphans ac
 
 For Local Ollama setups, uninstall also stops matching Ollama auth proxy processes before deleting `~/.nemoclaw` state so stale proxy listeners do not block a later reinstall.
 
+For Hermes setups, uninstall inspects the selected gateway's managed port-forward watcher state, stops each verified watcher process and its sandbox-scoped forward, and leaves sibling gateway state untouched.
+If any watcher or forward cleanup cannot be confirmed, uninstall exits nonzero and preserves the selected gateway's watcher state so you can retry cleanup.
+
 On Linux, uninstall removes `~/.local/state/nemoclaw`, which contains Docker-driver gateway SQLite data, audit logs, VM-driver state, and standalone-fallback gateway PID files.
 
 | Flag | Effect |
@@ -6226,9 +6306,8 @@ $$nemoclaw setup
 ```
 
 
-
 ========================================
-[FILE: .\docs\reference\enterprise-readiness.mdx]
+[FILE: docs/reference/enterprise-readiness.mdx]
 ========================================
 
 ---
@@ -6381,9 +6460,8 @@ This guidance must stay accurate for the duration of the evaluation window.
 - [How It Works](../about/how-it-works) for the protection-layer architecture.
 
 
-
 ========================================
-[FILE: .\docs\reference\extension-taxonomy-sdk-readiness.mdx]
+[FILE: docs/reference/extension-taxonomy-sdk-readiness.mdx]
 ========================================
 
 ---
@@ -6504,9 +6582,8 @@ It does not accept arbitrary external modules or change the support boundary for
 - [Network Policies](network-policies) explains the policy boundary for sandbox egress.
 
 
-
 ========================================
-[FILE: .\docs\reference\host-files-and-state.mdx]
+[FILE: docs/reference/host-files-and-state.mdx]
 ========================================
 
 ---
@@ -6605,9 +6682,8 @@ For operational uninstall steps, refer to:
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\reference\network-policies.mdx]
+[FILE: docs/reference/network-policies.mdx]
 ========================================
 
 ---
@@ -6904,9 +6980,8 @@ openshell policy set --policy current-policy.yaml --wait <sandbox-name>
 ```
 
 
-
 ========================================
-[FILE: .\docs\reference\platform-support.mdx]
+[FILE: docs/reference/platform-support.mdx]
 ========================================
 
 ---
@@ -7105,9 +7180,8 @@ They are listed here so launch material, sales conversations, and support triage
 4. The `platform-matrix-sync` pre-commit hook regenerates and stages the rendered tables before the commit lands; run `python3 scripts/generate-platform-docs.py --check` to verify drift without regenerating.
 
 
-
 ========================================
-[FILE: .\docs\reference\troubleshoot-mcp-servers.mdx]
+[FILE: docs/reference/troubleshoot-mcp-servers.mdx]
 ========================================
 
 ---
@@ -7227,9 +7301,8 @@ Resolve a live or ambiguous owner on the host that owns it, and do not delete th
 - [About Managed MCP Servers](../manage-sandboxes/mcp-servers/about-managed-mcp-servers) for the accepted security boundary.
 
 
-
 ========================================
-[FILE: .\docs\reference\troubleshooting.mdx]
+[FILE: docs/reference/troubleshooting.mdx]
 ========================================
 
 ---
@@ -10062,9 +10135,8 @@ nemohermes onboard --resume --non-interactive
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\security\best-practices.mdx]
+[FILE: docs/security/best-practices.mdx]
 ========================================
 
 ---
@@ -11006,9 +11078,8 @@ The following patterns weaken security without providing meaningful benefit.
 - OpenShell [Security Best Practices](https://docs.nvidia.com/openshell/latest/security/best-practices.html) for the platform-level controls reference, including network namespace isolation, seccomp filters, SSRF protection, TLS termination, and gateway authentication.
 
 
-
 ========================================
-[FILE: .\docs\security\configure-corporate-ca-trust.mdx]
+[FILE: docs/security/configure-corporate-ca-trust.mdx]
 ========================================
 
 ---
@@ -11108,9 +11179,8 @@ Set `NEMOCLAW_CORPORATE_CA_IMPORT=0` to disable corporate CA import entirely.
 - [Credential Storage](credential-storage) for the OpenShell provider credential boundary.
 
 
-
 ========================================
-[FILE: .\docs\security\credential-rotation.mdx]
+[FILE: docs/security/credential-rotation.mdx]
 ========================================
 
 ---
@@ -11352,9 +11422,8 @@ To verify web search, ask the agent to perform a search and confirm that the too
 - [Switch Inference Providers](../inference/manage-inference/switch-providers): change the inference provider rather than rotate its key.
 
 
-
 ========================================
-[FILE: .\docs\security\credential-storage.mdx]
+[FILE: docs/security/credential-storage.mdx]
 ========================================
 
 ---
@@ -11570,9 +11639,8 @@ For the broader sandbox security model and operational trade-offs, refer to [Sec
 </AgentOnly>
 
 
-
 ========================================
-[FILE: .\docs\security\e2e-weather-plugin-fixture-dependency-review.md]
+[FILE: docs/security/e2e-weather-plugin-fixture-dependency-review.md]
 ========================================
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
@@ -11637,9 +11705,8 @@ Rerun it whenever `package.json` or `package-lock.json` changes and again before
 Remove this waiver when the fixture is deleted or when repository-wide automated dependency review explicitly covers E2E fixture lockfiles while preserving the release-matched OpenClaw pin.
 
 
-
 ========================================
-[FILE: .\docs\security\openclaw-2026.6.10-dependency-review.md]
+[FILE: docs/security/openclaw-2026.6.10-dependency-review.md]
 ========================================
 
 # OpenClaw 2026.6.10 Dependency Review
@@ -11943,9 +12010,8 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
 - The integrity pin, messaging render-safety, and provider-recovery follow-ups are covered by the integrity-pin suites, `test/messaging-build-applier-render-safety.test.ts`, and `test/onboard-resume-provider-recovery.test.ts`.
 
 
-
 ========================================
-[FILE: .\docs\security\openclaw-controls.mdx]
+[FILE: docs/security/openclaw-controls.mdx]
 ========================================
 
 ---
@@ -12078,9 +12144,8 @@ The implementation detects unsafe nested quantifiers, bounds input length, and c
 - [Credential Storage](credential-storage) for how NemoClaw stores and protects provider credentials.
 
 
-
 ========================================
-[FILE: .\docs\security\openshell-0.0.71-gateway-auth-review.mdx]
+[FILE: docs/security/openshell-0.0.71-gateway-auth-review.mdx]
 ========================================
 
 ---
@@ -12218,9 +12283,8 @@ Local run against `NVIDIA/OpenShell@v0.0.71`:
 - `src/lib/onboard/docker-driver-gateway-local-tls.test.ts` verifies NemoClaw invokes OpenShell cert generation into the NemoClaw-owned gateway TLS directory with `host.openshell.internal` in the server SAN set, regenerates expired/not-yet-valid bundles outside the fixed skew window, and reuses bundles exactly at the 5-minute not-before/not-after skew boundaries.
 
 
-
 ========================================
-[FILE: .\docs\security\openshell-0.0.72-compatibility-review.mdx]
+[FILE: docs/security/openshell-0.0.72-compatibility-review.mdx]
 ========================================
 
 ---
@@ -12338,9 +12402,8 @@ The scenario requires an OpenShell HTTP 403 or CONNECT 403 for every adapter and
 - The live MCP matrix proves DNS rebinding denial with zero upstream requests for OpenClaw, Hermes, and LangChain Deep Agents Code.
 
 
-
 ========================================
-[FILE: .\docs\security\openshell-0.0.85-migration-review.md]
+[FILE: docs/security/openshell-0.0.85-migration-review.md]
 ========================================
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
@@ -13160,9 +13223,8 @@ restart/rebuild, and cleanup without a conditional skip or expected failure.
    issue.
 
 
-
 ========================================
-[FILE: .\docs\security\tcb-boundary.mdx]
+[FILE: docs/security/tcb-boundary.mdx]
 ========================================
 
 ---
@@ -13303,83 +13365,3 @@ The following conditions govern current compatibility code and architecture work
 
 Final-image validation must cover both built-in images.
 It checks helper owners and modes, root and gateway supplementary groups, root execution of the read-only `probe` path, and refusal before helper entry when the sandbox user attempts execution.
-
-
-
-========================================
-[FILE: .\SECURITY.md]
-========================================
-
-<!-- markdownlint-disable MD041 -->
-## Security
-
-NVIDIA is dedicated to the security and trust of its software products and services, including all source code repositories managed through our organization.
-
-If you need to report a security issue, use the appropriate contact points outlined below.
-**DO NOT report security vulnerabilities through public GitHub issues or pull requests.**
-If a potential security issue is inadvertently reported through a public channel, NVIDIA maintainers may limit public discussion and redirect the reporter to the appropriate private disclosure channels.
-
-## How to Report a Vulnerability
-
-Report a potential security vulnerability in NemoClaw or any NVIDIA product through one of the following channels.
-
-### NVIDIA Vulnerability Disclosure Program
-
-Submit a report through the [NVIDIA Vulnerability Disclosure Program](https://www.nvidia.com/en-us/security/report-vulnerability/).
-This is the preferred method for reporting security concerns across all NVIDIA products.
-
-### Email
-
-Send an encrypted email to [psirt@nvidia.com](mailto:psirt@nvidia.com).
-Use the [NVIDIA public PGP key](https://www.nvidia.com/en-us/security/pgp-key) to encrypt the message.
-
-### GitHub Private Vulnerability Reporting
-
-You can use [GitHub's private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configuring-private-vulnerability-reporting-for-a-repository) to submit a report directly on this repository.
-Navigate to the **Security** tab and select **Report a vulnerability**.
-
-## What to Include
-
-Provide as much of the following information as possible:
-
-- Product name and version or branch that contains the vulnerability.
-- Type of vulnerability (code execution, denial of service, buffer overflow, privilege escalation, etc.).
-- Step-by-step instructions to reproduce the vulnerability.
-- Proof-of-concept or exploit code.
-- Potential impact, including how an attacker could exploit the vulnerability.
-
-Detailed reports help NVIDIA evaluate and address issues faster.
-
-## What to Expect
-
-NVIDIA's Product Security Incident Response Team (PSIRT) triages all incoming reports.
-After submission:
-
-1. NVIDIA acknowledges receipt and begins analysis.
-2. NVIDIA validates the report and determines severity.
-3. NVIDIA develops and tests corrective actions.
-4. NVIDIA publishes a security bulletin and releases a fix.
-
-Visit the [PSIRT Policies](https://www.nvidia.com/en-us/security/) page for details on timelines and acknowledgement practices.
-
-While NVIDIA does not currently have a public bug bounty program, we do offer acknowledgement when an externally reported security issue is addressed under our coordinated vulnerability disclosure policy.
-
-## NVIDIA Product Security
-
-For security bulletins, PSIRT policies, and all security-related concerns, visit the [NVIDIA Product Security](https://www.nvidia.com/en-us/security/) portal.
-Subscribe to notifications on that page to receive alerts when new bulletins are published.
-
-## Documented Risk Acceptances
-
-The following security-relevant defaults are intentional. Each item names the code path that carries the constraint and the compensating controls that make the trade-off acceptable.
-
-### Deep Agents Code proxy env file is world-readable (mode `0444`)
-
-- **Location:** [`agents/langchain-deepagents-code/start.sh`](agents/langchain-deepagents-code/start.sh) (`prepare_runtime_env`)
-- **Constraint:** `/tmp/nemoclaw-proxy-env.sh` is sandbox-user-owned convenience state, not an integrity boundary. It is created with mode `0444` so independent login and exec shells can source the same credential-free settings. The Deep Agents Code runtime deliberately runs as the non-root sandbox user, unlike the root-supervised OpenClaw and Hermes startup paths.
-- **Compensating controls:**
-  1. The file is credential-free by construction. `prepare_runtime_env` writes normalized proxy config and inherited trust-store paths. It does not persist LangSmith tracing, project, or API key variables.
-  2. A regression test in [`test/langchain-deepagents-code-image.test.ts`](test/langchain-deepagents-code-image.test.ts) injects token-shaped values through LangSmith tracing and both project variables, scans the emitted env file against canonical token shapes, and fails CI if any secret-shaped value is present.
-  3. The root-owned, image-baked proxy host/port files and direct `dcode-launcher.sh` boundary remain the routing source of truth. Focused and live login-shell checks compare the sourced convenience values with that root-owned source; file metadata checks detect accidental drift but do not claim sandbox-owner tamper resistance.
-- **When to revisit:** If a future change adds credential-shaped values to the env-file writer, or if the Deep Agents Code runtime moves back to the root-supervised startup model, revisit the mode and the compensating controls together.
-

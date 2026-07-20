@@ -1,593 +1,7 @@
-﻿
-
-========================================
-[FILE: .\docs\AGENTS.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Documentation Agent Guide
-
-You are a documentation engineer and writer for NemoClaw user-facing docs.
-Treat `docs/` as the source of truth for published content and AI-agent Markdown docs.
-
-## Role
-
-- Write clear, accurate, task-oriented documentation for developers who run NemoClaw with OpenClaw, Hermes, LangChain Deep Agents Code, and OpenShell sandboxes.
-- Preserve the reader's workflow: explain what to do, when to do it, and how to verify it.
-- Prefer small, focused edits that match the structure of the current page.
-- Verify behavior against source code, tests, scripts, or existing docs before documenting it.
-
-## Before Editing
-
-- Read `docs/CONTRIBUTING.md` before changing documentation.
-- Check `docs/.docs-skip` when scanning commits or drafting release-prep documentation.
-- Read the full target page before editing it.
-- Map code changes to existing pages before proposing a new page.
-- Update `.agents/skills/nemoclaw-user-guide/SKILL.md` only when AI-agent docs routing guidance changes.
-
-## Writing Rules
-
-- Use active voice, second person, present tense, and direct language.
-- Keep one sentence per line in Markdown and MDX source files.
-- End every sentence with a period.
-- Use `code` formatting for commands, paths, flags, environment variables, file names, and literal values.
-- Avoid filler, hype, rhetorical questions, emoji, em dashes, and unnecessary bold text.
-- Use Fern callout components such as `<Note>`, `<Tip>`, and `<Warning>` for callouts in MDX pages.
-- Do not duplicate the page title as a body H1 because Fern renders the title from frontmatter.
-
-## NemoClaw Doc Patterns
-
-- Use `$$nemoclaw` for host CLI command examples on shared OpenClaw, Hermes, and Deep Agents pages.
-- Use literal command names on pages that have only one agent variant.
-- Use `<AgentOnly>` blocks only when content differs by behavior, setup flow, state layout, or agent-specific wording.
-- Treat `<AgentOnly>` as a non-nested build-time directive with opening and closing tags at the first column on their own lines; do not import a runtime component for it.
-- Use route-style links without `.mdx` extensions for links between docs pages.
-- Update `docs/index.yml` when navigation, slugs, or page placement changes.
-
-## Pre-Tag Changelog Entries
-
-- Every pre-tag release-note docs PR must create or update `docs/changelog/YYYY-MM-DD.mdx` for the planned `vX.Y.Z` release.
-- Keep dated entries directly under `docs/changelog/`.
-  If the planned date already has a file, add the new H2 version section with the newest version first.
-- Start a new dated file with the parser-safe MDX SPDX comment shown in `docs/CONTRIBUTING.md`, then add an exact H2 heading such as `## v0.0.83`.
-  Do not use an HTML comment for the SPDX header.
-- Keep the complete summary and detailed bullets in this one shared entry.
-  Do not create separate OpenClaw, Hermes, or Deep Agents release-note pages.
-- Use literal CLI names and root-absolute published routes in dated entries because changelog files do not pass through agent-variant generation.
-- Run `npx vitest run test/changelog-docs.test.ts` and `npm run docs` before opening the release-note docs PR.
-
-## Verification
-
-- Run `npm run docs:sync-agent-variants` after editing shared variant source pages or navigation.
-- Run `npm run docs` before opening a PR for docs or Fern changes.
-- For doc-only PRs, rely on normal `pre-commit`, `commit-msg`, and `pre-push` hooks when they pass.
-  If hooks were skipped or unavailable, refresh `origin/main` and run `npm run check:diff` once to reproduce those checks.
-- Leave the broad-gate verification item unchecked unless you actually ran the applicable command.
-
 
 
 ========================================
-[FILE: .\docs\CONTRIBUTING.md]
-========================================
-
-<!--
-  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-  SPDX-License-Identifier: Apache-2.0
--->
-
-# Contributing to NemoClaw Documentation
-
-This guide covers how to write, edit, and review documentation for NemoClaw. If you change code that affects user-facing behavior, update the relevant docs in the same PR.
-
-## When to Update Docs
-
-Update documentation when your change:
-
-- Adds, removes, or renames a CLI command or flag.
-- Changes default behavior or configuration.
-- Adds a new feature that users interact with.
-- Fixes a bug that the docs describe incorrectly.
-- Changes an API, protocol, or policy schema.
-
-## Confirm Product Scope Before Writing Docs
-
-Canonical documentation describes behavior that NemoClaw has chosen to support and maintain.
-A documentation PR must not establish a new supported integration, solution workflow, custom image, third-party stack, or product surface by itself.
-
-Technical correctness, successful builds, and working examples are necessary evidence, but they are not product approval.
-Before documenting a new surface, confirm that an accepted issue or design decision defines ownership, compatibility and upgrade expectations, security review, lifecycle support, and validation.
-
-Route independent solutions, complete use-case examples, and third-party integrations through [Community Solutions](resources/community-contributions.mdx).
-If the correct destination is unclear, request maintainer direction before drafting the page.
-
-## Update and Refactor Docs with Agent Skills
-
-If you use an AI coding agent (Cursor, Claude Code, Codex, etc.), the repo includes the `nemoclaw-contributor-update-docs` skill that automates doc work.
-Use it before writing from scratch.
-
-The skill scans recent commits for user-facing changes and drafts doc updates.
-Run it after landing features, before a release, or to find doc gaps.
-For example, ask your agent to "catch up the docs for the changes I made in this PR".
-During release prep, run the skill first, make any doc version bumps, then open the docs refresh PR.
-
-The skill lives in `.agents/skills/nemoclaw-contributor-update-docs/` and follows the style guide below automatically.
-
-Use the maintainer-owned `nemoclaw-maintainer-refactor-docs` skill when a page or section has grown too large, mixes several user tasks, or needs a nested TOC.
-Use it to inventory the existing content, organize topics around the user journey, keep foldable navigation groups non-clickable, assign one canonical owner per topic, and preserve Fern routes, redirects, and agent variants during the split.
-Find the skill in `.agents/skills/nemoclaw-maintainer-refactor-docs/`.
-
-## Markdown Docs for AI Agents
-
-The `docs/` directory is the source of truth for user-facing documentation.
-NemoClaw publishes Markdown versions of Fern pages plus `llms.txt`, so AI agents can fetch canonical documentation directly.
-
-The hand-written `nemoclaw-user-guide` skill only routes agents to the right Markdown docs.
-It must stay small and must not copy page content from `docs/`.
-
-Always make user-facing doc updates in `docs/`.
-Update `docs/resources/agent-skills.mdx` and `.agents/skills/nemoclaw-user-guide/SKILL.md` only when the AI-agent routing guidance changes.
-
-## Building Docs Locally
-
-Verify the docs are built correctly by building them and checking the output.
-
-The public site is built with Fern.
-The repo pins the Fern CLI version in `fern/fern.config.json`.
-Use the npm scripts so every docs command uses that pinned version.
-
-To print the pinned Fern CLI version, run:
-
-```bash
-npm run docs:deps
-```
-
-To validate the Fern configuration and MDX pages, run:
-
-```bash
-npm run docs
-```
-
-To serve the docs locally and automatically rebuild on changes, run:
-
-```bash
-npm run docs:live
-```
-
-To publish a branch-based Fern preview whenever docs files change, run:
-
-```bash
-npm run docs:preview:watch
-```
-
-The preview watcher uses the current Git branch name as the Fern preview ID and watches the `docs/` and `fern/` directories.
-By default, it publishes to the `nvidia-nemoclaw-staging.docs.buildwithfern.com/nemoclaw` Fern docs instance.
-Set `FERN_STAGING_INSTANCE` to a `<hostname>/<path>` value when you need to target a different Fern docs instance.
-The watcher rejects blank or malformed overrides before it starts Fern.
-
-Fern `.mdx` pages are the canonical docs source.
-Fern publishes Markdown routes for AI agents from the same source pages.
-
-## Updating the Changelog
-
-The native Fern changelog under `docs/changelog/` is the canonical release history.
-One source directory is shared across the OpenClaw, Hermes, and Deep Agents user-guide variants.
-Create the planned release entry in the pre-tag release-note docs PR so it lands on `main` before the release plan captures the tag commit.
-
-For each release:
-
-- Add the complete release entry to `docs/changelog/YYYY-MM-DD.mdx`, using the release date as the filename.
-- Start the entry with an H2 version heading such as `## v0.0.83`.
-- If more than one release ships on the same date, put each version in the same file with the newest version first.
-- Include the summary and detailed bullets in the dated file; do not create separate variant-specific Release Notes pages.
-- Use literal CLI names instead of the `$$nemoclaw` variant placeholder because native changelog files do not pass through agent-variant generation.
-- Use root-absolute published routes for internal links in dated entries.
-  Generic links should target the OpenClaw route under `/user-guide/openclaw/`; agent-specific links should target the corresponding Hermes or Deep Agents route.
-- Use MDX comment syntax (`{/* ... */}`) for the SPDX header; HTML comments do not parse in Fern changelog entries.
-- Keep every dated entry directly under `docs/changelog/`; Fern does not support subdirectories there.
-
-## Publishing Docs
-
-GitHub Actions publishes Fern docs from the same source files that `npm run docs` validates locally.
-
-Docs PRs get Fern previews when they change `docs/`, `fern/`, or docs build inputs.
-The preview workflow publishes to the staging Fern instance with a `pr-<number>` preview ID and posts the preview URL on the PR when `FERN_TOKEN` is available.
-
-After a docs PR merges, pushes to `main` publish the affected docs to the staging Fern instance.
-The staging publish job regenerates agent variants, validates Fern docs, publishes staging, and deletes the merged PR preview when it can map the merge commit back to a PR.
-
-Public docs publish automatically when a `v*.*.*` release tag is pushed.
-The public publish job runs in the `docs-public` environment, verifies that the tag commit is reachable from `origin/main`, regenerates agent variants, validates Fern docs, and publishes to the public Fern instance.
-If the tag does not point to a commit on `main`, the job stops before installing dependencies or running Fern.
-
-## Starter Prompt Generation
-
-The canonical coding-agent installation prompt lives in `docs/resources/starter-prompt.md`.
-Edit that Markdown file instead of placing prompt text in a React component.
-Keep conditional platform instructions in focused Markdown files under `docs/resources/prompt-assets/` and link to their raw GitHub URLs from the starter prompt.
-The main prompt should tell the coding agent when to load each asset and should not repeat the asset's detailed instructions.
-Use one shared immutable commit SHA for every platform-asset URL in a starter-prompt revision.
-The contributor who changes any platform asset owns the corresponding pin update.
-First commit the updated assets, starter-prompt behavior, and related tests without changing the existing URLs, `promptAssetRevision`, or pinned SHA-256 values.
-Then use that commit's SHA in every platform-asset URL, update `promptAssetRevision` and every pinned SHA-256 value in `test/starter-prompt-docs.test.ts`, and commit the repin as one atomic follow-up.
-Never mix asset URLs from different revisions or point an asset URL at a commit that predates its content.
-The exact-revision test compares each local asset byte-for-byte with its Git blob at `promptAssetRevision`, so the intermediate content commit intentionally fails until the atomic repin follow-up points every URL, revision, and digest at that content commit.
-Updating only a local digest does not prove what the pinned revision contains.
-Downstream consumers can pin the source with a raw URL such as
-`https://raw.githubusercontent.com/NVIDIA/NemoClaw/<commit-sha>/docs/resources/starter-prompt.md`.
-The Markdown SPDX comment is part of that raw file but does not appear when Markdown is rendered.
-
-The `scripts/generate-starter-prompt.mts` script removes the Markdown SPDX preamble and writes `docs/_build/StarterPrompt.generated.mdx`.
-The generated snippet wraps the prompt in Fern's native visible `Prompt` component, which displays the prompt body and supplies the copy button.
-The generated file is ignored by Git and is recreated by the docs build.
-
-Run the generator directly when you need to inspect the generated snippet:
-
-```bash
-npm run docs:sync-starter-prompt
-```
-
-Run the read-only comparison after generation when you need to verify that the snippet matches the Markdown source:
-
-```bash
-npm run docs:check-starter-prompt
-```
-
-The shared `npm run docs:prepare` step generates the Starter Prompt and agent variants.
-The normal `npm run docs`, `npm run docs:live`, agent-variant sync, preview-watcher, and docs publish workflows run that step before Fern validates, serves, previews, or publishes the pages that include the prompt.
-
-## Agent Variant Generation
-
-Some Fern pages appear in the OpenClaw, Hermes, and Deep Agents guide variants.
-The `scripts/sync-agent-variant-docs.mts` script reads `docs/index.yml` and renders variant-specific copies for every page that appears in multiple guide variants before Fern validates or publishes the site.
-The source pages stay in their normal `docs/` locations, and generated pages are written under `docs/_build/agent-variants/`, which is ignored by Git.
-Navigation in `docs/index.yml` points Fern at generated pages for shared entries so Fern still renders normal fenced code blocks with copy buttons and syntax highlighting.
-OpenClaw-only, Hermes-only, or Deep Agents-only pages stay as source pages in navigation.
-
-When shared page content is the same except for the host CLI binary, write one source page and use `$$nemoclaw` as a build-time placeholder.
-Do not duplicate fenced code blocks or inline command examples only to switch between `nemoclaw` and `nemohermes`.
-Use literal command names on those single-variant pages rather than `$$nemoclaw`, because no generated page will rewrite the placeholder.
-
-Run `npm run docs:sync-agent-variants` after editing shared variant source pages or navigation.
-Run `npm run docs` before opening a PR to verify the generated pages, rewritten relative links, and Fern navigation.
-If content differs by behavior, setup flow, state layout, or agent-specific wording, keep using `<AgentOnly>` blocks for that content.
-Treat `<AgentOnly>` as a build-time directive rather than a React component, and do not import it from `AgentGuide.tsx`.
-Put each opening and closing tag at the first column on its own line, and do not nest the blocks.
-The generated pages must contain only statically resolved content, with no `AgentGuide` imports or runtime agent components.
-
-## Route-Style Links
-
-Fern links between docs pages should use route-style paths, not filesystem paths.
-Route-style paths omit the `.mdx` extension and follow the page slugs declared in `docs/index.yml`.
-For example, a source page under `docs/get-started/` should link to the OpenClaw quickstart as `../quickstart`, not `quickstart.mdx`.
-The published route comes from the navigation hierarchy and page `slug`, not directly from the file path.
-
-This matters for generated agent variants because shared source pages may not appear directly in `docs/index.yml`.
-The navigation can point Fern at generated pages under `docs/_build/agent-variants/`, while the source MDX remains in its normal folder.
-The link checker maps those generated nav entries back to their source paths when validating route-style links.
-Do not convert route-style links to `.mdx` file links just to satisfy a local filesystem check.
-
-## Doc-Only PR Verification
-
-Doc-only pull requests do not need the full test suite by default.
-Commit and push normally so the Git hooks run, then run:
-
-```bash
-npm run docs
-```
-
-Leave the broad-gate verification item unchecked unless you actually ran the applicable command.
-If normal `pre-commit`, `commit-msg`, or `pre-push` hooks were skipped or unavailable, run `npm run check:diff` once to reproduce those checks before opening the PR.
-The command uses `origin/main`, so refresh it with `git fetch origin main` first.
-Run targeted tests once per relevant change set only when the change also touches code, generated behavior, or runtime behavior; rerun after later edits or hook autofixes that can affect it.
-Reserve `npm test` for broad runtime or test-harness changes.
-Reserve `npm run check` for repo-wide validation or coverage-baseline changes.
-
-## Writing Conventions
-
-### Format
-
-- Fern pages use MDX with YAML frontmatter. Use a flat `title`, `description`, optional `sidebar-title`, `description-agent`, `keywords`, and `position`.
-- Do not duplicate the page title as a body H1 in MDX pages because Fern renders the title from frontmatter.
-- Use `description-agent` as a concise routing summary for AI documentation clients and search indexes.
-- Include the SPDX license header in MDX frontmatter as comments:
-
-  ```yaml
-  ---
-  # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-  # SPDX-License-Identifier: Apache-2.0
-  title: "NemoClaw Page Title"
-  description: "One-sentence summary for readers, SEO, and doc search snippets."
-  description-agent: "Third-person verb summary for agent routing. Add 'Use when...' with trigger phrases."
-  ---
-  ```
-
-### MDX Frontmatter Template
-
-```yaml
----
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-title: "NemoClaw Page Title: Subtitle with Context"
-sidebar-title: "Short Nav Title"
-description: "One-sentence summary for readers, SEO, and doc search snippets."
-description-agent: "Third-person verb summary for agent routing. Add 'Use when...' with trigger phrases."
-keywords: "primary keyword, secondary keyword phrase"
-position: 1
----
-```
-
-### Page Structure
-
-1. Start MDX pages with a one- or two-sentence introduction stating what the page covers.
-2. Organize sections by task or concept, using H2 and H3. Start each section with an introductory sentence that orients the reader.
-3. Use Fern components like `<Note>`, `<Tip>`, `<Warning>`, `<Cards>`, and `<Card>` for callouts and landing-page navigation.
-4. Add a "Next Steps" or "Related Topics" section at the bottom when it helps users continue.
-
-## Style Guide
-
-Write like you are explaining something to a colleague. Be direct, specific, and concise.
-
-### Voice and Tone
-
-- Use active voice. "The CLI creates a gateway" not "A gateway is created by the CLI."
-- Use second person ("you") when addressing the reader.
-- Use present tense. "The command returns an error" not "The command will return an error."
-- State facts. Do not hedge with "simply," "just," "easily," or "of course."
-
-### Things to Avoid
-
-The following patterns are common in LLM-generated text and erode trust with technical readers.
-Remove them during review.
-
-| Pattern | Problem | Fix |
-|---|---|---|
-| Unnecessary bold | "This is a **critical** step" on routine instructions. | Reserve bold for UI labels, parameter names, and genuine warnings. |
-| Em dashes | "The gateway, which runs in Docker, creates sandboxes." | Do not use em dashes. Prefer commas, colons, or separate sentences. |
-| Superlatives | "OpenShell provides a powerful, robust, seamless experience." | Say what it does, not how great it is. |
-| Hedge words | "Simply run the command" or "You can easily configure..." | Drop the adverb. "Run the command." |
-| Emoji in prose | "Let's get started!" | No emoji in documentation prose. |
-| Rhetorical questions | "Want to secure your agents? Look no further!" | State the purpose directly. |
-
-### Formatting Rules
-
-- End every sentence with a period.
-- One sentence per line in the source file (makes diffs readable).
-- Use `code` formatting for CLI commands, file paths, flags, parameter names, and values.
-- Use language-specific code blocks for commands that readers should copy.
-  Put only the command text in copyable blocks:
-
-  ```bash
-  $$nemoclaw onboard
-  ```
-
-- Use `$$nemoclaw` as a build-time placeholder for NemoClaw host CLI command examples in shared variant pages.
-  The docs build resolves it to `nemoclaw` for OpenClaw pages, `nemohermes` for Hermes pages, and `nemo-deepagents` for Deep Agents pages before Fern renders code blocks.
-  This preserves Fern's native fenced-code UI while keeping one source sample.
-- Do not write duplicate `<AgentOnly>` fenced code blocks when the only difference is `nemoclaw` versus `nemohermes`.
-  Use `<AgentOnly>` blocks only when the surrounding content differs between the OpenClaw and Hermes variants.
-
-- Use `powershell` for Windows PowerShell commands.
-  Use `bash` or `sh` for Linux, macOS, and WSL shell commands.
-  Use `bash` for generic copyable shell commands when a single tag is needed.
-  Do not use prompt markers such as `$` in copyable command blocks.
-  Keep command and output in separate fenced code blocks.
-  Introduce output blocks with `Expected output:`.
-  For output blocks, use `json` when the output is valid JSON, otherwise use `text`.
-  Reserve `console` for rare transcript-style examples that intentionally mix command and output, including prompts or interactive sessions, and label the section as transcript-only so readers do not treat it as copy/paste input.
-
-- Use tables for structured comparisons. Keep tables simple (no nested formatting).
-- Use Fern callout components (`<Note>`, `<Tip>`, `<Warning>`) for callouts in MDX pages, not bold text.
-- Avoid nested admonitions.
-- Do not number section titles. Write "Deploy a Gateway" not "Section 1: Deploy a Gateway" or "Step 3: Verify."
-- Do not use colons in titles. Write "Deploy and Manage Gateways" not "Gateways: Deploy and Manage."
-- Use colons only to introduce a list. Do not use colons as general-purpose punctuation between clauses.
-
-### Word List
-
-Use these consistently:
-
-| Use | Do not use |
-|---|---|
-| gateway | Gateway (unless starting a sentence) |
-| sandbox | Sandbox (unless starting a sentence) |
-| CLI | cli, Cli |
-| API key | api key, API Key |
-| NVIDIA | Nvidia, nvidia |
-| NemoClaw | nemoclaw (in prose), Nemoclaw |
-| OpenClaw | openclaw (in prose), Openclaw |
-| OpenShell | Open Shell, openShell, Openshell, openshell |
-| mTLS | MTLS, mtls |
-| YAML | yaml, Yaml |
-
-## Submitting Doc Changes
-
-1. Create a branch following the project convention.
-2. Make your changes.
-3. Build locally with `npm run docs` and verify the output.
-4. Open a PR with `docs:` as the conventional commit type.
-
-```text
-docs: update quickstart for new onboard wizard
-```
-
-If your doc change accompanies a code change, include both in the same PR and use the code change's commit type:
-
-```text
-feat(cli): add policy-add command
-```
-
-## Reviewing Doc PRs
-
-When reviewing documentation:
-
-- Confirm that the page documents an approved and maintained NemoClaw product surface.
-- Do not approve a new integration or solution solely because its instructions work or its checks pass.
-- Route independent third-party solutions to [Community Solutions](resources/community-contributions.mdx) when no product decision establishes core ownership.
-- Check that the style guide rules above are followed.
-- Watch for LLM-generated patterns (excessive bold, em dashes, filler).
-- Verify code examples are accurate and runnable.
-- Confirm cross-references and links are not broken.
-- Build locally to check rendering.
-
-
-
-========================================
-[FILE: .\fern\AGENTS.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Fern Documentation Agent Guide
-
-You are a documentation engineer and writer responsible for the NemoClaw Fern site shell.
-Use this guide when editing files under `fern/`.
-
-## Role
-
-- Maintain the Fern site configuration, theme assets, shared components, redirects, and preview behavior.
-- Keep site configuration changes aligned with the source docs under `docs/`.
-- Treat `docs/index.yml` as the version navigation source referenced by `fern/docs.yml`.
-- Prefer configuration changes that preserve published URLs and existing preview behavior.
-
-## Before Editing
-
-- Read `docs/CONTRIBUTING.md` before changing Fern configuration that affects published docs.
-- Read `fern/docs.yml` before changing routes, redirects, versions, theme settings, or component registration.
-- Check whether the requested change belongs in `docs/` instead of `fern/`.
-- Do not move page content into `fern/`; keep user-facing pages in `docs/`.
-
-## Fern Configuration Rules
-
-- Keep `fern/docs.yml` comments accurate when editing redirects, instances, versions, assets, or experimental component settings.
-- Preserve explicit redirects for legacy URLs unless the user asks to remove them and you verify the migration impact.
-- Add redirects for renamed or moved published pages.
-- Keep asset paths relative to the Fern config that references them.
-- Keep custom MDX components registered in `fern/docs.yml` when pages depend on them.
-- Avoid broad theme or layout changes when a page-level content edit would solve the problem.
-
-## Verification
-
-- Run `npm run docs` after Fern configuration changes.
-- Run `npm run docs:live` when layout, component, CSS, or asset changes need visual review.
-- Run `npm run docs:preview:watch` only when you need to verify branch preview publication behavior.
-- For doc-only or Fern-only PRs, rely on normal `pre-commit`, `commit-msg`, and `pre-push` hooks when they pass.
-- If hooks were skipped or unavailable, refresh `origin/main` and run `npm run check:diff` once to reproduce those checks.
-- Do not run `npm run check` or an all-files hook baseline routinely for focused docs changes.
-
-
-
-========================================
-[FILE: .\src\lib\messaging\AGENTS.md]
-========================================
-
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
-# Agent Instructions for `src/lib/messaging`
-
-## Purpose
-
-This package owns NemoClaw's manifest-first messaging architecture. It turns channel declarations for Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams into a serializable `SandboxMessagingPlan`, then applies that plan during onboard, channel add/remove/start/stop, rebuild, image build, runtime setup, diagnostics, and conflict checks.
-
-The design goal is to keep messaging channel behavior out of core onboard/rebuild logic. Add channel-specific behavior to manifests, template resolvers, hooks, runtime assets, and policy metadata first; only change shared engines when the manifest vocabulary cannot express the required behavior.
-
-## Data Flow
-
-1. Channel manifests live in `channels/<channel>/manifest.ts` and are registered by `channels/built-ins.ts`.
-2. `MessagingWorkflowPlanner` selects the right workflow shape for onboard, add, remove, start, stop, or rebuild.
-3. `ManifestCompiler` and `compiler/engines/*` compile manifests into a `SandboxMessagingPlan`.
-4. `MessagingSetupApplier` serializes the plan through `NEMOCLAW_MESSAGING_PLAN_B64`.
-5. `onboard/dockerfile-patch.ts` bakes the plan into the sandbox build.
-6. `applier/build/messaging-build-applier.mts` applies agent install, render, post-agent-install build files, and writes the reduced runtime plan artifact.
-7. `MessagingHostStateApplier` persists durable plan state under the sandbox registry entry.
-8. Rebuild reads the persisted plan, stages a fresh build plan, and reapplies OpenClaw render/post-install hooks after `openclaw doctor` rewrites config.
-
-## Package Map
-
-| Path | Ownership |
-|---|---|
-| `manifest/` | Serializable manifest and plan contracts. Keep these JSON-compatible. |
-| `channels/` | Built-in channel manifests, channel metadata helpers, template resolvers, runtime preload assets, and channel hook implementations. |
-| `compiler/` | Manifest-to-plan compilation. It may resolve env/config inputs and run enrollment/reachability/build hooks, but should not mutate OpenShell or registry state directly. |
-| `hooks/` | Hook contracts, registries, runner validation, common prompt/static-output helpers, and conflict error types. |
-| `applier/` | Host/OpenShell side effects: plan env serialization, provider upsert/reuse, policy apply, agent config writes, hook phase execution, conflict detection, registry persistence, and build-time applier. |
-| `persistence.ts` | Compact persisted plan shape and hydration from current manifests. |
-| `plan-validation.ts` | Defensive parsing for persisted or env-provided plans. |
-| `diagnostics.ts` | Manifest-derived channel diagnostics used by status/doctor paths. |
-| `utils.ts` | Agent/channel availability and selection helpers. |
-
-## Core Invariants
-
-- Manifests and compiled plans are serializable data. Do not put functions, classes, live clients, or raw secret values in them.
-- Secret inputs must not declare `statePath`; persisted plans may contain `credentialAvailable`, `credentialHash`, and placeholders, never tokens.
-- Hook implementations are resolved by stable handler IDs through `MessagingHookRegistry`. Manifests reference handlers by string; they do not import handler code.
-- Hook outputs must match manifest declarations and be JSON-serializable. Add outputs to the manifest before consuming them.
-- Channel render/build-file targets must stay inside `/sandbox/.openclaw` or `/sandbox/.hermes`; rely on existing applier validation instead of bypassing it.
-- Disabled channels are not active. Always filter effects through `enabledPlanChannels()` or `filterEnabledPlanEntries()` when applying providers, policies, render, hooks, runtime setup, or conflicts.
-- Conflict detection has two axes: generic credential-hash overlap in `applier/conflict-detection/` and channel-owned `pre-enable` hooks such as Slack Socket Mode gateway checks.
-- Keep transitional compatibility tables derived from manifests. `src/lib/sandbox/channels.ts` intentionally builds legacy CLI metadata from `listBuiltInMessagingChannelManifests()`.
-
-## Adding or Changing a Channel
-
-Start with `channels/<channel>/manifest.ts`.
-
-1. Declare `auth`, `inputs`, `credentials`, `policyPresets`, `render`, `runtime`, `agentPackages`, `state`, and `hooks` in the manifest.
-2. Add template placeholders to `channels/<channel>/template-resolver.ts` when static render data needs derived values such as allowlists, booleans, proxy URLs, or Hermes/OpenClaw schema differences.
-3. Add hook implementations under `channels/<channel>/hooks/` only for side effects or checks that cannot be represented as static manifest data.
-4. Register hook handlers in the channel `hooks/index.ts` and in `hooks/builtins.ts`.
-5. Add runtime preload assets under `channels/<channel>/runtime/` only when the agent runtime needs boot/connect-time shims or diagnostics.
-6. Add or update `src/lib/messaging/channels/<channel>/policy/<agent>.yaml` when the manifest declares a channel policy preset.
-7. Cover the behavior with manifest/compiler tests plus applier/onboard/channel CLI tests when host effects change.
-
-## Where Changes Belong
-
-- New prompt, token, allowlist, provider, policy, render, package install, runtime setup, state hydration, or health-check metadata belongs in a channel manifest.
-- Nontrivial render derivation belongs in a channel template resolver.
-- Enrollment, external reachability checks, QR capture, channel-specific conflict checks, runtime status, and health probes belong in hooks.
-- Provider creation/reuse, policy application, config-file writes, plan env encoding, and registry persistence belong in `applier/`.
-- Onboard and `actions/sandbox/policy-channel.ts` should orchestrate planner/applier calls, not grow channel-specific rules.
-- Build-time config generation should use the compiled plan and `applier/build/messaging-build-applier.mts`; do not reintroduce channel-specific config rendering in `scripts/generate-openclaw-config.mts` or `agents/hermes/generate-config.ts`.
-
-## Testing Guide
-
-Use the narrowest test that covers the changed surface:
-
-- Manifest shape and plan compilation: `npx vitest run src/lib/messaging/compiler src/lib/messaging/manifest src/lib/messaging/channels`
-- Hook behavior: `npx vitest run src/lib/messaging/hooks src/lib/messaging/channels/<channel>/hooks`
-- Host/OpenShell application: `npx vitest run src/lib/messaging/applier`
-- Build-time render/install behavior: `npx vitest run test/messaging-build-applier.test.ts`
-- Onboard/channel CLI integration: `npx vitest run test/onboard-messaging.test.ts test/channels-add-preset.test.ts src/lib/onboard/messaging-channel-setup.test.ts`
-
-Mock external messaging APIs. Do not call real Telegram, Discord, Slack, WeChat, WhatsApp, Microsoft Teams, NVIDIA, or OpenShell services from unit tests.
-
-## Documentation
-
-User-facing behavior changes usually need docs under `docs/manage-sandboxes/messaging-channels.mdx` or `docs/reference/commands.mdx`.
-Update `.agents/skills/nemoclaw-user-guide/SKILL.md` only when AI-agent docs routing guidance changes.
-
-## Unsupported Agent Boundaries
-
-LangChain Deep Agents Code is a terminal-oriented harness. NemoClaw does not run a long-running messaging bridge inside the DeepAgents sandbox today, and no built-in channel manifest lists `langchain-deepagents-code` under `supportedAgents`.
-
-- **No artifact-only support.** Do not add DeepAgents messaging render targets, Dockerfile plan args, startup env parsing, or local contract files without a real bridge that routes channel messages to and from `dcode`.
-- **No inbound bridge.** The harness does not spawn channel bot processes. Inbound messages from Telegram, Discord, Slack, or other channels do not currently reach `dcode`. `channels add` must reject DeepAgents before policy, provider, credential, registry, or rebuild mutation while this remains true.
-- **Support condition.** Adding DeepAgents support requires a channel manifest `supportedAgents` entry, a build/runtime applier path for that agent, and a runtime bridge/health path before public behavior claims channel readiness.
-
-## Agent Gating and Stale Plan Cleanup
-
-- **Invalid state.** A sandbox can be configured with an agent name that no channel manifest supports, or with stale `NEMOCLAW_MESSAGING_PLAN_B64` state from an earlier build. Without an explicit gate the channel-add path can still tear down the sandbox before failing at `dockerfile-patch.ts`, and rebuild can carry stale messaging plan data into an agent build path that does not consume it.
-- **Source boundary.** Channel manifests' `supportedAgents` lists are the single source of truth for whether a given agent supports messaging today, and which channels are available for it. Helpers in `utils.ts` derive the supported agent list from the active channel manifest registry, so `ChannelManifestRegistry.listAvailable`, `MessagingWorkflowPlanner.supportedChannelIds`, onboard state filtering, channel list, channel add/remove, and rebuild all share the same semantics. If no manifest supports the agent, deny or skip everywhere and clear stale staged plans.
-- **Source-fix constraint.** Expanding support for an agent requires per-channel `supportedAgents`, agent-side render and hook handlers in `applier/build/messaging-build-applier.mts`, the matching Dockerfile/build env plumbing when needed, and a runtime bridge/health path when public behavior claims channel readiness. Until that stack lands, the gate at the action boundary is the safe behavior: surface the unsupported-agent message in `addSandboxChannel`, clear the staged plan in `stageMessagingManifestPlanForRebuild`, and strip stale plans in `persistManifestChannelRemovePlan`.
-- **Regression tests.** `src/lib/messaging/utils.test.ts`, `src/lib/messaging/manifest/registry.test.ts`, and `src/lib/messaging/compiler/workflow-planner.test.ts` lock the helper and registry semantics. `src/lib/actions/sandbox/policy-channel-agent-gate.test.ts`, `src/lib/actions/sandbox/policy-channel-cleanup.test.ts`, `src/lib/actions/sandbox/rebuild-messaging-stage.test.ts`, and `src/lib/onboard/machine/handlers/sandbox.test.ts` cover the action, rebuild, and onboard-resume boundaries against stale or unsupported messaging plans. `test/channels-add-deepagents-rejection.test.ts` exercises the full DeepAgents `addSandboxChannel` boundary in a spawned Node process to prove no policy, provider, registry, credential, or rebuild call happens before the unsupported-agent exit.
-- **Removal condition.** Drop the unsupported-agent gate only when every target agent is represented by channel manifest `supportedAgents` entries and `applier/build/messaging-build-applier.mts` resolves its render and runtime targets. At that point the unsupported-agent branch becomes unreachable for that agent and the action boundary can rely on planner-level validation alone.
-
-
-
-========================================
-[FILE: .\AGENTS.md]
+[FILE: AGENTS.md]
 ========================================
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
@@ -862,16 +276,284 @@ Follow `.agents/skills/_shared/pr-follow-up.md`: after opening or pushing to a P
 - Limit open PRs to fewer than 10
 
 
+========================================
+[FILE: CLAUDE.md]
+========================================
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Agent Instructions
+
+## Project Overview
+
+NVIDIA NemoClaw is an open-source reference stack for running always-on AI agents such as [OpenClaw](https://openclaw.ai) and [Hermes](https://get-hermes.ai/) inside [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes more safely. It provides CLI tooling, a blueprint for sandbox orchestration, and security hardening.
+
+Status: Active development. Interfaces may change without notice.
+
+## Product Scope Gate
+
+Technical correctness, passing tests, and green CI do not establish product approval.
+Before implementing or approving a change that creates a supported integration, solution recipe, custom image, third-party stack, or other product surface, confirm that an accepted issue or design decision establishes the scope and that ownership, lifecycle, compatibility, security, and validation expectations are defined.
+If the product decision is missing, do not approve or document the contribution as canonical NemoClaw behavior.
+Stop and request maintainer direction, or route an independent solution through [Community Solutions](docs/resources/community-contributions.mdx).
+
+## Agent Skills
+
+This repo ships agent skills under `.agents/skills/`.
+Use `nemoclaw-user-guide` for end-user documentation routing, `nemoclaw-contributor-*` for contributor workflows, and `nemoclaw-maintainer-*` for maintainer workflows.
+Load the `nemoclaw-skills-guide` skill for a full catalog and quick decision guide mapping tasks to skills.
+
+## Architecture
+
+| Path | Language | Purpose |
+|------|----------|---------|
+| `bin/` | JavaScript (CJS) | CLI launcher (`nemoclaw.js`) and small compatibility helpers |
+| `src/lib/` | TypeScript | Core CLI logic: onboard, credentials, inference, policies, preflight, runner |
+| `nemoclaw/` | TypeScript | Plugin registering `/nemoclaw` TUI slash commands inside OpenClaw; `openclaw nemoclaw <cmd>` shell subcommand path is descoped |
+| `nemoclaw/src/blueprint/` | TypeScript | Runner, snapshot, SSRF validation, state management |
+| `nemoclaw/src/commands/` | TypeScript | Slash commands, migration state |
+| `nemoclaw/src/onboard/` | TypeScript | Onboarding config |
+| `nemoclaw-blueprint/` | YAML | Blueprint definition and network policies |
+| `nemoclaw-blueprint/model-specific-setup/` | JSON | Agent-scoped model/provider compatibility registry |
+| `scripts/` | Bash/JS/TS | Install helpers, setup, automation, E2E tooling |
+| `test/` | JavaScript (ESM) | Root-level integration tests (Vitest) |
+| `test/e2e/` | Bash/JS/TS | End-to-end tests, target registry, and live runner (see `test/e2e/README.md`) |
+| `docs/` | MDX/Markdown | User-facing Fern docs and Markdown routes for AI documentation clients |
+| `fern/` | YAML/CSS/SVG | Fern site configuration and shared assets |
+
+Package-specific guides:
+
+- Messaging architecture and channel migration guidance: [`src/lib/messaging/AGENTS.md`](src/lib/messaging/AGENTS.md)
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Set up contributor checkout | `npm run dev:setup` |
+| Check contributor environment | `npm run dev:doctor` |
+| Expose development CLI | `./scripts/dev-setup.sh --expose-cli` |
+| Launch pinned coding agent | `npm run agent` |
+| Build plugin | `cd nemoclaw && npm run build` |
+| Watch mode | `cd nemoclaw && npm run dev` |
+| Run all tests for broad changes | `npm test` |
+| Render behavior-oriented test tree | `npm run test:spec` |
+| Run fast source tests | `npm run test:fast` |
+| Run tests affected by current changes | `npm run test:changed` |
+| Watch focused source tests | `npm run test:watch` |
+| Shuffle focused tests without coverage | `npm run test:shuffle` |
+| Diagnose async leaks or shutdown hangs | `npm run test:diagnose:leaks` |
+| Run integration tests | `npm run test:integration` |
+| Run package contracts | `npm run test:package` |
+| Run E2E support tests | `npx vitest run --project e2e-support` |
+| Run live E2E targets | `npm run test:live-e2e` |
+| Run plugin tests | `cd nemoclaw && npm test` |
+| Run repo-wide pre-commit and coverage checks | `npm run check` |
+| Reproduce `pre-commit`, `commit-msg`, and `pre-push` checks for the current diff | `npm run check:diff` |
+| Type-check CLI | `npm run typecheck:cli` |
+| Type-check plugin and plugin tests | `npm --prefix nemoclaw run typecheck` |
+| Auto-format | `npm run format` |
+| Build docs | `npm run docs` |
+| Serve docs locally | `npm run docs:live` |
+
+## Key Architecture Decisions
+
+### Dual-Language Stack
+
+- **CLI and plugin**: TypeScript (`src/`, `nemoclaw/src/`) with a small CommonJS launcher in `bin/`; ESM in `test/`
+- **Blueprint**: YAML configuration (`nemoclaw-blueprint/`)
+- **Docs**: Fern MDX for user-facing pages, with Markdown routes exposed by Fern for AI documentation clients
+- **Tooling scripts**: Bash and Python
+
+The `bin/` directory uses CommonJS intentionally for the launcher and a few compatibility helpers so the CLI still has a stable executable entry point. The main CLI implementation lives in `src/` and compiles to `dist/`. The `nemoclaw/` plugin uses TypeScript and requires compilation.
+
+### Testing Strategy
+
+Tests are organized into disjoint Vitest projects defined in `vitest.config.ts`:
+
+1. **`cli`** — `src/**/*.test.ts` — CLI unit tests importing source
+2. **`integration`** — `test/**/*.test.{js,ts}` — root integration tests importing source; excludes the explicit lanes below
+3. **`installer-integration`** — installer tests that spawn real `install.sh` processes
+4. **`package-contract`** — `test/package-contract/**/*.test.ts` — the only non-live lane that imports compiled CLI/plugin artifacts
+5. **`plugin`** — `nemoclaw/src/**/*.test.ts` — plugin unit tests co-located with source
+6. **`e2e-support`** — fast tests for the E2E fixture/support layer; this project runs in the
+   aggregate checks for code-changing PRs and code-changing pushes to `main`
+7. **`e2e-live`** — opt-in live targets that mutate real external state
+8. **`e2e-branch-validation`** — opt-in validation on an ephemeral Brev instance
+
+When writing tests:
+
+- Root-level tests (`test/`) use ESM imports
+- Plugin tests use TypeScript and are co-located with their source files
+- Import CLI source from ordinary tests. Put genuine compiled-artifact assertions under `test/package-contract/`.
+- Keep project globs disjoint and exhaustive; `npm run test:projects:check` compares filesystem candidates with Vitest and rejects missing, overlapping, or unexpected membership.
+- Deterministic projects clear mock calls, restore `vi.spyOn`, and undo `vi.stubEnv` and `vi.stubGlobal` before each test. Create those spies and stubs in `beforeEach` or the test body unless a documented import-time stub must run before module evaluation. Restore direct environment or global mutations yourself, and reset mock implementations explicitly when needed. Live E2E and automatic `mockReset` are intentionally excluded.
+- Use `npm run test:changed` or `npm run test:watch` for focused CLI, plugin, and E2E-support feedback. Add only concrete opaque-input mappings to `test/helpers/vitest-watch-triggers.ts` when the import graph cannot see a YAML, Python, shell, generated, or workflow dependency.
+- Use `npm run test:shuffle -- --sequence.seed=<seed>` to replay a printed test-order seed. Use `npm run test:diagnose:leaks` for async-resource or shutdown-hang diagnostics; both commands keep coverage disabled, and leak diagnostics can accompany exit code 0 when assertions pass.
+- Write behavior-oriented titles, put local issue references in a final `(#1234)` suffix, and use `npm run test:spec` for the hierarchical specification view.
+- Mock external dependencies; don't call real NVIDIA APIs in unit tests
+- E2E tests run on ephemeral Brev cloud instances
+
+### Security Model
+
+NemoClaw isolates agents inside OpenShell sandboxes with:
+
+- Network policies (`nemoclaw-blueprint/policies/`) controlling egress
+- Credential sanitization to prevent leaks
+- SSRF validation (`nemoclaw/src/blueprint/ssrf.ts`)
+- Docker capability drops and process limits
+
+Security-sensitive code paths require extra test coverage.
+
+## Code Style and Conventions
+
+### Commit Messages
+
+Conventional Commits required. Enforced by commitlint via prek `commit-msg` hook.
+
+```text
+<type>(<scope>): <description>
+```
+
+Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `perf`, `merge`
+
+### SPDX Headers
+
+Every source file must include an SPDX license header. The pre-commit hook auto-inserts them:
+
+```javascript
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+```
+
+For shell scripts use `#` comments. For Markdown use HTML comments.
+
+### JavaScript
+
+- `bin/` launcher and remaining `scripts/*.js`: **CommonJS** (`require`/`module.exports`), Node.js 22.19+
+- `test/`: **ESM** (`import`/`export`)
+- Biome config in `biome.json`
+- Keep function complexity low; existing complexity hotspots are tracked separately
+- Unused vars pattern: prefix with `_`
+
+### TypeScript
+
+- Plugin code in `nemoclaw/src/` is linted and formatted by the root Biome config
+- CLI type-checking via `tsconfig.cli.json`
+- Plugin production and test type-checking via `npm --prefix nemoclaw run typecheck`, using
+  `nemoclaw/tsconfig.json` and `nemoclaw/tsconfig.test.json`
+
+### Shell Scripts
+
+- ShellCheck enforced (`.shellcheckrc` at root)
+- `shfmt` for formatting
+- All scripts must have shebangs and be executable
+
+### No External Project Links
+
+Do not add links to third-party code repositories, community collections, or unofficial resources. Links to official tool documentation (Node.js and Python) are acceptable.
+
+## Git Hooks (prek)
+
+All hooks managed by [prek](https://prek.j178.dev/) (installed via `npm install`):
+
+| Hook | What runs |
+|------|-----------|
+| **pre-commit** | Cheap structural and file-local checks, including fixers, formatters, and linters |
+| **commit-msg** | commitlint (Conventional Commits) |
+| **pre-push** | Path-scoped incremental CLI/plugin TypeScript checks and checked-JavaScript checks |
+
+## Working with This Repo
+
+### Before Making Changes
+
+1. Read `CONTRIBUTING.md` for the full contributor guide
+2. Before coding, state what success looks like. Ask only when a choice changes behavior, security, data safety, or a supported contract. Then make the smallest change that works. For a QA-escaped defect, also add the test or diagnostic that should have caught it.
+3. Apply the product scope gate above before implementing or approving a new supported surface
+4. For a first-time checkout, use `.agents/skills/nemoclaw-contributor-onboard/SKILL.md` or run `npm run dev:setup`
+5. Run `npm run dev:doctor` to verify the contributor environment without changing it
+6. Use `./scripts/dev-setup.sh --expose-cli` only with explicit approval for host-visible CLI exposure
+7. Run the tests targeted to the behavior you change once per relevant change set; rerun them after later edits or hook autofixes that can affect that behavior
+
+### Plain Language and Direct Design
+
+- Use existing repository vocabulary and name what a thing does.
+- Remove modifiers that do not distinguish a real current case.
+- Use one name for one concept across issues, code, workflows, checks, logs, tests, and docs.
+- Do not turn one case into a system of categories or a new abstraction.
+- Do not add configuration, fallback, migration, compatibility, or extension layers without a current requirement. Name the current consumer and the test that protects the contract.
+- Report conclusions and evidence, not an analysis transcript.
+- Stop exploring once the smallest safe solution is clear.
+
+### Git and GitHub Access Failures
+
+Follow `.agents/skills/_shared/git-github-hard-stop.md`: if SSH, `gh`, authentication, authorization, remote access, or push permission fails, stop and ask the user instead of working around access. Do not stop for ordinary merge conflicts or dirty-worktree state; resolve mechanical conflicts in the relevant workflow and ask the user only when resolution would change behavior or contributor intent.
+
+### Pull Request Follow-Up
+
+Follow `.agents/skills/_shared/pr-follow-up.md`: after opening or pushing to a PR, monitor required CI and automated review comments, address valid CodeRabbit and PR Review Advisor findings, and consult the user when feedback is ambiguous or design-changing.
+
+### Common Patterns
+
+**Adding a CLI command:**
+
+- Entry point: `bin/nemoclaw.js` (launches the compiled CLI in `dist/`)
+- Main CLI implementation lives in `src/lib/` and compiles to `dist/lib/`
+- Add tests in `test/`
+
+**Adding a plugin feature:**
+
+- Source: `nemoclaw/src/`
+- Co-locate tests as `*.test.ts`
+- Build with `cd nemoclaw && npm run build`
+
+**Adding a network policy preset:**
+
+- Add YAML to `nemoclaw-blueprint/policies/presets/`
+- Follow existing preset structure (see `slack.yaml`, `discord.yaml`)
+
+**Adding model-specific sandbox compatibility:**
+
+- Add a declarative manifest under `nemoclaw-blueprint/model-specific-setup/<agent>/`
+- Use one `agent` per manifest (`openclaw`, `hermes`, etc.); do not make shared multi-agent manifests
+- Put OpenClaw executable wrappers under `nemoclaw-blueprint/openclaw-plugins/`
+- Put Hermes executable wrappers under `agents/hermes/`
+- Keep `agents/hermes/generate-config.ts` as a thin build-time entrypoint; add Hermes env parsing, config construction, registry handling, and serialization under `agents/hermes/config/`
+- Do not add Hermes behavior for an OpenClaw issue without a Hermes-specific repro or acceptance test
+
+### Gotchas
+
+- `npm install` at root triggers `prek install` which sets up git hooks. If hooks fail, check that `core.hooksPath` is unset: `git config --unset core.hooksPath`
+- The `nemoclaw/` subdirectory has its own `package.json` and `node_modules`, while sharing the root Biome config — it's a separate npm project
+- SPDX headers are auto-inserted by pre-commit hooks; don't worry about adding them manually
+- Coverage thresholds are ratcheted in `ci/coverage-threshold-*.json` — new code should not decrease CLI or plugin coverage
+- The `.claude/skills` symlink points to `.agents/skills` — both paths resolve to the same content
+
+## Documentation
+
+- Treat `docs/` as the source of truth for user-facing documentation and follow `docs/CONTRIBUTING.md`.
+- After completing development changes, run a documentation writer subagent before final handoff. Give it the changed files, behavior summary, and test evidence so it can update docs or report that no doc changes are needed.
+- For normal docs changes, include source pages under `docs/`.
+- Update `.agents/skills/nemoclaw-user-guide/SKILL.md` only when the AI-agent docs routing guidance changes.
+- During pre-tag release prep, run `nemoclaw-contributor-update-docs` and include the canonical release entry in the release-note docs PR. Create or update `docs/changelog/YYYY-MM-DD.mdx` for `vX.Y.Z` following `docs/CONTRIBUTING.md`; a PR that updates ordinary pages without the dated changelog entry is incomplete. Merge that PR, or record an explicit maintainer waiver, before generating the release plan.
+
+## PR Requirements
+
+- Create feature branch from `main`
+- Let normal `pre-commit`, `commit-msg`, and `pre-push` hooks provide hook verification before submitting
+- Contributor-owned PRs must self-serve the DCO declaration and GitHub commit verification before opening a PR
+- Every contributor-owned PR description must include a valid `Signed-off-by:` declaration for the contributor, and every commit in the PR must appear as `Verified` in GitHub
+- Contributor agents must stop before `gh pr create` if the PR body will not include the DCO declaration or any commit is missing GitHub verification; tell the contributor to fix the issue before opening a PR
+- If force-push is not allowed and an already-published branch contains an unverified commit, require a fresh branch and fresh PR with a clean compliant history
+- Run targeted tests once per relevant change set, rerunning after later behavior-affecting edits or hook autofixes, and run `npm run docs` for doc changes
+- Count successful normal hooks as verification; if hooks were skipped or unavailable, refresh `origin/main` and use `npm run check:diff`
+- Follow PR template (`.github/PULL_REQUEST_TEMPLATE.md`)
+- No secrets, API keys, or credentials committed
+- Limit open PRs to fewer than 10
+
 
 ========================================
-[FILE: .\CLAUDE.md]
-========================================
-
-AGENTS.md
-
-
-========================================
-[FILE: .\CODE_OF_CONDUCT.md]
+[FILE: CODE_OF_CONDUCT.md]
 ========================================
 
 # Contributor Covenant Code of Conduct
@@ -960,9 +642,8 @@ For answers to common questions about this code of conduct, see
 <https://www.contributor-covenant.org/faq>
 
 
-
 ========================================
-[FILE: .\CONTRIBUTING.md]
+[FILE: CONTRIBUTING.md]
 ========================================
 
 <!--
@@ -1471,4 +1152,3 @@ fix(blueprint): handle missing API key gracefully
 docs: update quickstart for new install wizard
 chore(deps): bump commander to 13.2
 ```
-
