@@ -1,0 +1,53 @@
+name: Update NotebookLM Docs
+
+on:
+  schedule:
+    # 毎日 午前9時(JST) / UTC 0:00 に自動実行
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 手動実行ボタン
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # 1. 自分のリポジトリの docs-exporter ブランチをチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: docs-exporter
+          fetch-depth: 0
+
+      # 2. 本家(NVIDIA/NemoClaw)の最新 main を取得してマージ
+      - name: Sync with Upstream
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/NVIDIA/NemoClaw.git || true
+          git fetch upstream main
+          # 本家の最新状態を取り込む（スクリプト等は競合しない設計）
+          git merge upstream/main --no-edit -m "chore: sync with upstream main" || git merge --abort
+
+      # 3. 必要なツールのインストール (treeコマンド)
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree
+
+      # 4. Pythonスクリプトの実行（テキスト抽出＆分割）
+      - name: Generate NotebookLM Docs
+        run: |
+          python3 scripts/export_notebooklm_docs.py
+
+      # 5. 変更があればコミット＆プッシュ
+      - name: Commit and Push changes
+        run: |
+          git add output_notebooklm/
+          if git diff --staged --quiet; then
+            echo "No changes detected in generated docs."
+          else
+            git commit -m "chore: auto-update notebooklm docs [skip ci]"
+            git push origin docs-exporter
+          fi
