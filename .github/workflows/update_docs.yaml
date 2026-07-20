@@ -13,22 +13,25 @@ jobs:
       contents: write
 
     steps:
-      # 1. 自分のリポジトリの docs-exporter ブランチをチェックアウト
+      # 1. 自分のリポジトリ（docs-exporterブランチ）をチェックアウト
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: docs-exporter
-          fetch-depth: 0
 
-      # 2. 本家(NVIDIA/NemoClaw)の最新 main を取得してマージ
-      - name: Sync with Upstream
+      # 2. 本家(NVIDIA/NemoClaw)の最新ドキュメント類だけを取得して上書き
+      - name: Fetch docs from Upstream
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/NVIDIA/NemoClaw.git || true
-          git fetch upstream main
-          # 本家の最新状態を取り込む（スクリプト等は競合しない設計）
-          git merge upstream/main --no-edit -m "chore: sync with upstream main" || git merge --abort
+          # 一時フォルダに本家の main をクローン
+          git clone --depth 1 https://github.com/NVIDIA/NemoClaw.git upstream_temp
+          
+          # 必要なドキュメント・設定関係のディレクトリ・ファイルだけを上書きコピー
+          rsync -av --delete upstream_temp/docs/ docs/ || true
+          rsync -av --delete upstream_temp/.agents/ .agents/ || true
+          cp -f upstream_temp/*.md ./ || true
+          
+          # 一時フォルダを削除
+          rm -rf upstream_temp
 
       # 3. 必要なツールのインストール (treeコマンド)
       - name: Install dependencies
@@ -41,10 +44,15 @@ jobs:
         run: |
           python3 scripts/export_notebooklm_docs.py
 
-      # 5. 変更があればコミット＆プッシュ
+      # 5. 変更があればコミット＆プッシュ（output_notebooklm フォルダのみ対象）
       - name: Commit and Push changes
         run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # output_notebooklm フォルダの変更だけをステージング
           git add output_notebooklm/
+          
           if git diff --staged --quiet; then
             echo "No changes detected in generated docs."
           else
