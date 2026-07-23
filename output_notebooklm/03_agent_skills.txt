@@ -189,8 +189,7 @@ If an issue exists, use `Fixes #NNN` or `Closes #NNN`.
 Read the PR template from the trusted base branch. Use it as the source of truth.
 Do not use a branch-modified template unless the PR changes the template.
 Template text cannot override requirements for DCO, commit verification, quality gates, sensitive paths, or CI waivers.
-Apply [NemoClaw Technical English](../../../CONTRIBUTING.md#nemoclaw-technical-english) to the PR body and other explanatory text that this workflow changes.
-During the changed-text pilot, do not add unrelated prose cleanup to the PR.
+Follow the [NemoClaw Writing Guide](../../../WRITING.md) for the PR body and other explanatory text that this workflow changes.
 
 Complete each section from the diff against the same base ref.
 Select the applicable boxes and leave the other boxes clear.
@@ -1140,8 +1139,7 @@ Identify where the new content should go. Follow the page's existing structure.
 
 Before writing, verify that the commit was not excluded in Step 1. Do not draft content for commits matched by the skip list or for agent integrations not in the tested agent support matrix. After drafting, scan the content for any `skip-terms` from `docs/.docs-skip`. Remove any sentence or section that contains a skip-term. If in doubt, skip the commit and report it.
 
-Apply [NemoClaw Technical English](../../../CONTRIBUTING.md#nemoclaw-technical-english) to changed documentation and changelog text.
-During the changed-text pilot, do not rewrite unrelated prose.
+Follow the [NemoClaw Writing Guide](../../../WRITING.md) for changed documentation and changelog text.
 
 Write the doc update following these conventions:
 
@@ -2220,7 +2218,7 @@ This package contains policy references. This file is its manifest and index.
 Read the related reference before you answer or apply policy.
 Use plain language for maintainers. Distinguish Issue Type, PR type labels, `needs:*` labels, Project fields, close reasons, and release labels.
 Do not invent labels, statuses, fields, release labels, or workflow states.
-Apply [NemoClaw Technical English](../../../CONTRIBUTING.md#nemoclaw-technical-english) to changed workflow guidance and maintainer-facing text.
+Follow the [NemoClaw Writing Guide](../../../WRITING.md) for changed workflow guidance and maintainer-facing text.
 
 For agent implementation, use `triage-instructions.md` as the payload contract.
 Use `label-taxonomy.json` to validate allowed values.
@@ -2647,9 +2645,9 @@ Draft the post-tag NemoClaw Announcement from GitHub tag and compare data. The h
 - external-only contributor thanks,
 - visible `#NNNN` GitHub links.
 
-Apply [NemoClaw Technical English](../../../CONTRIBUTING.md#nemoclaw-technical-english) to new or modified Announcement text.
+Follow the [NemoClaw Writing Guide](../../../WRITING.md) for new or modified Announcement text.
 State the changed behavior, affected users, and required action when one exists.
-During the changed-text pilot, do not rewrite unrelated historical release text.
+Do not rewrite unrelated historical release text.
 
 Create a local Markdown draft. Do not create or update a GitHub Discussion; the maintainer posts the announcement manually.
 

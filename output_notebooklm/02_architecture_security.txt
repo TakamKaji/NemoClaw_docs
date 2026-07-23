@@ -720,7 +720,7 @@ Use NemoClaw for these use cases.
 | Always-on assistant       | Run a sandboxed agent with controlled network access and operator-approved egress.        |
 | Terminal coding harness   | Run `dcode` inside an OpenShell sandbox with host-owned inference credentials and a managed terminal workflow. |
 | Sandboxed testing         | Test agent behavior in a locked-down environment before granting broader permissions.         |
-| Remote GPU deployment     | Deploy a sandboxed agent to a remote GPU instance for persistent operation.                   |
+| Headless server deployment | Run a sandboxed agent on a remote Linux server through SSH. Refer to [Deploy to a Headless Server](../deployment/deploy-to-headless-server). |
 
 ## Next Steps
 
@@ -802,7 +802,7 @@ openshell term
 
 Connect to the remote host first.
 Replace `<your-sandbox-host>` with the SSH host or alias where your NemoClaw sandbox is running.
-Use a host that resolves from your terminal, such as a Brev SSH alias.
+Use a host that resolves from your terminal, such as an SSH alias from your client configuration.
 
 ```bash
 ssh <your-sandbox-host>
@@ -3342,9 +3342,9 @@ All NemoClaw build arguments (`NEMOCLAW_MODEL`, `NEMOCLAW_INFERENCE_PROVIDER_ID`
 `NEMOCLAW_INFERENCE_PROVIDER_ID` is a non-secret inference route identifier (for example `inference` for proxied providers, or a provider family such as `openai`), never a credential; provider credentials stay in OpenShell provider storage.
 It replaces the former `NEMOCLAW_PROVIDER_KEY` image argument, whose secret-shaped name triggered a BuildKit `SecretsUsedInArgOrEnv` warning.
 The host-side `NEMOCLAW_PROVIDER_KEY` credential alias is unchanged; this migration only renames the managed image route selector.
-Custom Dockerfiles that declare either `ARG NEMOCLAW_INFERENCE_PROVIDER_ID` or the legacy `ARG NEMOCLAW_PROVIDER_KEY` keep working through v0.0.90.
+Custom Dockerfiles that declare either `ARG NEMOCLAW_INFERENCE_PROVIDER_ID` or the legacy `ARG NEMOCLAW_PROVIDER_KEY` continue working in v0.0.91.
 NemoClaw updates whichever supported declaration is present, and runtime consumers read the legacy name as a fallback.
-Rename the legacy `ARG`/`ENV` declaration to `NEMOCLAW_INFERENCE_PROVIDER_ID` before legacy support is removed in v0.0.91.
+Rename the legacy `ARG`/`ENV` declaration to `NEMOCLAW_INFERENCE_PROVIDER_ID`; the legacy fallback is retained for compatibility in this release and may be removed in a future release.
 
 Custom Dockerfiles must declare `ARG NEMOCLAW_TOOL_DISCLOSURE=progressive` exactly once in the final build stage and promote it into that stage's runtime environment.
 The usual runtime contract is:
@@ -4214,6 +4214,12 @@ Do not log it, share it, or commit it to version control.
 
 Print the Hermes API bearer token for a running sandbox to stdout.
 NemoClaw retrieves the sandbox's `API_SERVER_KEY`, which authenticates OpenAI-compatible clients on the forwarded API port.
+During a normal sandbox lifecycle, the token is generated once for each sandbox home.
+Different sandbox homes receive different tokens.
+NemoClaw preserves it across a gateway restart, sandbox stop and start, and host OpenShell gateway restart.
+When you rebuild or replace the sandbox, the replacement home receives a new token.
+At gateway startup, NemoClaw also generates a new token when `API_SERVER_KEY` is missing or is not exactly 64 lowercase hexadecimal characters.
+If an ordinary restart changes the token while the existing `API_SERVER_KEY` was present and valid, collect the before and after sandbox identity plus redacted mint logs and report it as a bug.
 Capture the token and pass it in the `Authorization` header:
 
 ```bash
@@ -4222,8 +4228,13 @@ curl -fsS -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:8642/v1/models
 ```
 
+<Warning>
 Treat the token like a password.
 Do not log it, share it, or commit it to version control.
+</Warning>
+
+The sandbox must be running for `nemohermes my-assistant gateway-token --quiet` to retrieve the token.
+Use this supported command instead of reading or editing `.hermes/.env` directly.
 For browser access to the dashboard, use `nemohermes my-assistant dashboard-url`.
 
 </AgentOnly>
@@ -5177,6 +5188,10 @@ For a prepared-only transaction, the redacted diagnostic points to `$$nemoclaw <
 For a pending or both-marker transaction, it points to `$$nemoclaw <name> destroy` because the registry records that OpenShell deletion was already confirmed.
 Before backup or deletion, rebuild checks the staged messaging configuration for credentials or channel resources already used by another registered sandbox.
 A conflict aborts with the original sandbox registered and intact so you can resolve the conflict before retrying.
+After OpenShell accepts the sandbox deletion, `rebuild` waits until OpenShell explicitly reports that the old sandbox is absent.
+Only then can NemoClaw perform any required local registry removal and begin creating the replacement.
+If OpenShell does not confirm absence within the bounded wait, including when gateway transport errors block the probes, `rebuild` exits nonzero before registry removal or replacement creation and preserves both the local registry entry and the state backup.
+Restore OpenShell connectivity and confirm the sandbox's live state before you retry, and keep the printed backup path for recovery.
 When rebuild starts with shields up, NemoClaw opens a 30-minute shields-down window for backup and recreation.
 A detached auto-lock timer remains active until NemoClaw commits a successful shields-up state, so it can attempt to restore lockdown if the host rebuild process exits unexpectedly.
 
@@ -5188,6 +5203,8 @@ After restore, the command runs `openclaw doctor --fix` for cross-version struct
 <AgentOnly variant="hermes">
 
 After restore, the command restores Hermes manifest-defined state and starts the rebuilt Hermes gateway with the regenerated `/sandbox/.hermes` config.
+A rebuild creates a new sandbox home and a new Hermes API bearer token.
+After the rebuild succeeds, retrieve the replacement token with `nemohermes my-assistant gateway-token --quiet` before reconnecting API clients.
 For an older Hermes image that predates sealed shields transitions, rebuild is the only workflow authorized to use the descriptor-safe compatibility transition.
 The compatibility path verifies the strict root-owned hash and the in-tree hash, publishes fresh config inodes to revoke retained write descriptors, and restores the trusted lock posture if the transition cannot finish.
 Ordinary `shields up` and `shields down` commands refuse the older protocol and direct you to rebuild.
@@ -5429,7 +5446,7 @@ Run this on the host where the sandbox is running.
 openshell term
 ```
 
-For a remote Brev instance, SSH to the instance and run `openshell term` there, or use a port-forward to the gateway.
+For a remote server, connect through SSH and run `openshell term` on that server.
 
 <AgentOnly variant="openclaw,hermes">
 
@@ -6308,11 +6325,11 @@ The following flags change defaults for commands that manage existing sandboxes.
 | `NEMOCLAW_UNINSTALL_DESTROY_USER_DATA` | `1` to opt in | Acknowledges data loss during `$$nemoclaw uninstall` and removes the otherwise-preserved entries (`rebuild-backups/`, `backups/`, `sandboxes.json`) under `~/.nemoclaw/`. Equivalent to passing the `--destroy-user-data` flag; the global `Proceed?` confirmation still applies unless `--yes` is also passed. |
 
 <AgentOnly variant="openclaw">
-### Remote Deployment
+### Deprecated Brev Deployment
 
-The following variables seed defaults for `$$nemoclaw deploy` and `$$nemoclaw onboard --remote`, which provision a sandbox on a Brev instance.
-Each has a flag equivalent on `deploy`; the env var lets non-interactive runs skip the prompt.
-For narrative how-to coverage of `NEMOCLAW_BREV_PROVIDER` and `NEMOCLAW_GPU`, refer to [Deploy to Remote GPU](../deployment/deploy-to-remote-gpu).
+The following variables configure the deprecated `$$nemoclaw deploy` compatibility command.
+The maintained remote-server path does not use these variables.
+For the current remote-server deployment path, refer to [Deploy to a Headless Server](../deployment/deploy-to-headless-server).
 
 | Variable | Default | Effect |
 |----------|---------|--------|
@@ -6416,14 +6433,10 @@ Each row links to deeper documentation and, when a concrete fix is in progress, 
 | Credential isolation | Supported | Inference credentials stay on the host and never enter the sandbox; the agent reaches models through `inference.local`. CLI output redaction adds defense in depth, and OpenClaw sandboxes also run a memory secret scanner. Refer to [Credential Storage](../security/credential-storage) and [Security Best Practices](../security/best-practices). |
 | Upgrades and lifecycle | Supported with caveats | Upgrade NemoClaw, then run `$$nemoclaw <sandbox> rebuild` to recreate the sandbox with the current image while backing up and restoring state. Do not run `openclaw update` inside the sandbox; the agent is image-pinned. Known gaps include config restore after rebuild ([#5202](https://github.com/NVIDIA/NemoClaw/issues/5202)) and version attachment flexibility ([#2217](https://github.com/NVIDIA/NemoClaw/issues/2217)). |
 | Backup and restore | Supported | Create snapshots and restore workspace and agent state with the snapshot and backup commands. Refer to [Create and Restore Snapshots](../manage-sandboxes/state-and-backups/create-and-restore-snapshots). |
-| Remote and cloud deployment | Supported with caveats | Provision the host, run the installer, and run `$$nemoclaw onboard`; the `$$nemoclaw deploy` Brev wrapper is deprecated. Remote dashboard origins can disable device pairing, so avoid exposing them on shared networks. Brev rough edges are tracked in [#3959](https://github.com/NVIDIA/NemoClaw/issues/3959) and [#3365](https://github.com/NVIDIA/NemoClaw/issues/3365). |
+| Remote and cloud deployment | Supported with caveats | Provision a tested Linux host, connect over SSH, run the installer, and run `$$nemoclaw onboard`. Keep dashboards bound to loopback and access them through SSH port forwarding. Automatic recovery after a host reboot is not guaranteed; follow the manual recovery flow in [Deploy to a Headless Server](../deployment/deploy-to-headless-server). |
 
 <AgentOnly variant="openclaw">
-For remote deployment specifics, refer to [Deploy to Remote GPU Instances](../deployment/deploy-to-remote-gpu) and [Brev Web UI](../deployment/brev-web-ui).
 For container-level hardening beyond the entrypoint defaults, refer to [Sandbox Hardening](../manage-sandboxes/configure-sandboxes/review-sandbox-hardening).
-</AgentOnly>
-<AgentOnly variant="hermes">
-For remote deployment and Brev specifics, refer to the Brev section of the [Troubleshooting](troubleshooting#brev) guide.
 </AgentOnly>
 
 ## Admin and Control-Plane Capabilities
@@ -7162,8 +7175,7 @@ Pick the row that matches the target environment.
 | Path | Status | Notes |
 |------|--------|-------|
 | Local CLI onboard | Tested | Run `$$nemoclaw onboard` on a tested platform with Docker available locally. Primary path. |
-| Remote GPU with Brev CLI | Tested with limitations | Legacy compatibility wrapper provisions a Brev VM, installs Docker + NVIDIA Container Toolkit, and runs `$$nemoclaw onboard` on that host. Defaults to GCP; override with `NEMOCLAW_BREV_PROVIDER`. The preferred path is the standard installer followed by `$$nemoclaw onboard` after the VM is reachable. |
-| Brev web UI | Tested | Browser-driven launcher provisions a Brev-managed Linux VM with Docker, the OpenShell runtime, a NemoClaw sandbox running OpenClaw, inference routing, and the OpenClaw dashboard. |
+| Headless Linux server | Tested with limitations | Provision a tested Linux host, connect over SSH, run the standard installer and `$$nemoclaw onboard`, and keep dashboards bound to loopback behind SSH port forwarding. Automatic recovery after a host reboot is not guaranteed; follow the documented manual recovery flow. |
 {/* deployment-status:end */}
 
 ## Out of Scope and Not Supported
@@ -7183,7 +7195,7 @@ They are listed here so launch material, sales conversations, and support triage
 | Non-NVIDIA GPUs (AMD/ROCm, Intel Arc, Apple Metal) | Unsupported | Local vLLM and NIM paths assert NVIDIA CDI presence with `assertCdiNvidiaGpuSpecPresent` (`src/lib/onboard/fatal-runtime-preflight.ts`). NemoClaw does not install non-NVIDIA accelerator drivers. |
 | Other LangChain, AutoGen, CrewAI, or non-listed agent harnesses | Unsupported | LangChain Deep Agents Code is the only integrated LangChain-family harness (see the Agents section above; status `Experimental`). Other LangChain harnesses, AutoGen, CrewAI, and any agent runtime not listed in the Agents table are not integrated. Bringing more harnesses is tracked as a research epic (see open issue #4861) but is not on the current roadmap. |
 | Multi-user host sharing | Unsupported | Sandboxes are scoped to a single host user. NemoClaw treats multi-user hosts as a risk and warns at onboard; see `docs/security/openclaw-controls.mdx` Multi-user detection. |
-| Hosted SaaS / managed NemoClaw | Unsupported | There is no managed offering. Supported deployment paths are Local CLI onboard, Remote GPU with Brev CLI, and Brev web UI. |
+| Hosted SaaS / managed NemoClaw | Unsupported | There is no managed offering. Supported deployment paths are local CLI onboarding and headless Linux server onboarding. |
 | Native provider integrations not in the Providers table | Unsupported | Vertex AI, Azure OpenAI, SageMaker, Together.ai, Replicate, and HuggingFace Inference Endpoints are not first-class onboarding entries. AWS Bedrock works through the `compatible-anthropic-endpoint` adapter (`src/lib/onboard/bedrock-runtime.ts`). |
 | Production SLA or guaranteed response times | Unsupported | NemoClaw is an early-preview alpha project. Maintainers respond on a best-effort basis. No SLA is offered. |
 {/* out-of-scope:end */}
@@ -9097,7 +9109,7 @@ Do not probe with `su -s /bin/sh gateway ...`: `su` does not initialize the gate
 A NemoClaw sandbox has two intentional permission states for `/sandbox/.openclaw`; `700/600` is not one of them:
 
 - **Mutable default:** `/sandbox/.openclaw` is `2770 sandbox:sandbox` and `openclaw.json` is `660 sandbox:sandbox`. Both the sandbox user and the gateway (same `sandbox` group, different UID) can write config, so control-UI toggles persist.
-- **Host-locked state:** `openclaw.json` is read-only for in-sandbox writers and the config dir is owned by `root`, with the immutable bit set where available. No in-sandbox writes are expected; use the host-side `nemoclaw <sandbox> config set` flow described in [`openclaw config set` fails with a permission error on Brev](#openclaw-config-set-fails-with-a-permission-error-on-brev).
+- **Host-locked state:** `openclaw.json` is read-only for in-sandbox writers and the config dir is owned by `root`, with the immutable bit set where available. No in-sandbox writes are expected; use the host-side `$$nemoclaw <sandbox> config set` flow described in [`openclaw config set` or `unset` is blocked inside the sandbox](#openclaw-config-set-or-unset-is-blocked-inside-the-sandbox).
 - **`700/600` (drift):** the layout that upstream `openclaw doctor --fix` imposes inside a mutable sandbox. It is not a supported NemoClaw state; recover with `$$nemoclaw <sandbox> doctor --fix` or a sandbox restart.
 
 ### Discord bot logs in, but the channel still does not work
@@ -9884,93 +9896,6 @@ For first-time Hermes setup, refer to [Quickstart with Hermes](../get-started/qu
 Podman is not a tested runtime.
 OpenShell officially documents Docker-based runtimes only.
 If you encounter issues with Podman, switch to a tested runtime (Docker Engine, Docker Desktop, or Colima) and rerun onboarding.
-
-<AgentOnly variant="openclaw">
-
-## Brev
-
-For Brev setup instructions, refer to [Brev Web UI](../deployment/brev-web-ui).
-
-### Most OpenClaw skills show as blocked
-
-After deploying NemoClaw on Brev, the Skills page in the OpenClaw gateway dashboard shows most bundled skills with a `blocked` status.
-Only three skills are available by default: `healthcheck`, `skill-creator`, and `weather`.
-
-Skills are blocked for one of three reasons.
-
-- The skill requires a macOS-only binary (`memo`, `remindctl`, `grizzly`, and similar) that is not available on the Linux (GCP) instance Brev provisions.
-- The skill requires a CLI binary that is not pre-installed in the sandbox image, such as `gh` for the GitHub skill.
-- The skill requires API credentials that have not been configured, such as a Notion API key or Discord bot token.
-
-Skills that require macOS-only binaries cannot be enabled on Brev.
-Skills that require additional CLI binaries require a custom sandbox image rebuild.
-
-For credentials, use the supported host-side setup flow.
-Rerun onboarding for inference or web search credentials, or use `$$nemoclaw <name> channels add <telegram|discord|slack|wechat|whatsapp>` for messaging channels.
-To add a binary to the sandbox image, update the sandbox `Dockerfile.base` to install the required package, then rebuild:
-
-```bash
-$$nemoclaw <name> rebuild
-```
-
-After the rebuild completes, return to the Skills page to confirm the skill status has changed from `blocked` to `ready`.
-
-### `openclaw config set` fails with a permission error on Brev
-
-When the sandbox config has been locked from the host, `openclaw.json` is owned by root and mounted read-only inside the sandbox.
-Running `openclaw config set` inside the sandbox then returns:
-
-```text
-EACCES: permission denied, open '/sandbox/.openclaw/openclaw.json'
-```
-
-In the default sandbox state, `openclaw.json` is writable by the sandbox user.
-If you see this error, use the host-side config command instead:
-
-```bash
-$$nemoclaw <name> config set --key <dotpath> --value '<json-or-string>' --restart
-```
-
-Refer to [Commands](commands) for the full list of supported configuration keys.
-
-### OpenClaw dashboard is unreachable after extended uptime on Brev
-
-After leaving NemoClaw running for an extended period on Brev, the OpenClaw dashboard may return `ERR_CONNECTION_RESET` or fail to load in the browser.
-The agent may still respond on messaging channels such as Telegram or Slack while the dashboard is unreachable.
-
-<Warning title="Back up your workspace first">
-
-Take a snapshot before running onboard to protect your workspace files.
-
-```bash
-$$nemoclaw <name> snapshot create
-```
-
-</Warning>
-
-Re-run onboarding to restore dashboard connectivity:
-
-```bash
-$$nemoclaw onboard
-```
-
-Depending on current sandbox state, onboarding may prompt before recreating resources.
-
-### Skill install buttons do not work on Brev
-
-Clicking **Install** on a skill in the OpenClaw gateway dashboard on Brev shows no response or fails silently.
-
-Skill installation runs against the sandbox environment.
-Installing packages on the Brev host does not make them available inside the sandbox.
-To install a skill dependency, add it to the sandbox image and rebuild:
-
-```bash
-$$nemoclaw <name> rebuild
-```
-
-After the rebuild completes, return to the Skills page to confirm the skill is ready.
-
-</AgentOnly>
 
 <AgentOnly variant="hermes">
 
@@ -11815,7 +11740,15 @@ The OpenClaw 2026.6.10 bump does not newly introduce an unfrozen OpenClaw transi
 
 ### Transitive Remediation Boundary
 
-`scripts/lib/openclaw-npm-remediation.mts` remediates only four exact reviewed identities.
+This section is a point-in-time record of the remediation shipped for the
+2026.6.10 runtime. The current 2026.7.1 path installs the reviewed core archive
+directly because its core graph already contains the fixed versions, and keeps
+only the version-scoped Slack and Microsoft Teams Axios remediation plus the
+diagnostics Jaeger remediation added for the 2026.7.1 archive. See
+[`openclaw-2026.7.1-dependency-review.md`](./openclaw-2026.7.1-dependency-review.md)
+for the active source and validation boundary.
+
+`scripts/lib/openclaw-npm-remediation.mts` recognizes only eight exact reviewed identities: the E2E-only 2026.3.11 core archive, four retained 2026.6.10 identities, and three active 2026.7.1 identities.
 It rejects an unexpected source dependency shape before it changes or installs an archive.
 The helper verifies every replacement package by exact registry SRI and tarball URL.
 It also rejects unsafe archive members before extraction and after repacking.
@@ -11826,6 +11759,11 @@ For `openclaw@2026.6.10`, the helper makes these changes:
 - Replaces `brace-expansion@5.0.6` with `brace-expansion@5.0.7`.
 - Bundles the reviewed `@openclaw/fs-safe@0.3.0` package and removes its duplicate optional `tar` and `jszip` declarations. The bundled package resolves OpenClaw's reviewed direct `tar@7.5.19` and `jszip@3.10.1` dependencies instead, including during a global npm install.
 - Verifies the installed global dependency tree before either the reviewed base image or production image can complete.
+
+For the E2E-only `openclaw@2026.3.11` identity, the helper requires the exact `tar@7.5.11` declaration, no bundled dependencies, no bundled tar package, and no npm shrinkwrap.
+The reviewed source archive SRI binds the remainder of the source manifest and package bytes.
+The helper then verifies the exact `tar@7.5.19` registry SRI and tarball URL, copies that reviewed package into the remediated archive, and declares it as a bundled dependency so the later global install cannot resolve the replacement tar package from mutable registry state.
+The committed patched-metadata hash binds the OpenClaw identity, replacement declaration, bundled-dependency marker, and bundled tar identity.
 
 For `@openclaw/slack@2026.6.10` and `@openclaw/msteams@2026.6.10`, the helper makes these changes:
 
@@ -11856,11 +11794,12 @@ The replacement packages are bound to these registry identities:
 | `@opentelemetry/propagator-jaeger@2.9.0` | `sha512-4mYGty27rYvSM0jtp1ZUOqd3LfVRCYg9H5G9OFzSx5HViYToU21MFhWfco7x1HwXr7ER8yGOiCIHZUwjPksc0Q==` | `https://registry.npmjs.org/@opentelemetry/propagator-jaeger/-/propagator-jaeger-2.9.0.tgz` |
 | `@opentelemetry/core@2.9.0` | `sha512-m2nckMT80NnmjTYSPjJQObBJ+8dgkoajEOUbznL8AHZ3T3yHRk2P7gI1PhEBc1+lOnrYE9UWrWHqJDsmqjmNbw==` | `https://registry.npmjs.org/@opentelemetry/core/-/core-2.9.0.tgz` |
 
-The helper extracts and rebuilds archives with `tar` instead of invoking a package build or pack lifecycle, and it disables npm lifecycle scripts while retrieving replacement archives.
+The helper extracts reviewed archives without invoking package lifecycle scripts and rebuilds them with `npm pack . --ignore-scripts --json`.
 It binds each patched package manifest and shrinkwrap to a committed SHA-512 metadata value.
 The core value also covers the bundled `@openclaw/fs-safe` package manifest.
 The diagnostics value also covers the bundled SDK, Jaeger propagator, and nested core package manifests.
 The expected values are `sha512-B5O6Gu3YGY52w+Px8diL5zBtk8mj0u7E1ZvVK7KOLWX9H+S3B7kYUxnGfyB239mVYSluecfiWGvFFMk5eFhwKg==` for OpenClaw core, `sha512-ByLYBs3KXz3u0mPuj9DcP/xPTJNgQaLTPxazybhyIC1VjyftEmKQuoZufPZ8z8CjwBsOPm6NbjMQB2BfX36TTg==` for diagnostics OTEL, `sha512-AXllGzI+m33jUq3w1nCVXngLA1m9kH8c9XryHSoPzuVhGP6xwWpzgKl3yyfOMoIykN0GKcka59ZZbjEwkxFudQ==` for Slack, and `sha512-eTTIpA8HzcBwXBLt6UZDoFgOUmkRgIhcZFBOwg+5Jfgt8HDwtfPnqKo6vm2DdDdPMPhu08FbEzU5Gt3RoL5fIw==` for Microsoft Teams.
+The E2E-only `openclaw@2026.3.11` value is `sha512-1i30XSb/2NEcuTcuhXfR/x3YKaXVhWq6ttecFBSD9nrCKrzjNxSNMfK1y3qRcnblNOzRWmHtJZwZKeej02s/EQ==`.
 Both the library and command-line entry points enforce the same committed values.
 `Dockerfile.base` records `ignore-scripts+reviewed-lifecycle+transitive-remediation-v1` in its protected provenance marker.
 The production Dockerfile rejects stale base provenance and repeats the remediation when the marker does not match.
@@ -11989,6 +11928,17 @@ The reviewed `@openclaw/diagnostics-otel@2026.6.10` package dist imports `OTLPTr
 
 The legacy `2026.3.11` and `2026.4.24` OpenClaw pins are retained only for stale-upgrade fixture builds. Production Dockerfile install blocks now reject those versions unless `NEMOCLAW_E2E_FIXTURE_LEGACY_OPENCLAW=1` is set explicitly. The E2E-scoped name is intentionally noisy so production build workflows do not treat it as a general override. Production image workflows run `scripts/check-production-build-args.sh` before production Docker builds so the fixture flag, both legacy version values, and every integrity/tarball Docker ARG declared by a production Dockerfile cannot be overridden through production build args or their corresponding environment variables. The guard also rejects future positional `*_INTEGRITY` and `*_TARBALL` names, keeping reviewed pin values repository-controlled even before the Dockerfile's registry and downloaded-archive checks run. The stale-upgrade E2E build contexts pass their fixture values only on fixture-specific build paths, and the integrity-pin contract suite verifies the default rejection, the explicit fixture opt-in, and the production workflow guard.
 
+Frozen OpenShell gateway-upgrade fixtures select only the SRI-pinned OpenClaw `2026.4.24`, `2026.5.22`, `2026.5.27`, or `2026.6.10` archive.
+The live test uses `packReviewedNpmArchive` to verify exact registry metadata, the reviewed tarball URL, and the downloaded SRI.
+The adapter stores only that verified local archive at `nemoclaw/src/.nemoclaw-e2e-old-openclaw.tgz`, which the frozen optimized build-context staging preserves.
+It installs the archive with lifecycle scripts disabled and invokes `postinstall-bundled-plugins.mjs` directly.
+The `v0.0.74` and `v0.0.89` fixtures retain npm registry signature verification for their historical mcporter locks.
+The reviewed `v0.0.36` and `v0.0.55` profiles require no advisory audit statement.
+The reviewed `v0.0.74` and `v0.0.89` profiles require exactly one advisory audit statement, which the adapter replaces with a test-only skip.
+Each audit policy is bound to one exact reviewed NemoClaw tag, full commit SHA, and OpenClaw version tuple before the installer is patched.
+The adapter rejects an unknown or mixed tuple and any advisory audit count that does not match its reviewed profile.
+`test/e2e/support/openshell-gateway-upgrade-old-installer.test.ts` verifies these constraints.
+
 Invalid state: a production image build overriding `OPENCLAW_VERSION` to an old fixture pin or replacing any repository-reviewed integrity/tarball value while still passing the workflow boundary. Source boundary: Dockerfile and Dockerfile.base install blocks plus the guard that precedes every production image build. Source-fix constraint: keep stale-upgrade E2Es able to build old images without normalizing those pins or accepting caller-controlled production package identity. Regression tests: the integrity-pin contract suite rejects the flag, both legacy versions, all declared integrity/tarball ARG overrides through direct, `--build-arg`, and environment paths, and a future-shaped positional pin name; `test/openclaw-dependency-review.test.ts` proves all seven production image builds are guard-protected and carry no literal fixture selectors. Removal condition: issue #5896 section 9 retires the old-base fixture strategy and fixture flag; the general repository-owned production pin guard remains until production builds no longer expose package identity as Docker ARGs.
 
 ### OpenClaw Device Approval Convergence Boundary
@@ -12107,6 +12057,313 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
 - The #4434 patch uses the SRI-verified `openclaw@2026.6.10` artifact, fails closed on unknown or ambiguous formatter shapes, and is applied/audited against the real distribution in CI. A second generated-file hash allowlist would duplicate the package SRI plus shape audit and is deferred unless a future patch can no longer identify one unambiguous formatter boundary.
 - Each OpenClaw `messaging-build-applier.mts --agent openclaw` Dockerfile phase receives `OPENCLAW_VERSION="${OPENCLAW_VERSION}"` from the Dockerfile build arg before rendering or installing messaging plugins.
 - The integrity pin, messaging render-safety, and provider-recovery follow-ups are covered by the integrity-pin suites, `test/messaging-build-applier-render-safety.test.ts`, and `test/onboard-resume-provider-recovery.test.ts`.
+
+
+========================================
+[FILE: docs/security/openclaw-2026.7.1-dependency-review.md]
+========================================
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# OpenClaw 2026.7.1 dependency review
+
+Review date: 2026-07-21
+
+## Decision
+
+Pin the production OpenClaw runtime and matching official plugins to the
+non-prerelease `v2026.7.1` release. This replaces `2026.6.10`, whose bundled
+graph contains the newly disclosed critical `tar` advisory. The reviewed
+`openclaw@2026.7.1` graph contains `tar@7.5.19`; the audit report contains no
+`tar` finding. NemoClaw's plugin also consumes `tar` directly for guarded
+migration archives, so its manifest and lock move from `7.5.11` to `7.5.20`;
+the exact plugin graph reports no vulnerabilities after that update.
+
+The release lineage is unusually wide and divergent: the direct upstream
+comparison reports 4,407 commits ahead and 34 behind. The maintainer requested
+this exact stable release after reviewing that risk. The long-term source of
+truth for these behaviors remains upstream OpenClaw, and this upgrade does not
+turn NemoClaw's compiled-dist shims into supported upstream APIs.
+
+OpenClaw now requires Node `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`.
+NemoClaw therefore moves its exact `node:22-trixie-slim` digest to the image
+whose amd64 config reports Node `22.23.1`.
+
+## Reviewed identities
+
+- `openclaw@2026.7.1`
+  - `sha512-ge/Xss99CHAjPL/ikmH/UFoiOrjcxDB4sW3y9mhyCD+dYW3wzV7TKbAVdkrXFgAG2d2BjpJofP97zUZ+umxo8g==`
+  - `https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1.tgz`
+- `@openclaw/diagnostics-otel@2026.7.1`
+  - `sha512-XXhMifYWTgoR6yFN4T3JkHxdPvQCe8k1cNZjVIgXNmk1svCdBWuALfQQicmpemlmWwauIQuHYgBURY6k63e+rw==`
+- `@openclaw/brave-plugin@2026.7.1`
+  - `sha512-7Z+GZ/6K6a8LlkTsWVnAZ1hv8EarORzHQvFHD7ekcg033FGJOXYPEZSbvvE3qR9vM+vnoZplNjMZ7vFMRcvQgw==`
+- `@openclaw/discord@2026.7.1`
+  - `sha512-tZfdC1YA8oVLvc2BK1w0F6rUljS5ugCOp2uWe0vPsbG1fbzVVIO4V32RoqZznGHe5u2R9u4n1aV5Z/qa1m2oFg==`
+- `@openclaw/slack@2026.7.1`
+  - `sha512-dwVGEVCmoTQrOIeZaSCIOPg8pT7hB883QQEXdp9EZUDzTGuvSc+KxH2iERSOV/59hROQctYdcobGn/vdB1H4XA==`
+  - remediated package tree: `sha512-4ThnsNS+yBlFSkTaQn2xosxrDu1s0vrxcqka5QqFj+8dCEaTa9JVLRgNniYV/QNhO53wc7a2R5oQFElzYspT2w==`
+- `@openclaw/whatsapp@2026.7.1`
+  - `sha512-wLY/Omc5fleRpl2lKGN8sxt/8hYfHGwLRezmWsk8oCbea5pRKUPE6ZX+wJO1O52NOJkAGCuiXvS7x0qIeKxXbQ==`
+- `@openclaw/msteams@2026.7.1`
+  - `sha512-gG/Yk6HZAguHwrmKjsqdONbFz5WNy126PEAXQWNW/TulO1kIifQ6tktM16BQPNLnkmWqLbj+TrrO55Cjas1aFg==`
+  - remediated package tree: `sha512-FL4l65gEbbwtDd9Ogr69+xBNzIfE4YS8Hib36G+kcmX+T0oB1zL+/qs6b4bJc+ygTsh60H3yqpFbXoQeN05JYQ==`
+- `@zed-industries/codex-acp@0.11.1`
+  - `sha512-My2VSlBtvJipJhImHjFDej2ut/p00QqOISRnZgLgLrSIzjgvdcQvAhaZviWj7XPhk4UIdIb0OoA+Lrls824uiQ==`
+  - `https://registry.npmjs.org/@zed-industries/codex-acp/-/codex-acp-0.11.1.tgz`
+- `@tencent-weixin/openclaw-weixin@2.4.3`
+  - `sha512-dPQbidUNWigC6V10vGW4i+GLH09x+6zUhafZRjuxkJ9GDu8o62WBsnUTojp4KqUH756hz+t2v9khiCRSi0dBDw==`
+- `tar@7.5.20` (NemoClaw plugin direct dependency)
+  - `sha512-9FcyK4PA6+WbzlTM9WhQm6vB5W7cP7dUiPsv1g7YDwEQnQ1CGpK3MGlKk/ITVWMk05kHZuBhmVhiv8LZoy/PFQ==`
+  - `https://registry.npmjs.org/tar/-/tar-7.5.20.tgz`
+
+## Audit result and temporary dependency remediations
+
+The exact reviewed archive graph contains `823` total dependencies and reports
+`13` moderate, `0` high, and `0` critical vulnerabilities. The critical `tar`
+finding that blocked the previous pin and the high Jaeger finding are gone. npm
+audit expands the remaining `@hono/node-server` advisory through its affected
+OpenClaw and MCP dependents, alongside the separate moderate `protobufjs`
+finding. Both advisories are below the configured `high` threshold.
+
+The independently installed `nemoclaw/` plugin graph reports `0`
+vulnerabilities after resolving its direct `tar` dependency to `7.5.20`.
+
+The separately locked `mcporter@0.7.3` runtime graph originally resolved
+`@hono/node-server@1.19.14`, affected by `GHSA-frvp-7c67-39w9`. Its former
+`2.0.5` override became affected when `GHSA-9mqv-5hh9-4cgg` was published for
+releases through `2.0.9`. The locked `@modelcontextprotocol/sdk@1.29.0` still
+declares `@hono/node-server@^1.19.9`, so the dedicated runtime manifest now pins
+reviewed `2.0.11`, outside both affected ranges. Its Node `>=20`
+requirement remains inside the image's Node contract, and real ESM plus
+CommonJS Streamable HTTP transport construction/start/close probes cover the
+major-version compatibility boundary.
+
+The SDK's locked AJV graph also requests `fast-uri@^3.0.1`; the newly published
+`GHSA-v2hh-gcrm-f6hx` affects releases through `3.1.3`. The same manifest pins
+the first compatible release outside that range, `3.1.4`. The resulting
+`138`-dependency graph reports `0` known vulnerabilities; image assembly keeps
+the low audit threshold, signature verification, and exact committed lock
+mandatory. Remove either override when the declared graph resolves to a
+reviewed patched release.
+
+The published Slack and Microsoft Teams plugin archives bundle `axios@1.16.0`.
+That version is in the affected range for the newly disclosed Axios
+inherited-proxy advisory. NemoClaw therefore rebuilds only these two reviewed
+plugin archives with this exact replacement graph:
+
+- `axios@1.18.0`,
+  `sha512-E32NzpYKp++W7XRe52rHiXV2ehxmh3wbdgO7MHeFM+vqxLBYHzt0ElkiImtOBxtOmyp0yoC8C6uESVV84Y2/hw==`;
+- `https-proxy-agent@5.0.1`,
+  `sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==`;
+- `agent-base@6.0.2`,
+  `sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==`.
+
+The diagnostics plugin bundles `@opentelemetry/sdk-node@0.219.0`, whose exact
+dependency on `@opentelemetry/propagator-jaeger@2.8.0` is affected by
+`GHSA-45rx-2jwx-cxfr`. The helper changes only that bundled SDK dependency edge
+to the first patched release and installs the matching Core package beneath it:
+
+- `@opentelemetry/propagator-jaeger@2.9.0`,
+  `sha512-4mYGty27rYvSM0jtp1ZUOqd3LfVRCYg9H5G9OFzSx5HViYToU21MFhWfco7x1HwXr7ER8yGOiCIHZUwjPksc0Q==`,
+  `https://registry.npmjs.org/@opentelemetry/propagator-jaeger/-/propagator-jaeger-2.9.0.tgz`;
+- nested `@opentelemetry/core@2.9.0`,
+  `sha512-m2nckMT80NnmjTYSPjJQObBJ+8dgkoajEOUbznL8AHZ3T3yHRk2P7gI1PhEBc1+lOnrYE9UWrWHqJDsmqjmNbw==`,
+  `https://registry.npmjs.org/@opentelemetry/core/-/core-2.9.0.tgz`.
+
+Both replacements declare `Apache-2.0`. The nested Core keeps every other
+consumer on the plugin's reviewed `2.8.0` graph while satisfying Jaeger's exact
+`2.9.0` dependency. The helper fails closed unless the source archive still
+contains diagnostics `2026.7.1`, SDK Node `0.219.0`, Jaeger `2.8.0`, and no
+preexisting nested Core. The resulting package tree is pinned to
+`sha512-2qyDTRPqNs97jo/pAWWfxAkVZyCXYqui/IjrGf4eEfYop1eGN8qBMJ/Kp/bJ/V18RNnYpMxHi5ECFelekVxcAQ==`.
+The trusted main-only
+`test/openclaw-diagnostics-jaeger-runtime.test.ts` harness runs with
+`NEMOCLAW_REAL_OPENCLAW_JAEGER_HARNESS=1`.
+It materializes the exact reviewed diagnostics archive, applies the production
+remediation, and installs that local archive with lifecycle scripts disabled.
+The child-process probe confirms these results:
+
+- malformed percent-encoded `uber-trace-id` and `uberctx-*` headers do not throw;
+- malformed baggage is ignored;
+- valid `uberctx-test` baggage remains available;
+- a valid Jaeger header produces the expected trace and span context.
+
+`scripts/lib/openclaw-npm-remediation.mts` verifies the original plugin and
+replacement package identities before it writes the archive. It rejects an
+upstream graph that no longer resolves Axios `1.16.0`. It then verifies the
+deterministic remediated package-tree integrity before installation. This
+canonical tree digest is independent of npm-generated tar metadata, which can
+vary between npm patch releases without changing package contents. The
+production plugin installer and `reviewed-npm-audit` use this same function.
+The tree hash opens each regular file without following symbolic links and
+validates the opened descriptor before it reads the content. This keeps the
+metadata and content checks bound to the same file.
+
+The Axios remediation is limited to `@openclaw/slack@2026.7.1` and
+`@openclaw/msteams@2026.7.1`; the Jaeger remediation is limited to
+`@openclaw/diagnostics-otel@2026.7.1`. Remove each branch when a reviewed stable
+OpenClaw plugin release bundles the corresponding patched graph and passes the
+repository audit.
+Issue #7337 tracks removal of the Jaeger branch and its exact replacement pins.
+
+The reviewed installer verifies each registry identity and downloaded tarball
+integrity. `scripts/lib/reviewed-npm-archive.mts` uses `npm pack --json` and
+rejects reported archive filenames containing unsafe archive paths. Its checks
+bind reviewed npm installs to verified local archives and check each reviewed
+npm plugin registry integrity. The helper returns only the verified local `.tgz`
+path.
+
+## OpenClaw Compiled-Dist Patch Runtime Boundary
+
+`test/openclaw-real-patched-dist-harness.test.ts` materializes the exact public
+archive under `NEMOCLAW_REAL_OPENCLAW_DIST_HARNESS=1`, applies every current
+NemoClaw patch, verifies syntax, and exercises the live device self-approval
+proof. This is not a substitute for focused nightly E2E proof.
+
+The `2026.7.1` dist changed seven reviewed shapes:
+
+- strict managed-proxy activation now uses `isStrictManagedProxyActive`; the
+  patch still activates only inside OpenShell and only without an explicit
+  dispatcher policy;
+- queued follow-up execution now resolves inbound context before allocating a
+  run id; `scripts/patch-openclaw-chat-send.mts` preserves the submitted run id
+  at that new boundary. It also suppresses the premature empty final event that
+  the new queue acknowledgment emits before the correlated follow-up completes;
+- device-token authentication now rejects a requested scope upgrade before the
+  canonical pairing gate can create its pending request. The compatibility
+  patch continues only an exact CLI/operator request limited to
+  `operator.pairing`, `operator.read`, and `operator.write` into that gate; the
+  requested operation remains blocked until canonical pairing approval;
+- shared and per-agent SQLite state now run during the required gateway startup
+  checkpoint and apply owner-only modes on each open.
+  `scripts/patch-openclaw-shared-state-permissions.mts` keeps the upstream
+  `0700` directory and `0600` file modes in same-UID OpenShell sandboxes.
+  The entrypoint derives `NEMOCLAW_OPENCLAW_SHARED_STATE=1` only for its root,
+  split-user topology; it explicitly removes that marker from non-root
+  OpenShell startup. Direct-container `sandbox` and `gateway` users can then
+  access the same database through their shared group, while OpenShell keeps
+  OpenClaw's native private-mode contract. The image does not retain this
+  marker; its descriptor-safe final repair normalizes any build-created global
+  SQLite files for a later direct runtime. Gateway workers and direct-container
+  connect shells inherit the entrypoint-derived marker.
+  It skips `chmod` only when the existing mode already matches and rejects an
+  unexpected or ambiguous compiled-dist shape;
+- the patch leaves upstream private-store enforcement unchanged, including its
+  `0700` directory and `0600` file modes for device identity, device
+  authentication, and credential-profile paths. The shared-state marker is not
+  consulted by those generic stores;
+- generated `models.json` is the reviewed exception to the generic private-store
+  rule. Under the split-user NemoClaw marker, the compiled models-config patch
+  keeps this non-secret provider configuration at `0660` and skips a non-owner
+  `chmod` when the inherited mode is already correct. Same-UID OpenShell and
+  runtimes outside NemoClaw preserve the upstream `0600` behavior;
+- the legacy update-check migration is skipped only under the split-user marker
+  or a validated OpenShell marker. This state contains polling, notification,
+  and auto-install cache for an OpenClaw version that NemoClaw pins in the
+  image; all other startup migrations and the upstream behavior outside
+  NemoClaw are unchanged.
+
+`scripts/patch-openclaw-device-self-approval.mts` remains required. Its new
+shape recognizers preserve the bounded stored-device credential flow and keep
+the canonical `approveDevicePairing` transaction fail closed.
+Until the initial `devices list` succeeds, the startup auto-pair watcher keeps
+the loopback shared token and sets a child-only marker. The compiled
+gateway-call patch uses that marker only to retain the CLI device identity that
+OpenClaw `2026.7.1` otherwise omits for loopback shared-token calls. OpenClaw
+then performs its canonical silent local-pairing transaction and issues the
+stored device token. Once that credential exists, the patch automatically
+retains CLI identity on ordinary loopback shared-token calls; the upstream
+local-backend omission remains unchanged. This restores device-scope
+enforcement without moving the gateway credential into OpenClaw state. After
+bootstrap, list calls and every `devices approve` remove the gateway URL, port,
+and shared token so the bounded approval flow uses that device credential.
+
+## Gateway Startup Migration Compatibility
+
+OpenClaw `2026.7.1` requires its migration checkpoint to complete without
+warnings before the gateway reports readiness.
+NemoClaw keeps supported sandbox upgrades compatible with that checkpoint as
+follows:
+
+- the final image copies Node `22.23.1` from the builder, including when the
+  image layers onto a published base that still contains Node `22.22.2`;
+- new images do not seed the legacy `update-check.json` placeholder.
+  During an upgrade, the descriptor-pinned config helper removes this obsolete
+  update polling and notification cache whether it is empty or populated when
+  the entrypoint can mutate the parent. A non-root gateway under the exact
+  root-owned shields-up topology retains the stable cache because it cannot
+  unlink it; the patched OpenClaw migration ignores that non-authoritative
+  pinned-version cache without producing a startup warning.
+  Without the compatibility patch, OpenClaw would try to harden and archive the
+  retained cache inside a shields-protected parent. Symbolic links, hard links,
+  directories, oversized files, or a file that changes during validation are
+  rejected;
+- a root entrypoint starts the `gateway` user with `HOME=/sandbox`, so startup
+  migrations do not probe the inaccessible `/root/.openclaw` path.
+
+Installed-base coverage is the `v0.0.89-x86_64` row in the
+`openshell-gateway-upgrade` E2E matrix. It installs the immutable v0.0.89
+release with OpenClaw `2026.6.10`, seeds its legacy Memory Core SQLite and
+update-check state plus a durable marker in the per-agent database materialized
+by the legacy CLI, then upgrades through the current installer. The row proves
+the per-agent database survives intact, the global database remains healthy,
+the legacy sidecar migration and `2026.7.1` startup checkpoint complete, and
+the restored `apiKey: "unused"` config still receives its gateway-held
+credential only at the OpenShell boundary.
+This custom route supplies `COMPATIBLE_API_KEY` only to the frozen v0.0.89
+install, then deliberately withholds it from the current installer so the
+post-upgrade turn proves the existing gateway-held credential was reused. The
+frozen runtime intentionally creates no NVIDIA auth-profile key reference; the
+E2E preserves any references that do exist without inventing one for this route.
+
+During image assembly, the shared-state repair rejects symbolic links,
+non-regular entries, and multiply linked files before it changes the ownership
+or mode of `exec-approvals.json` or SQLite state. This prevents a stale image
+entry from redirecting those mutations to another path or inode.
+
+These repairs run during image build or sandbox startup.
+They do not change the documented update and rebuild workflow.
+Regression coverage lives in `test/openclaw-2026-7-startup-compat.test.ts` and
+`test/openclaw-shared-state-permissions-patch.test.ts`.
+Remove the legacy cache repair after every supported upgrade source stops
+seeding the file or OpenClaw can migrate it across split users and a protected
+parent without a warning.
+
+## Existing security and runtime contracts
+
+The OpenClaw Diagnostics OTEL Host Gateway Boundary remains unchanged. The
+`openclaw-diagnostics-otel-local` policy is limited to the diagnostics plugin,
+which imports `OTLPTraceExporter` and contains no `web_fetch`, `fetchWithSsrFGuard`
+call path.
+
+Messaging contracts remain pinned to the reviewed runtime shapes:
+
+- `dist/pipeline.runtime-*.js`, which exports `prepareSlackMessage`;
+- the preload imports the hashed pipeline runtime for `prepareSlackMessage` and
+  only reports `openclaw-pipeline-runtime` after allowed prepare;
+- `dist/extensions/telegram/runtime-api.js`, which exports `sendMessageTelegram`;
+- runtime validation fails closed if the installed runtime file is missing;
+- tests reject claiming `openclaw-pipeline-runtime` inbound proof when a fixture
+  imports `dist/extensions/telegram/test-api.js`.
+
+Legacy upgrade fixtures remain gated behind
+`NEMOCLAW_E2E_FIXTURE_LEGACY_OPENCLAW=1`. The
+`scripts/check-production-build-args.sh` guard rejects those fixture-only
+production build args.
+
+## Issue #4434 full live acceptance
+
+`scripts/patch-openclaw-issue-4434-diagnostics.mts` and
+`test/issue-4434-error-fields.test.ts` remain tied to the gateway/upstream
+reporting layer. The #4434 compatibility-shim disposition is explicitly accepted
+for this release. 3/3 fields are present in the NemoClaw-patched runtime output,
+while 3/3 fields are missing in the upstream-shaped `openclaw@2026.7.1` output.
+
+The live acceptance requires the recovery text:
+`Recovery hint: check sandbox egress and provider reachability, then retry.`
+The focused live guard retains its default 180-second timeout.
 
 
 ========================================
@@ -12411,7 +12668,12 @@ The dependency compatibility review was completed on June 29, 2026; the MCP inte
 
 ## Source-of-Truth Boundaries
 
+<AgentOnly variant="openclaw,hermes">
 The generated gateway authentication contract remains unchanged from the [OpenShell 0.0.71 gateway authentication review](./openshell-0.0.71-gateway-auth-review).
+</AgentOnly>
+<AgentOnly variant="deepagents">
+The generated gateway authentication contract remains unchanged from the OpenShell 0.0.71 gateway authentication review.
+</AgentOnly>
 The `v0.0.71...v0.0.72` source comparison does not change the gateway config loader, local TLS tables, mTLS user authentication, gateway JWT issuer, or `SandboxJwtAuthenticator` contract used by NemoClaw.
 The live `openshell-gateway-auth-source-contract.test.ts` scenario revalidates that NemoClaw keeps the main OpenShell listener on `127.0.0.1`, rejects unauthenticated Docker-origin calls, accepts a correctly scoped sandbox JWT over guest mTLS, rejects cross-sandbox tokens, and scrubs `OPENSHELL_DISABLE_GATEWAY_AUTH=true`.
 The inherited contract also continues to reject `NEMOCLAW_GATEWAY_BIND_ADDRESS=0.0.0.0`.
