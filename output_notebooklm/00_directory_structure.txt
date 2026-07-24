@@ -387,6 +387,7 @@
 │   │   ├── 2026-07-18.mdx
 │   │   ├── 2026-07-20.mdx
 │   │   ├── 2026-07-22.mdx
+│   │   ├── 2026-07-23.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -490,11 +491,13 @@
 │   │   │   └── windows-wsl.md
 │   │   └── starter-prompt.md
 │   └── security
+│       ├── advisory-early-warning.md
 │       ├── best-practices.mdx
 │       ├── configure-corporate-ca-trust.mdx
 │       ├── credential-rotation.mdx
 │       ├── credential-storage.mdx
 │       ├── e2e-weather-plugin-fixture-dependency-review.md
+│       ├── fern-5.80.1-dependency-review.md
 │       ├── openclaw-2026.6.10-dependency-review.md
 │       ├── openclaw-2026.7.1-dependency-review.md
 │       ├── openclaw-controls.mdx
@@ -2942,4 +2945,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-242 directories, 2701 files
+242 directories, 2704 files

@@ -923,7 +923,7 @@ Refer to [Agent cannot reach a host-side HTTP service](../reference/troubleshoot
 <Warning>
 Adding a host to the egress policy permits a connection only when the endpoint, port, method, and binary rules match.
 OpenShell still applies SSRF protection separately, so it can deny a request when the final address resolves to a loopback, private, link-local, or otherwise blocked internal range.
-If a package installer or browser runtime download still fails with an SSRF-style denial after you add the public host, install that binary into the sandbox image at build time with [`$$nemoclaw onboard --from`](/reference/commands#--from-dockerfile) instead of relying on runtime egress.
+If a package installer or browser runtime download still fails with an SSRF-style denial after you add the public host, install that binary into the sandbox image at build time with [`$$nemoclaw onboard --from`](../reference/commands#--from-dockerfile) instead of relying on runtime egress.
 </Warning>
 
 ## Prerequisites
@@ -2847,7 +2847,7 @@ The wizard creates an OpenShell gateway, registers inference providers, builds t
 Use this command for new installs and for recreating a sandbox after changes to policy or configuration.
 
 ```bash
-$$nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--gpu | --no-gpu] [--from <Dockerfile>] [--name <sandbox>] [--sandbox-gpu | --no-sandbox-gpu] [--sandbox-gpu-device <device>] [--agent <name>] [--agents <agents.yaml>] [--tool-disclosure <progressive|direct>] [--observability | --no-observability] [--control-ui-port <N>] [--yes | -y] [--no-ollama-autostart] [--yes-i-accept-third-party-software]
+$$nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--gpu | --no-gpu] [--from <Dockerfile>] [--name <sandbox>] [--sandbox-gpu | --no-sandbox-gpu] [--sandbox-gpu-device <device>] [--agent <name>] [--agents <agents.yaml>] [--tool-disclosure <progressive|direct>] [--observability | --no-observability] [--control-ui-port <N>] [--events=jsonl] [--yes | -y] [--no-ollama-autostart] [--yes-i-accept-third-party-software]
 ```
 
 <AgentOnly variant="hermes">
@@ -2873,6 +2873,25 @@ nemoclaw onboard --agent langchain-deepagents-code [options]
 
 `--agent` accepts the canonical manifest names from `$$nemoclaw agents list` plus common aliases.
 For example, `nemohermes` resolves to `hermes`, while `dcode`, `deepagents`, `deepagents-code`, and `langchain` resolve to `langchain-deepagents-code`.
+
+#### `--events=jsonl`
+
+Emit a read-only stream of canonical onboarding FSM events as JSON Lines on stdout.
+Each line is one JSON object with the version 1 envelope:
+
+```json
+{"schemaVersion":1,"session":"<session-id>","type":"state.entered","timestamp":"2026-07-13T12:34:56.789Z","payload":{"state":"inference","step":"inference","context":{"agent":"openclaw","sandboxName":"alpha","provider":"nvidia-prod","model":"nvidia/test-model","endpointOrigin":"https://integrate.api.nvidia.com","credentialEnv":"NVIDIA_API_KEY"},"error":null,"metadata":{}}}
+```
+
+In this mode, human progress remains available on stderr so stdout stays valid JSONL.
+Payloads contain only the existing bounded, redacted machine-event context: credential environment variable names may appear, but credential values and secret-bearing URL components are redacted.
+Treat new event `type` values and new payload fields as additive changes.
+A breaking envelope or field-semantics change increments `schemaVersion`.
+
+This surface observes the canonical onboarding session and does not accept input, cancel onboarding, or create another state machine.
+It does not provide event history, reconnect, or replay; use the existing `--resume` behavior after an interrupted onboarding process.
+Closing the output pipe or applying sustained backpressure disables observation without cancelling, rolling back, or otherwise changing onboarding.
+Without `--events=jsonl`, terminal output and behavior are unchanged.
 
 #### `--resume` and `--fresh`
 
@@ -7105,7 +7124,7 @@ For install requirements and the shorter setup-oriented platform view, refer to 
 | OS | Container runtime | Status | PRD priority | CI | Notes |
 |----|-------------------|--------|--------------|----|-------|
 | DGX OS (Spark) | Docker | Tested | P1 | Yes | Use the standard installer and `$$nemoclaw onboard`. For an end-to-end walkthrough with local inference, see the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw). |
-| DGX OS (Station) | Docker | Tested with limitations | P1 | No | The PRD marks this platform as P1. Physical validation on one DGX Station GB300 covers generic Ubuntu 24.04 ARM64, stock DGX OS `7.5.0`, the April 2026 NVIDIA Colossus BaseOS profile, and the June 2026 NVIDIA AI Developer Tools profile. Clean-host end-to-end validation passed on generic Ubuntu and Colossus BaseOS; stock DGX OS and AI Developer Tools completed Station Express validation. The DGX OS `7.5.0` run used released OpenShell `0.0.85`, local Nemotron Ultra serving, sandbox `cuInit(0)`, and a Hermes write/read file-tool task. A dual-Station configuration has not been validated, and dedicated CI coverage is not available. Direct-GPU policies expose only the exact read-only BDF directory for each discovered NVIDIA display-class PCI device plus required existing topology and module paths; they do not expose `/sys`, the PCI parent subtree, or sysfs write access. During physical validation, reads of `/sys/fs/cgroup/cgroup.controllers` and `/sys/class/net/lo/address` remained denied. For canonical hardware qualification, image requirements, preparation, repair limits, reboot handoff, and the explicit temporary metadata override, see [Prepare DGX Station to Install NemoClaw](../get-started/additional-setup/dgx-station-preparation). |
+| DGX OS (Station) | Docker | Tested with limitations | P1 | No | The PRD marks this platform as P1. Physical validation on one DGX Station GB300 covers generic Ubuntu 24.04 ARM64, stock DGX OS `7.5.0`, the April 2026 NVIDIA Colossus BaseOS profile, and the June 2026 NVIDIA AI Developer Tools profile. A physical no-OTA DGX OS `7.6.0` host provided the release and hardware profile used for its stable workstation-family classifier and passed read-only eligibility and runtime-command preflight. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. The profile remains subject to the same physical GB300, driver, ECC, Docker, CDI, and container GPU validation. Clean-host end-to-end validation passed on generic Ubuntu and Colossus BaseOS; stock DGX OS and AI Developer Tools completed Station Express validation. The DGX OS `7.5.0` run used released OpenShell `0.0.85`, local Nemotron Ultra serving, sandbox `cuInit(0)`, and a Hermes write/read file-tool task. A dual-Station configuration has not been validated, and dedicated CI coverage is not available. Direct-GPU policies expose only the exact read-only BDF directory for each discovered NVIDIA display-class PCI device plus required existing topology and module paths; they do not expose `/sys`, the PCI parent subtree, or sysfs write access. During physical validation, reads of `/sys/fs/cgroup/cgroup.controllers` and `/sys/class/net/lo/address` remained denied. For canonical hardware qualification, image requirements, preparation, repair limits, reboot handoff, and the explicit temporary metadata override, see [Prepare DGX Station to Install NemoClaw](../get-started/additional-setup/dgx-station-preparation). |
 | Linux | Docker | Tested | P0 | Yes | Primary tested path. Ubuntu 24.04 has host-level onboarding validation. A digest-pinned Ubuntu 26.04 userspace lane builds the CLI and runs preflight, installer, and platform contracts on eligible main pushes; Docker-host, AppArmor, Landlock, and live onboarding validation on 26.04 remain pending. Other distros (Ubuntu 22.04, Fedora, Rocky, Alma, NixOS, Arch) may work but are not validated. |
 | macOS (Apple Silicon) | Colima, Docker Desktop | Tested with limitations | P0 | Yes | Start the container runtime (Colima or Docker Desktop) before running the installer. Homebrew Colima users must install both Colima and the Docker CLI (`brew install colima docker`) before `docker info` can work. Xcode Command Line Tools (`xcode-select --install`) are typically required for Node native modules during install. NemoClaw recommends them but does not enforce them during preflight. |
 | NVIDIA RTX (consumer and Pro workstation GPUs) | Docker | Deferred | P1 | No | The PRD marks this platform as P1. Covers RTX consumer cards and RTX Pro workstation cards on Linux hosts that meet the generic-Linux-GPU requirements (NVIDIA Container Toolkit + CDI present). The provider menu emits managed vLLM behind `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm` for this host class today; the end-to-end onboard path on this hardware is not yet validated in CI. |
@@ -7130,7 +7149,7 @@ NemoClaw routes inference through the OpenShell gateway. Each row below is a pro
 | Local Ollama | Tested with limitations | Local Ollama API | Available when Ollama is installed or running on the host. Validated default models: `qwen3.6:35b` (high VRAM), `nemotron-3-nano:30b` (medium VRAM), `qwen3.5:9b` (low VRAM fallback). |
 | Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a CDI spec present (`onboard` asserts CDI presence with `assertCdiNvidiaGpuSpecPresent`, `src/lib/onboard/fatal-runtime-preflight.ts`). NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag because it does not auto-select a NIM image for the host today. You must explicitly pick from the validated image list. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
 | Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Appears in the onboarding menu when NemoClaw detects a server already on `localhost:8000`. No flag required. Model is whatever the existing server serves. |
-| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300; dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
+| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status-full:end */}
 
 ## Messaging Integrations
@@ -9661,6 +9680,11 @@ Identify the matching path before applying the recovery guidance.
 | The patched container exits or the compatibility attempt fails | Compatibility recreation | Inspect the saved diagnostics, repair the NVIDIA Container Toolkit/CDI configuration, clean up the failed sandbox, and rerun onboarding. |
 | A recreated container inherits only a loopback DNS stub and no usable upstream | Compatibility DNS fallback | Repair the host's `systemd-resolved` upstream configuration, then rerun onboarding. |
 
+For bridge-networked compatibility recreation without an explicit container DNS setting, NemoClaw selects a usable IPv4 upstream from `systemd-resolved` and probes that exact `--dns` path before it stops the original container.
+If the probe confirms that the resolver is unreachable, recreation stops and leaves the original container in place.
+An IPv6-only upstream list does not become a compatibility override; NemoClaw preserves Docker's default resolver path instead.
+Containers with explicit DNS settings or host networking keep their existing DNS path and do not use the fallback probe.
+
 #### Ordinary native Linux bounded fallback
 
 Ordinary Linux GPU onboarding uses native OpenShell GPU injection and stops on failure by default.
@@ -10085,6 +10109,113 @@ nemohermes onboard --resume --non-interactive
 ```
 
 </AgentOnly>
+
+
+========================================
+[FILE: docs/security/advisory-early-warning.md]
+========================================
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Advisory Early Warning and Audit Provenance
+
+Status: correlation module, scan CLI, and audit provenance implemented.
+Scheduled operation and the response policy are a separate follow-up, gated on
+product/security-owner sign-off recorded on issue #7338 (evidence from #7276).
+
+Public upstream GitHub Security Advisories are often published weeks before the
+global reviewed ecosystem record that `npm audit` enforces. For
+`fast-uri` (GHSA-4c8g-83qw-93j6) the upstream repository advisory appeared on
+June 29 while the reviewed record propagated on July 21, so the same vulnerable
+version audited clean at 18:46 UTC and reported High at 20:09 UTC. This page
+documents the early-warning correlation that narrows that gap and the
+provenance every audit now records so such timelines are provable from retained
+artifacts.
+
+The correlation draws on all three types of the global advisory database, which
+contribute differently:
+
+- reviewed records are the corpus `npm audit` enforces — a match here means
+  package-level enforcement is imminent or already active, and the signal
+  confirms the reviewed gate will catch it;
+- unreviewed records are NVD-sourced and often appear before curation reaches
+  the reviewed feed — they usually lack a verified npm mapping, so they flow
+  through the ambiguous, informational-only path and provide the earlier
+  heads-up;
+- malware records name npm packages published as malware — a match against the
+  reviewed inventory correlates like any other record and is equally
+  non-blocking.
+
+Polling upstream *repository* advisories directly (the earliest public signal,
+e.g. `fastify/fast-uri`'s own advisory) needs a package-to-repository map and
+is the planned extension; the correlation module already accepts that record
+shape unchanged.
+
+## How the early-warning correlation works
+
+- `scripts/lib/advisory-early-warning.mts` correlates GitHub Security Advisory
+  JSON (repository-level and global records share the shape) with the reviewed
+  npm inventory and emits structured signals:
+  `{advisoryId, package, vulnerableRange, matchedVersions, source, confidence, action}`.
+- The inventory is derived from `ci/reviewed-npm-audit.json`: every committed
+  archive package spec plus the installed packages of each locked graph's
+  `package-lock.json`.
+- Confidence is encoded, never guessed: only an exact npm ecosystem +
+  package-name + parseable semver-range match yields `confidence: "exact"` and
+  `action: "investigate"`. Name collisions from non-npm (CPE-derived) records
+  and unparseable ranges yield `confidence: "ambiguous"` and
+  `action: "informational"`. Ambiguous matches never block or mutate a release.
+- The reviewed npm audit gate (`scripts/audit-reviewed-npm-graph.mts`, enforced
+  in CI) remains enabled and authoritative for exact npm package/version-range
+  decisions. The early-warning path only triggers investigation and rescanning.
+
+`scripts/advisory-early-warning-scan.mts` is the CLI over the module.
+It reads only local files and exits 0 whether or not signals are found.
+It does not modify input files or external state.
+With `--output`, it writes the requested local signals file:
+
+```sh
+# List inventory package names (one per line), the input for advisory queries.
+node --experimental-strip-types scripts/advisory-early-warning-scan.mts \
+  --list-packages
+
+# Correlate fetched advisory records with the inventory.
+node --experimental-strip-types scripts/advisory-early-warning-scan.mts \
+  --advisories advisories.json --output signals.json
+```
+
+Advisory records come from the GitHub `/advisories` API — all three types,
+paginated, filtered by `affects=` batches of the inventory package names.
+
+Running this correlation on a schedule and routing signals to an alert
+destination is deliberately not wired up yet: #7338 requires product/security
+owners to define the supported historical-image scope, rescan ownership, alert
+destination, and response expectations first. A follow-up adds the scheduled
+workflow once that sign-off is recorded on the issue.
+
+## Provenance recorded per audit
+
+Each reviewed npm audit report now has a `*.provenance.json` sidecar
+(`coverage/reviewed-npm-audit/` artifacts, and `npm-audit.provenance.json` for
+the WeChat locked runtime graph audit) recording:
+
+- scanner identity: `npm audit`, npm version, Node.js version;
+- the configured registry, with URL credentials removed, plus the derived bulk
+  advisory endpoint npm posts the dependency graph to (npm >= 7 has no
+  quick-audit fallback: on request failure npm reports no advisory data, and
+  the note records this);
+- run start and finish timestamps (ISO 8601);
+- the audited graph label and committed package specs;
+- the raw machine-readable report path (`rawReportPath`, by convention
+  relative to the directory containing the sidecar);
+- the GHSA advisory ids extracted from the report; and
+- a `failure` marker when the audit attempt itself failed, so the sidecar
+  still records the attempt.
+
+Comparing the `advisoryIds` of consecutive retained runs identifies the last
+comparable non-detection and the first detection of a newly surfaced advisory,
+even when an unrelated finding failed the earlier run.
 
 
 ========================================
@@ -11658,6 +11789,174 @@ Remove this waiver when the fixture is deleted or when repository-wide automated
 
 
 ========================================
+[FILE: docs/security/fern-5.80.1-dependency-review.md]
+========================================
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Fern 5.80.1 dependency review
+
+Review date: 2026-07-23
+
+## Decision
+
+Pin the documentation tool to `fern-api@5.80.1`.
+This replaces `5.72.1` without changing a supported NemoClaw runtime or product integration.
+All production, staging, pull-request preview, validation, and local preview commands read the exact version from `fern/fern.config.json`.
+
+The upgrade spans 21 adjacent published versions and 225 source commits.
+The review found no unresolved high-severity concerns.
+The only accepted residuals are pre-existing properties of the upstream package: its optional BAML dependency uses a compatible range, and its provenance does not include an SBOM or the complete build dependency graph.
+The point-in-time dependency closure is identical for `5.72.1` and `5.80.1` except for the root package version and integrity.
+
+## Reviewed identities
+
+The npm registry is the artifact authority.
+Fern does not publish semantic Git tags for these CLI versions, so the npm provenance source commits define the release boundaries.
+
+| Identity | Value |
+| --- | --- |
+| Current package | `fern-api@5.72.1` |
+| Current source commit | `238ff9d037fc7653661a6850dc6dab47712b5bfb` |
+| Current integrity | `sha512-b8qOEZ5vYQ7k0cbQMlS9sLEqyj0mdA+bjDZAPHqd5CpMeNO1tgFMp8shFLGVS7FHxUNmjxOVLxyXnduwTe3tuQ==` |
+| Target package | `fern-api@5.80.1` |
+| Target source commit | `76de91e1216afbdb56a36d3389ee6b91d3e59a9e` |
+| Target integrity | `sha512-1GZglZnA8T1JogREverqNwIY5G9e3e6uRHv1bpMjX0iIJVr+Dh+5MMPSBq6NegTmBjppqRHF6PVNbnuuO9VfRA==` |
+| Target SHA-1 | `a06a295390f91b8bbd42de56d0d481f545642595` |
+| Target publish time | `2026-07-23T19:39:21.720Z` |
+| Target provenance workflow | `.github/workflows/publish-cli.yml` |
+| Target provenance run | `30038076483`, attempt `1`, successful push to `main` |
+
+The current and target archives each contain only `cli.cjs`, `package.json`, and `LICENSE`.
+`cli.cjs` is the only executable.
+Neither archive contains links, devices, unsafe paths, install scripts, a `NOTICE` file, or an SBOM.
+Both packages declare Apache-2.0 and expose `fern` through `cli.cjs`.
+
+`npm audit signatures` reports zero invalid and zero missing signatures for both installed graphs.
+Their npm signatures and SLSA provenance bind the registry artifacts to the source commits above.
+The target provenance run completed successfully with the attested head commit on `main`.
+
+## Complete source range ledger
+
+Every adjacent comparison is contiguous: each target is ahead of its source with `behind_by=0`, and local ancestry checks agree.
+A full sanitized upstream clone passed `git fsck --full --strict`; no upstream code was executed.
+
+| Range and source commits | Commits | NemoClaw-relevant change |
+| --- | ---: | --- |
+| `5.72.1` (`238ff9d`) to `5.73.0` (`60a6649`) | 15 | GitHub OIDC variables reach local generator containers; NemoClaw does not use this generator path. |
+| `5.73.0` (`60a6649`) to `5.74.0` (`0ed4690`) | 15 | Webhook body hashes; no NemoClaw API or webhook generation. |
+| `5.74.0` (`0ed4690`) to `5.74.1` (`63b552f`) | 2 | Generator attribution fix; no NemoClaw generator manifest. |
+| `5.74.1` (`63b552f`) to `5.74.2` (`9b116de`) | 10 | OpenAPI union import fix; NemoClaw publishes documentation only. |
+| `5.74.2` (`9b116de`) to `5.74.3` (`5802970`) | 13 | Internal docs publish logs move from info to debug; exit behavior is unchanged. |
+| `5.74.3` (`5802970`) to `5.75.0` (`ec8bd05`) | 2 | Optional smart casing, disabled by default and absent from NemoClaw config. |
+| `5.75.0` (`ec8bd05`) to `5.75.1` (`ddc0b4e`) | 22 | Theme uploads use an organization-scoped content-addressed path and explicit origin precedence. |
+| `5.75.1` (`ddc0b4e`) to `5.75.2` (`c378ff0`) | 2 | Import warning for unmapped unions; no NemoClaw API import. |
+| `5.75.2` (`c378ff0`) to `5.75.3` (`c4f032d`) | 2 | OpenAPI `allOf` example performance; no NemoClaw API import. |
+| `5.75.3` (`c4f032d`) to `5.75.4` (`94fd7e3`) | 3 | `fern check` compiles MDX and reports malformed MDX as warnings. |
+| `5.75.4` (`94fd7e3`) to `5.75.5` (`02364eb`) | 20 | Faster content-only reloads for `fern docs dev`; publish behavior is unchanged. |
+| `5.75.5` (`02364eb`) to `5.75.6` (`36b3a5e`) | 15 | PHP package naming; no NemoClaw generator manifest. |
+| `5.75.6` (`36b3a5e`) to `5.75.7` (`527c2ca`) | 3 | Generator changelog and header fix; no NemoClaw generator manifest. |
+| `5.75.7` (`527c2ca`) to `5.75.8` (`474447f`) | 2 | Multi-API environment grouping; no NemoClaw API configuration. |
+| `5.75.8` (`474447f`) to `5.75.9` (`bfa7994`) | 2 | Generator-specific follow-up; no NemoClaw generator manifest. |
+| `5.75.9` (`bfa7994`) to `5.76.0` (`5416ce9`) | 3 | Webhook URL normalization; no NemoClaw webhook generation. |
+| `5.76.0` (`5416ce9`) to `5.77.0` (`c031254`) | 34 | Optional OpenAPI tag filtering; no NemoClaw API import. |
+| `5.77.0` (`c031254`) to `5.78.0` (`db64dc1`) | 7 | OpenAPI path-parameter deconfliction; no NemoClaw API import. |
+| `5.78.0` (`db64dc1`) to `5.79.0` (`1d6a7e7`) | 6 | Optional external sitemaps; absent from NemoClaw config. |
+| `5.79.0` (`1d6a7e7`) to `5.80.0` (`35b6f73`) | 26 | Optional navigation availability badges, disabled by default and absent from NemoClaw config. |
+| `5.80.0` (`35b6f73`) to `5.80.1` (`76de91e`) | 21 | Preserve nested `allOf` descriptions in generated API docs; no NemoClaw API import. |
+
+The repository's documented release-ledger collector is not present on the reviewed `main` branch.
+The audit therefore used equivalent read-only npm registry and GitHub API evidence plus the sanitized local clone.
+This method exception changes how the ledger was collected, not its release boundaries or coverage.
+
+## Dependency closure and advisory result
+
+Lifecycle scripts were disabled while materializing both exact graphs.
+Each graph contains 11 packages:
+
+- `@boundaryml/baml@0.219.0`;
+- eight matching `@boundaryml/baml-*` platform packages at `0.219.0`;
+- `@scarf/scarf@1.4.0`;
+- the selected `fern-api` version.
+
+All transitive versions and licenses are identical between current and target.
+The BAML packages are MIT and Scarf is Apache-2.0.
+`npm audit --omit=dev` reports zero info, low, moderate, high, or critical findings for both graphs.
+
+The package declares optional `@boundaryml/baml@^0.219.0`, so a future fresh `npx` install could select a later compatible BAML release.
+This is a pre-existing reproducibility residual, not a change introduced by `5.80.1`.
+NemoClaw pins Fern exactly, uses it only as contributor and CI documentation tooling, and does not ship this graph in its CLI, plugin, blueprint, or runtime images.
+
+## Downstream contract audit
+
+`fern/fern.config.json` is the single version authority.
+The following consumers all read that file before constructing an exact `fern-api@<version>` selector:
+
+- the `docs:deps`, `docs:validate`, `docs:live`, and `docs:preview:watch` npm scripts;
+- public and staging publication;
+- pull-request previews;
+- staging preview deletion.
+
+No lockfile, generated manifest, workflow input, environment default, cache key, or runtime image contains a second production Fern version.
+The synthetic `3.67.1` in `test/fern-preview-config.test.ts` is an opaque unit-test input, not a production selector.
+
+NemoClaw has no Fern API definition or generator manifest.
+Its Fern tree contains only the docs configuration, theme assets, components, and CSS.
+Consequently, the OpenAPI, webhook, SDK generator, and multi-API changes in the range cannot affect a shipped artifact.
+
+The CLI emits human-readable logs, but NemoClaw does not parse them.
+Workflows use the process exit status; the pull-request preview workflow captures output only to publish the preview URL.
+The upstream log-level reduction therefore does not change a machine-consumed contract.
+
+## Concern ledger
+
+| ID | Severity | Failure mode | Evidence and disposition |
+| --- | --- | --- | --- |
+| `FERN-1` | Medium | Changed publish logging could break an output parser | No consumer parses publish log text; exit status and preview URL behavior remain authoritative, so there is no impact. |
+| `FERN-2` | Medium | MDX compilation during `fern check` could expose invalid current docs | `npm run docs` passes with the target CLI, and current and target report the same two pre-existing warnings and zero errors, which resolves the concern with runtime proof. |
+| `FERN-3` | Medium | Theme upload or preview behavior could target the wrong organization or URL | Upstream adds organization scoping and regression tests, while NemoClaw's staging deletion workflow remains covered with executed fake-CLI arguments as runtime proof. |
+| `FERN-4` | Low | Incremental local preview state could serve stale content | The change is limited to `docs dev` content reloads, does not persist release state, and leaves local preview as an advisory developer surface, so there is no impact. |
+| `FERN-5` | Low | New sitemap or navigation options could change the published site by default | Both settings are optional, availability badges default to false, and neither key is present in `fern/docs.yml`, so there is no impact. |
+| `FERN-6` | Low | API importer and generator changes could alter generated SDK or API documentation | NemoClaw has no Fern API definition or generator manifest, so there is no impact. |
+| `FERN-7` | Medium | The target archive or dependency graph could be substituted or add a vulnerable package | Registry integrity, npm signatures, SLSA provenance, the successful producer run, archive structure, licenses, and both exact graphs were verified, which resolves the concern. |
+| `FERN-8` | Low | A hard-coded test version could drift from the production version authority | The staging workflow test now derives its expected exact selector from `fern/fern.config.json`, which resolves the concern. |
+| `FERN-9` | Low | A persisted cache or migration could retain incompatible Fern state | Fern caches and generated docs are disposable build outputs with no migration, rollback data, or product state, so there is no impact. |
+| `FERN-10` | Low | Live sandbox E2E exclusion could leave a runtime behavior untested | Fern is docs-only tooling that never runs inside a NemoClaw sandbox, so docs validation and workflow contract tests are the relevant lanes and live E2E is excluded. |
+
+Unresolved high-severity concerns: `0`.
+
+## Verification and remaining gates
+
+Completed audit evidence:
+
+- 21 adjacent source ranges and 225 commits reviewed;
+- target SHA-1 and SHA-512 matched the downloaded archive;
+- package structure and licenses inspected without executing upstream code;
+- npm signatures and SLSA provenance verified for current and target;
+- source provenance runs checked for successful completion and matching heads;
+- full current and target dependency closures compared;
+- current and target advisory audits reported zero findings.
+- six focused dependency-review and staging workflow tests passed;
+- source-shape validation reported no unapproved source-shape tests;
+- Vitest project membership was exact across all eight projects;
+- `npm run docs` passed with `fern-api@5.80.1`.
+- `npm run check:diff` passed after generating the isolated worktree's local compiled artifacts.
+
+`fern check --warnings` reports zero errors and the same two warnings under both `5.72.1` and `5.80.1`: unauthenticated local validation cannot check remote redirects, and the existing light-theme accent contrast is 2.41:1.
+Neither warning is introduced by this dependency change.
+Authenticated publication and preview checks remain GitHub gates.
+
+Before merge, the reviewed PR head must still pass:
+
+- normal commit hooks and required GitHub checks;
+- automated review with no unresolved actionable finding;
+- documentation writer review tied to the final pushed head.
+
+No live E2E, sandbox build, migration, rollback, compatibility shim, or changelog entry is required because the dependency is not part of a supported runtime or user-visible product behavior.
+
+
+========================================
 [FILE: docs/security/openclaw-2026.6.10-dependency-review.md]
 ========================================
 
@@ -11730,7 +12029,9 @@ The audit reports their affected dependency chains as separate moderate entries.
 These findings have upstream fixes, but applying them would change additional reviewed package shrinkwraps.
 The current remediation does not silently extend its authority to those graphs.
 
-This review is an advisory snapshot for the direct OpenClaw runtime package, the locked `mcporter@0.7.3` graph, Codex ACP runtime helper, optional plugins, messaging plugins, and their npm dependency graphs at review time. Default PR and main CI now rematerialize those exact direct packages from SRI-verified reviewed local archives under Node `22.22.2`, install with lifecycle scripts disabled, run `npm audit --omit=dev --json`, and upload the raw reports from `coverage/reviewed-npm-audit`. The configured threshold in `ci/reviewed-npm-audit.json` is `high`. The same job independently installs and audits the committed mcporter production lock. This gate complements, but does not replace, the committed npm integrity pins and install-time archive checks.
+This review is an advisory snapshot for the direct OpenClaw runtime package, the locked `mcporter@0.7.3` graph, Codex ACP runtime helper, optional plugins, messaging plugins, and their npm dependency graphs at review time. Default PR and main CI now rematerialize those exact direct packages from SRI-verified reviewed local archives under Node `22.23.1`, install with lifecycle scripts disabled, run `npm audit --omit=dev --json` through `scripts/lib/reviewed-npm-audit.mts`, and upload both the raw reports and normalized policy results from `coverage/reviewed-npm-audit`. The configured threshold in `ci/reviewed-npm-audit.json` is `high`. Lower-severity findings remain visible without blocking. The same job independently installs and audits the committed mcporter production lock. This gate complements, but does not replace, the committed npm integrity pins, registry signature verification, and install-time archive checks.
+
+The exception registry at `ci/npm-audit-exceptions.json` is empty by default. It is not a global npm-audit bypass: each entry must exactly match one advisory, audited graph, package, installed version, and reported severity. It must also record an expiring `not-affected` or `temporary-risk-acceptance` decision, rationale, owner, and NemoClaw issue or PR. Expiry is limited to 30 days. Temporary risk acceptance additionally requires compensating controls. Missing, malformed, expired, overlong, duplicate, mismatched, and unused entries fail the audit. The repository-wide audit also rejects exceptions for unknown graph IDs. The policy file hash, evaluation status, and accepted advisory IDs are bound into OpenClaw base-image provenance, so a child image cannot silently reuse a base built under a different exception set. The registry contains no exception for `GHSA-v2hh-gcrm-f6hx` or any other current advisory.
 
 ## Transitive Dependency Graph Rationale
 
@@ -11850,7 +12151,7 @@ The SRI-verified `openclaw@2026.6.10` artifact's `package/skills/weather/SKILL.m
 
 `Dockerfile`, `Dockerfile.base`, optional OpenClaw plugin installs, and `src/lib/messaging/applier/build/messaging-build-applier.mts` bind reviewed npm installs to verified local archives through `scripts/lib/reviewed-npm-archive.mts`. The thin callers provide the exact package spec, committed SRI, reviewed tarball URL, and caller label. The helper verifies both `npm view` fields, packs the reviewed URL, validates the reported SRI and contained regular-file basename in a fresh directory, and returns the local archive before `npm install -g <local .tgz>` or `openclaw plugins install npm-pack:<local .tgz>` runs. Runtime mcporter uses the helper's metadata-only path before retaining its committed-lock `npm ci` transaction.
 
-After `Dockerfile.base` completes the OpenClaw archive transaction and reviewed lifecycle, installs mcporter from the committed lock, checks both installed versions, and passes mcporter advisory and signature audits, it atomically publishes a root-owned, read-only provenance marker. The marker binds the OpenClaw package, SRI, tarball, and lifecycle recipe plus the mcporter package, SRI, tarball URL, lockfile SHA-256, and audited-install recipe. The production Dockerfile may reuse both installs only for an official NemoClaw base reference (or the resolver's local base name) when the marker is a non-symlink regular file with exact `root:root` ownership, mode `0444`, byte-for-byte content, and both installed versions match. It removes the marker before applying NemoClaw patches so a derived image cannot claim pristine-base provenance. Missing, malformed, writable, symlinked, mismatched, custom-base, stale, or incomplete provenance takes the complete reviewed install fallback; a base newer than the reviewed OpenClaw target remains a hard failure.
+After `Dockerfile.base` completes the OpenClaw archive transaction and reviewed lifecycle, installs mcporter from the committed lock, checks both installed versions, and passes mcporter advisory and signature audits, it atomically publishes a root-owned, read-only provenance marker. The marker binds the OpenClaw package, SRI, tarball, and lifecycle recipe plus the mcporter package, SRI, tarball URL, lockfile SHA-256, audit exception-policy SHA-256, audit status, accepted advisory IDs, and audited-install recipe. The production Dockerfile may reuse both installs only for an official NemoClaw base reference (or the resolver's local base name) when the marker is a non-symlink regular file with exact `root:root` ownership, mode `0444`, byte-for-byte content, and both installed versions match. It removes the marker before applying NemoClaw patches so a derived image cannot claim pristine-base provenance. Missing, malformed, writable, symlinked, mismatched, custom-base, stale, or incomplete provenance takes the complete reviewed install fallback; a base newer than the reviewed OpenClaw target remains a hard failure.
 
 Invalid state: `npm view` returns the reviewed SRI but the downloaded artifact used for install has different bytes; `npm pack --json` reports a filename such as `../package.tgz`, `/tmp/package.tgz`, or a name containing path separators so the later install consumes a path outside the fresh pack directory; or the production image reuses OpenClaw or mcporter without every provenance, metadata, trusted-base, lock-hash, and installed-version check above. Source boundary: Dockerfile npm install and provenance blocks, `Dockerfile.base`, the committed mcporter lock, optional plugin install blocks, and `src/lib/messaging/applier/build/messaging-build-applier.mts`. Source-fix constraint: npm package installation must stay artifact-bound for reviewed pins rather than reverting to a later floating package-spec transaction, and local archive path validation must be enforced at NemoClaw's install boundary because npm's JSON filename is untrusted input. Regression tests: the integrity-pin plugin-install suite exercises registry drift, reviewed tarball URL drift, downloaded archive verification, and reviewed local-archive installation; the integrity-pin base suite exercises unsafe reported archive filenames, exact OpenClaw/mcporter provenance reuse, fifteen fallback states, marker consumption, and newer-base rejection. `test/messaging-build-applier.test.ts` verifies messaging plugins run through `npm pack --json` and install the verified archive path; `test/messaging-build-applier-integrity.test.ts` verifies the messaging plugin install fails closed when packed archive integrity drifts or the reported archive filename escapes the pack directory. Removal condition: keep this archive verification and delegated-base provenance until the repo moves the OpenClaw/plugin dependency set to a lockfile path where npm enforces the committed SRI directly and no installer code consumes raw `npm pack --json` filenames.
 
@@ -11895,7 +12196,7 @@ Removal condition: retain these provenance checks in the shared installer and up
 
 The Codex ACP, runtime OpenClaw, base-image OpenClaw, optional-plugin, and messaging-plugin boundaries consume one reviewed implementation with thin shell or TypeScript callers. Every archive boundary retains exact reviewed package identity, registry SRI, reviewed registry tarball URL, packed-byte SRI, a nonempty regular-file basename contained in a fresh pack directory, install from the resolved local archive only, cleanup, and failure before install on any mismatch. Runtime OpenClaw either executes that full transaction or consumes the exact protected result of the base-image transaction under the bounded provenance checks above; it never substitutes a floating package-spec install. Runtime mcporter verifies the same exact registry metadata and then either installs and audits the committed lock or consumes the marker-bound result of that exact locked and audited base-image transaction.
 
-Invalid state: a caller bypasses the helper, the audit inventory diverges from a production pin, CI audits a graph other than the verified local archives and committed mcporter lock, or the raw report is lost when the threshold fails. Source boundary: `scripts/lib/reviewed-npm-archive.mts`, the thin Docker and messaging callers, `ci/reviewed-npm-audit.json`, `scripts/audit-reviewed-npm-graph.mts`, and `.github/actions/ci-reviewed-npm-audit/action.yaml`. Source-fix constraint: #5242 retains general dependency-pin and canary design ownership; this slice records only the current production audit inventory and tests it against the caller-owned pins. Regression tests: the integrity-pin suites and `test/messaging-build-applier-integrity.test.ts` retain malicious filename, registry drift, packed-SRI drift, and local-install proof at each caller; `test/reviewed-npm-archive.test.ts` tests the shared primitive; and `test/reviewed-npm-audit.test.ts` pins inventory alignment, Node version, threshold behavior, default workflow gating, and unconditional artifact upload. Removal condition: keep the shared helper and audit gate while reviewed npm archives remain production build inputs.
+Invalid state: a caller bypasses the helper, the audit inventory diverges from a production pin, CI audits a graph other than the verified local archives and committed mcporter lock, an exception is missing required review metadata or does not exactly match a current finding, base provenance uses a different exception policy, or audit evidence is lost when the threshold fails. Source boundary: `scripts/lib/reviewed-npm-archive.mts`, `scripts/lib/reviewed-npm-audit.mts`, the thin Docker and messaging callers, `ci/reviewed-npm-audit.json`, `ci/npm-audit-exceptions.json`, `scripts/audit-reviewed-npm-graph.mts`, and `.github/actions/ci-reviewed-npm-audit/action.yaml`. Source-fix constraint: #5242 retains general dependency-pin and canary design ownership; this slice records only the current production audit inventory and tests it against the caller-owned pins. Regression tests: the integrity-pin suites and `test/messaging-build-applier-integrity.test.ts` retain malicious filename, registry drift, packed-SRI drift, and local-install proof at each caller; `test/reviewed-npm-archive.test.ts` tests the shared archive primitive; and `test/reviewed-npm-audit.test.ts` pins the empty default, exact exception matching, expiry, threshold behavior, and fail-closed validation. Removal condition: keep the shared helpers and audit gate while reviewed npm archives remain production build inputs.
 
 ### OpenClaw Compiled-Dist Patch Runtime Boundary
 
@@ -12044,7 +12345,7 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
   The low `body-parser` and moderate Hono and `protobufjs` findings remain documented at the configured `high` threshold.
   Current NemoClaw closes the WeChat residual with `agents/openclaw/wechat-runtime/package-lock.json` and post-install graph verification.
 - `src/lib/messaging/channels/manifests.test.ts` remains below the shared `test-size:check` threshold and does not need extraction in this dependency bump.
-- The npm audit result in this note remains a point-in-time snapshot. Default PR and main CI rematerialize the production-compatible graph from the reviewed local archives, audit it and the committed mcporter lock with `npm audit --omit=dev --json`, upload both raw reports, and fail at the configured `high` threshold. The separate `wechat-runtime-audit` gate uses Node `22.19.0` and npm `10.9.4`, installs the committed WeChat production lock with scripts disabled, fails on any low-or-higher production advisory, verifies registry signatures, exercises the reviewed archive through a copied writable cache, and uploads its evidence. Pull requests execute that WeChat audit action from the base SHA; because PR #6739's base predates the action, that PR alone may bootstrap it from signed immutable commit `HOYALIM/NemoClaw@0d2256d71d5bbba3bcaaaa4d01714fa56f22d1e2`, while every other PR fails closed if its base lacks the action. The production installer routes registry metadata lookup, archive packing, and installation through the disposable writable-cache boundary so retrieval cannot fall back to `HOME/.npm`; the trusted source cache remains read-only and the disposable copy is removed in the same image layer.
+- The npm audit result in this note remains a point-in-time snapshot. Default PR and main CI rematerialize the production-compatible graph from the reviewed local archives, audit it and the committed mcporter lock with `npm audit --omit=dev --json` through the reviewed evaluator, upload the raw reports and normalized policy results, and fail on unaccepted findings at the configured `high` threshold. The separate `wechat-runtime-audit` gate uses Node `22.19.0` and npm `10.9.4`, installs the committed WeChat production lock with scripts disabled, fails on any low-or-higher production advisory, verifies registry signatures, exercises the reviewed archive through a copied writable cache, and uploads its evidence. Pull requests execute that WeChat audit action from the base SHA; because PR #6739's base predates the action, that PR alone may bootstrap it from signed immutable commit `HOYALIM/NemoClaw@0d2256d71d5bbba3bcaaaa4d01714fa56f22d1e2`, while every other PR fails closed if its base lacks the action. The production installer routes registry metadata lookup, archive packing, and installation through the disposable writable-cache boundary so retrieval cannot fall back to `HOME/.npm`; the trusted source cache remains read-only and the disposable copy is removed in the same image layer.
 - The stale nonterminal rebuild-resume repair in `src/lib/actions/sandbox/rebuild-resume-session.ts` remains a migration compatibility shim tracked against #4533's onboard FSM/resume compatibility boundary. Its removal condition is to delete it after a session-version migration proves recreate sessions are always persisted at a resumable pre-sandbox boundary; `src/lib/actions/sandbox/rebuild-resume-session.test.ts` covers the helper directly, `test/onboard-resume-provider-recovery.test.ts` carries the onboard-suite producer-level regression for `machine.state='openclaw'`, and `src/lib/actions/sandbox/rebuild-resume-snapshot.test.ts` owns the rebuild handoff regression.
 - Production OpenClaw image build paths call `scripts/check-production-build-args.sh` before production `docker build` or `docker/build-push-action` use. `test/openclaw-dependency-review.test.ts` keeps that workflow contract documented.
 - The rebuild-reasoning cases added by this PR live in the focused `rebuild-resume-reasoning.test.ts` file; the smaller route-provenance additions remain with their `rebuild-resume-config.ts` boundary tests.
@@ -12143,10 +12444,11 @@ major-version compatibility boundary.
 The SDK's locked AJV graph also requests `fast-uri@^3.0.1`; the newly published
 `GHSA-v2hh-gcrm-f6hx` affects releases through `3.1.3`. The same manifest pins
 the first compatible release outside that range, `3.1.4`. The resulting
-`138`-dependency graph reports `0` known vulnerabilities; image assembly keeps
-the low audit threshold, signature verification, and exact committed lock
-mandatory. Remove either override when the declared graph resolves to a
-reviewed patched release.
+`138`-dependency graph reports `0` known vulnerabilities; image assembly reports
+lower-severity findings and blocks unaccepted high or critical findings through
+the empty-by-default audit exception registry. Signature verification and the
+exact committed lock remain mandatory. Remove either override when the declared
+graph resolves to a reviewed patched release.
 
 The published Slack and Microsoft Teams plugin archives bundle `axios@1.16.0`.
 That version is in the affected range for the newly disclosed Axios

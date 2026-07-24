@@ -1524,10 +1524,20 @@ Complete this preparation before following the Quickstart on a qualifying DGX St
 
 ## Qualify Your DGX Station
 
-DGX Station GB300 express install accepts either the generic Ubuntu 24.04 ARM64 image or stock DGX OS `7.2.0`, `7.4.0`, or `7.5.0`.
-A stock DGX OS image qualifies only when a safe, root-owned `/etc/dgx-release` marker identifies `DGX Server for GALAXY-GB300`.
+DGX Station GB300 Express install accepts these host images:
+
+- Generic Ubuntu 24.04 ARM64.
+- Stock OTA-form DGX OS `7.2.0`, `7.4.0`, or `7.5.0`.
+- Stock no-OTA DGX OS `7.6.x` with `DGX_PRETTY_NAME=NVIDIA DGX GB300WS`.
+
+Every stock DGX OS form requires a safe, root-owned `/etc/dgx-release` marker with `DGX_PLATFORM=DGX Server for GALAXY-GB300`.
+The no-OTA DGX OS `7.6.x` profile must omit every `DGX_OTA_*` field.
+NemoClaw rejects partial OTA metadata.
+It requires a numeric `7.6.x` `DGX_SWBUILD_VERSION` and a present `DGX_SWBUILD_DATE`, but does not match the date against an exact build.
+Full Station Express end-to-end qualification for the no-OTA DGX OS `7.6.x` profile is pending.
+All accepted DGX OS forms remain subject to the runtime checks below.
 NemoClaw also recognizes these exact no-OTA factory profiles for bounded qualification.
-Each profile requires `DGX_PLATFORM=DGX Server for GALAXY-GB300`, requires both `DGX_OTA_VERSION` and `DGX_OTA_DATE` to be absent, and requires every profile-specific field below:
+Each profile requires `DGX_PLATFORM=DGX Server for GALAXY-GB300`, requires every `DGX_OTA_*` field to be absent, and requires every profile-specific field below:
 
 - April 2026 NVIDIA Colossus BaseOS with `DGX_PRETTY_NAME=NVIDIA DGX Server`, `DGX_SWBUILD_VERSION=7.5.0-GB300ws-GB200ws`, and `DGX_SWBUILD_DATE=2026-04-02-08-20-16`.
 - June 2026 NVIDIA AI Developer Tools with `DGX_PRETTY_NAME=NVIDIA DGX GB300WS`, `DGX_SWBUILD_VERSION=7.5.0`, and `DGX_SWBUILD_DATE=2026-06-16-11-48-10`.
@@ -1644,6 +1654,8 @@ On a qualifying stock DGX OS or exact no-OTA factory image, express install vali
 It requires a loaded GB300 driver with zero volatile corrected and uncorrected ECC errors, active Docker and containerd services, working Docker Buildx, `nvidia-ctk`, the `nvidia.com/gpu=all` CDI device, and successful `nvidia-smi` device-visibility probes through both CDI and `--gpus all`.
 The stock DGX OS path does not install or replace host packages, enable or restart services, generate CDI configuration, or rewrite the Docker runtime.
 The AI Developer Tools path preserves those boundaries when `nvidia.com/gpu=all` is already present.
+A resident `packagekitd` process alone does not block stock DGX OS or AI Developer Tools preflight because those paths preserve the factory package stack, but an active or malformed PackageKit transaction does.
+The Colossus BaseOS path still blocks on `packagekitd`, while generic Ubuntu quiesces an idle PackageKit daemon before package mutation.
 When that CDI device is missing, the AI Developer Tools path first confirms that no workloads are active, then enables the packaged `nvidia-cdi-refresh.path` and `nvidia-cdi-refresh.service` units, starts the path unit, restarts the refresh service, and checks the device again.
 It stops with service diagnostics if packaged refresh fails or omits the device.
 It never generates CDI directly, rewrites the Docker runtime, or restarts Docker or containerd.
@@ -1761,7 +1773,7 @@ The table comes from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoC
 | OS | Container runtime | Status | Notes |
 |----|-------------------|--------|-------|
 | DGX OS (Spark) | Docker | Tested | Use the standard installer and `$$nemoclaw onboard`. For an end-to-end walkthrough with local inference, see the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw). |
-| DGX OS (Station) | Docker | Tested with limitations | Tested with limitations across qualified profiles on one physical DGX Station GB300. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. See [Additional Setup for DGX Station](additional-setup/dgx-station-preparation) before the Quickstart. |
+| DGX OS (Station) | Docker | Tested with limitations | Tested with limitations across qualified profiles on one physical DGX Station GB300; see [Additional Setup for DGX Station](additional-setup/dgx-station-preparation) for accepted profiles, the pending no-OTA DGX OS `7.6.x` end-to-end qualification, runtime gates, and current dual-Station and dedicated CI limitations. |
 | Linux | Docker | Tested | Primary tested path. Ubuntu 24.04 has host-level onboarding validation. A digest-pinned Ubuntu 26.04 userspace lane builds the CLI and runs preflight, installer, and platform contracts on eligible main pushes; Docker-host, AppArmor, Landlock, and live onboarding validation on 26.04 remain pending. Other distros (Ubuntu 22.04, Fedora, Rocky, Alma, NixOS, Arch) may work but are not validated. |
 | macOS (Apple Silicon) | Colima, Docker Desktop | Tested with limitations | Start the container runtime (Colima or Docker Desktop) before running the installer. Homebrew Colima users must install both Colima and the Docker CLI (`brew install colima docker`) before `docker info` can work. Xcode Command Line Tools (`xcode-select --install`) are typically required for Node native modules during install. NemoClaw recommends them but does not enforce them during preflight. |
 | Windows WSL2 | Docker Desktop (WSL backend) | Tested with limitations | Requires WSL2 with Docker Desktop backend. See [Additional Setup for Windows Machines](additional-setup/windows-preparation) before the Quickstart. |
@@ -2933,7 +2945,8 @@ Use these details when your first-run path needs more control.
     curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash -s -- --yes-i-accept-third-party-software
     ```
 
-    For a non-interactive first run, also set the provider, credential, and sandbox name.
+    For a non-interactive first run, set the sandbox name.
+    Set the provider and matching credential unless you want DGX Spark to select local vLLM automatically.
 
     ```bash
     curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
@@ -2949,6 +2962,7 @@ Use these details when your first-run path needs more control.
     The example uses NVIDIA Endpoints.
     Set `NEMOCLAW_AGENT` to `hermes` or `langchain-deepagents-code` to install another agent.
     Set `NEMOCLAW_PROVIDER` and the matching credential variable for another provider, then use a sandbox name that does not depend on a previous onboarding session.
+    On DGX Spark, omit `NEMOCLAW_PROVIDER` only when you want the automatic local selection described in [Set Up vLLM](../inference/local-inference/set-up-vllm#run-non-interactive-onboarding).
     To select a specific NemoClaw release, replace `vX.Y.Z` with its versioned release tag.
     `NEMOCLAW_INSTALL_REF` is a higher-priority development override, so clear it when pinning a release tag.
 
@@ -2992,7 +3006,14 @@ Use these details when your first-run path needs more control.
     It can still prompt for `sudo` when host setup needs it.
     Set `NEMOCLAW_NO_EXPRESS=1` to skip the express prompt, or set `NEMOCLAW_PROVIDER` to choose a provider yourself.
 
-    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles, Station choices, and headless setup.
+    Before the Station express confirmation, the installer reports whether the Hugging Face download is authenticated without displaying the token value.
+    Authentication is optional for the public Station recipes, but a read token reduces exposure to anonymous HTTP `429` rate limiting during large downloads.
+    Create a read token at [Hugging Face Access Tokens](https://huggingface.co/settings/tokens), then run `export HF_TOKEN="<your-read-token>"` before you launch the installer.
+    Do not paste the token into NemoClaw prompts or chat.
+    The installer passes `HF_TOKEN` only to the temporary model downloader.
+    If the download receives HTTP `429`, keep the existing cache and run `nemoclaw onboard --resume`.
+
+    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles, Station choices, Hugging Face token setup, and headless setup.
     Refer to [Platform Support](../reference/platform-support) for current validation status.
   </Accordion>
 
@@ -3600,7 +3621,7 @@ Use this status table to distinguish validated provider integrations from adapte
 | Local Ollama | Tested with limitations | Local Ollama API | Available when Ollama is installed or running on the host. Validated default models: `qwen3.6:35b` (high VRAM), `nemotron-3-nano:30b` (medium VRAM), `qwen3.5:9b` (low VRAM fallback). |
 | Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a CDI spec present (`onboard` asserts CDI presence with `assertCdiNvidiaGpuSpecPresent`, `src/lib/onboard/fatal-runtime-preflight.ts`). NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag because it does not auto-select a NIM image for the host today. You must explicitly pick from the validated image list. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
 | Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Appears in the onboarding menu when NemoClaw detects a server already on `localhost:8000`. No flag required. Model is whatever the existing server serves. |
-| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300; dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
+| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status:end */}
 
 ## Hosted Providers
@@ -4327,6 +4348,8 @@ Workspaces under `/sandbox/.openclaw/workspace-<id>` are preserved across rebuil
 The runtime startup script provisions them on first boot rather than baking their contents.
 
 For ad-hoc per-agent edits inside an existing sandbox without a rebuild, use the in-sandbox CLI, `nemoclaw <name> agents add|delete|list`.
+To reconcile the roster against a manifest, use `nemoclaw <name> agents apply -f <agents.yaml>`.
+See [Apply to an Existing Sandbox](#apply-to-an-existing-sandbox).
 
 Use the manifest for fixed, checked-in layouts.
 Use the CLI passthrough for interactive work.
@@ -5610,6 +5633,33 @@ The first run duration depends on image and model size, storage performance, and
 Later runs reuse the cached image and model weights.
 The managed container uses Docker's `--restart unless-stopped` policy, so Docker restarts it unless an operator explicitly stops it.
 
+### Authenticate Hugging Face Downloads
+
+Authentication is optional for public models, but a read token reduces exposure to anonymous HTTP `429` rate limiting during large downloads.
+Create a read token at [Hugging Face Access Tokens](https://huggingface.co/settings/tokens), then export it in your shell before you start or restart onboarding.
+Do not paste the token into NemoClaw prompts or chat.
+
+```bash
+export HF_TOKEN="<your-read-token>"
+$$nemoclaw onboard
+```
+
+NemoClaw reports whether the download is authenticated without displaying the token value.
+It passes the token only to the temporary model downloader (`hf download`) and does not retain it in onboarding state or the long-running vLLM container.
+NemoClaw also accepts `HUGGING_FACE_HUB_TOKEN` as a compatibility alias, but new setup should use `HF_TOKEN`.
+When neither variable is present, public-model downloads continue anonymously.
+
+If `hf download` reports HTTP `429`, export `HF_TOKEN` and resume onboarding.
+The downloader reuses files already stored in `~/.cache/huggingface` instead of starting the model download from an empty cache.
+
+```bash
+export HF_TOKEN="<your-read-token>"
+$$nemoclaw onboard --resume
+```
+
+Authentication reduces anonymous rate-limit exposure but does not guarantee that a download cannot receive HTTP `429`.
+Gated models still require license acceptance and a token before NemoClaw starts image or model downloads.
+
 ### Check Storage Before Downloads
 
 For a cold managed-vLLM install, NemoClaw estimates local storage before the watched image pull starts.
@@ -5697,6 +5747,12 @@ For the current support status and direct GPU policy boundaries, see [Platform S
 
 ## Run Non-Interactive Onboarding
 
+On DGX Spark, non-interactive onboarding can select local vLLM when `NEMOCLAW_PROVIDER` is unset and no provider is recorded for the sandbox.
+It reuses a running local vLLM server first.
+If no server is running, it selects the managed install or start entry.
+If neither local entry is available, it selects NVIDIA Endpoints.
+On DGX Station and other hosts, an unset provider keeps NVIDIA Endpoints as the automatic default.
+
 Use an already-running server.
 
 ```bash
@@ -5762,9 +5818,8 @@ NemoClaw applies the registered `vllm serve` arguments, including the reasoning 
 Slugs are case-insensitive, and NemoClaw also accepts the full Hugging Face model ID.
 An unrecognized value fails before image or model downloads and prints the valid slugs.
 
-Gated models require a Hugging Face token.
-Export `HF_TOKEN` before onboarding so NemoClaw can forward it temporarily to the one-shot model downloader.
-The token is not retained in the long-lived managed vLLM container after the explicit download completes.
+Gated models require a Hugging Face token and license acceptance.
+Follow [Authenticate Hugging Face Downloads](#authenticate-hugging-face-downloads) before onboarding so NemoClaw can forward the token temporarily to the one-shot model downloader.
 
 ```bash
 export HF_TOKEN="<your-hf-token>"
@@ -5773,7 +5828,7 @@ NEMOCLAW_PROVIDER=install-vllm \
   $$nemoclaw onboard --non-interactive
 ```
 
-NemoClaw also accepts `HUGGING_FACE_HUB_TOKEN`.
+NemoClaw also accepts `HUGGING_FACE_HUB_TOKEN` as a compatibility alias.
 The host checks the token before `docker pull`, so a missing or empty token stops onboarding before bandwidth is spent on a request that would return `401`.
 
 ## Add Managed Serve Arguments
@@ -5928,7 +5983,8 @@ Run `$$nemoclaw onboard` to register the provider, then retry the switch.
 <AgentOnly variant="openclaw,hermes">
 
 Pass the target provider and model together.
-Pass `--sandbox <name>` when you do not want to use the default sandbox.
+Target a non-default sandbox by name.
+The `shields` commands take a positional name. `inference set` takes `--sandbox <name>`.
 
 ```bash
 $$nemoclaw <name> shields down
@@ -5954,9 +6010,9 @@ This flag does not bypass shared-gateway compatibility checks.
 
 </AgentOnly>
 
-## Recreate a Deep Agents Sandbox
-
 <AgentOnly variant="deepagents">
+
+## Recreate a Deep Agents Sandbox
 
 Deep Agents uses fresh sandbox recreation for provider changes.
 The recreation validates the provider and rewrites `/sandbox/.deepagents/config.toml` with the OpenShell route.
