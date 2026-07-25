@@ -759,6 +759,119 @@ Use these topics to learn more about NemoClaw and how to install and use it.
 
 
 ========================================
+[FILE: docs/network-policy/apply-policy-presets.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Apply Policy Presets"
+sidebar-title: "Apply Policy Presets"
+description: "Add, reapply, list, or remove policy presets for a running NemoClaw sandbox."
+description-agent: "Applies and manages policy presets for a running sandbox. Use when adding maintained integration access, previewing preset scope, reapplying an edited preset, or removing access."
+keywords: ["nemoclaw policy presets", "policy-add", "policy-remove"]
+content:
+  type: "how_to"
+skill:
+  priority: 10
+---
+Use policy presets to add reviewed network access to one running sandbox without replacing its current policy.
+NemoClaw records applied presets so rebuild and restore operations can replay them.
+
+<Warning>
+Use `$$nemoclaw <name> policy-add` to merge a preset into the running policy.
+The OpenShell `policy set` command replaces the live policy instead of merging it.
+Follow [Replace the Live Network Policy](replace-live-network-policy) only when you need full-policy replacement.
+</Warning>
+
+## Choose a Maintained Preset
+
+During onboarding, the selected [policy tier](../../reference/network-policies#policy-tiers) determines which maintained presets are enabled by default.
+The interactive preset screen lets you add or remove individual presets.
+Messaging channel choices are scoped to the active agent, so unsupported channel presets do not appear.
+
+List the presets available to the sandbox:
+
+```bash
+$$nemoclaw <name> policy-list
+```
+
+For the maintained preset catalog and guided service workflows, refer to [Common Integration Policy Examples](../integration-policy-examples).
+
+## Preview and Apply a Preset
+
+Use `--dry-run` to review the endpoints, rules, and binaries before applying the preset:
+
+```bash
+$$nemoclaw my-assistant policy-add pypi --dry-run
+$$nemoclaw my-assistant policy-add pypi --yes
+```
+
+Omit the preset name to use the interactive picker:
+
+```bash
+$$nemoclaw my-assistant policy-add
+```
+
+Pass a preset name with `--yes` for scripted workflows.
+Set `NEMOCLAW_NON_INTERACTIVE=1` instead of `--yes` to use the same non-interactive flow through an environment variable.
+
+## Reapply an Edited Preset
+
+Run the same `policy-add` command after you edit a maintained or recorded custom preset.
+NemoClaw compares the preset with the live policy.
+If the content differs, it applies the changed content.
+You do not need to remove the preset first.
+
+The merge starts from the round-trippable base policy returned by `openshell policy get --base`.
+It excludes provider-composed `_provider_*` entries because OpenShell reserves that namespace and rejects it in `policy set`.
+Existing presets and baseline entries remain in place.
+
+## List and Remove Presets
+
+List every preset recorded for the sandbox:
+
+```bash
+$$nemoclaw <name> policy-list
+```
+
+Remove a preset when the sandbox no longer needs its access:
+
+```bash
+$$nemoclaw my-assistant policy-remove pypi --yes
+```
+
+`policy-remove` accepts maintained and custom preset names.
+
+## Understand Persistence
+
+Dynamic changes apply to the current live policy.
+NemoClaw also records maintained presets and custom presets applied through `--from-file` or `--from-dir`.
+The custom preset record includes the full YAML content.
+Snapshot restore and rebuild replay the recorded presets, even when the original custom file no longer exists.
+
+`$$nemoclaw <name> rebuild` reapplies every recorded policy preset to the recreated sandbox.
+For baseline changes that apply to every future sandbox, follow [Change the Baseline Network Policy](change-baseline-network-policy).
+
+## Approve One Request
+
+For one-off access, approve a blocked request in the OpenShell TUI:
+
+```bash
+openshell term
+```
+
+Use the TUI to test a destination before deciding whether it belongs in a maintained or custom preset.
+For the complete approval workflow, refer to [Approve or Deny Network Requests](../approve-network-requests).
+
+## Related Topics
+
+- [Create Custom Policy Presets](create-custom-policy-presets) adds an endpoint that no maintained preset covers.
+- [Explain Network Policy to Agents](../explain-network-policy-to-agents) summarizes active and missing presets.
+- [Commands](../../reference/commands#$$nemoclaw-name-policy-add) lists every policy command flag.
+
+
+========================================
 [FILE: docs/network-policy/approve-network-requests.mdx]
 ========================================
 
@@ -892,92 +1005,77 @@ It attaches to an existing sandbox.
 
 
 ========================================
-[FILE: docs/network-policy/customize-network-policy.mdx]
+[FILE: docs/network-policy/change-baseline-network-policy.mdx]
 ========================================
 
 ---
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-title: "Customize the Sandbox Network Policy"
-sidebar-title: "Customize the Network Policy"
-description: "Add, remove, or modify allowed endpoints in the sandbox policy."
-description-agent: "Adds, removes, or modifies allowed endpoints in the sandbox policy. Use when customizing network policy, changing egress rules, or configuring sandbox endpoint access."
-keywords: ["customize nemoclaw network policy", "sandbox egress policy configuration"]
+title: "Change the Baseline Network Policy"
+sidebar-title: "Change the Baseline Policy"
+description: "Edit the policy that NemoClaw applies when it creates a sandbox."
+description-agent: "Changes the baseline sandbox network policy. Use when adding durable endpoints to every future sandbox or maintaining blueprint policy additions."
+keywords: ["nemoclaw baseline network policy", "sandbox policy yaml", "blueprint policy additions"]
 content:
   type: "how_to"
 skill:
   priority: 10
 ---
-Add, remove, or modify the endpoints the sandbox can reach.
-
-The NemoClaw repository declares the sandbox policy in a YAML file, and [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) enforces it at runtime.
-NemoClaw supports both static policy changes that persist across restarts and dynamic updates applied to a running sandbox through the OpenShell CLI.
-
-<Note>
-If the sandbox needs to reach an HTTP service running on the host, expose the service on a host IP that the OpenShell gateway can reach.
-Apply a custom NemoClaw preset with `$$nemoclaw <sandbox> policy-add --from-file`.
-Do not rely on `host.docker.internal` as a general host-service path because it bypasses the OpenShell policy path and may not be reachable in every sandbox runtime.
-Refer to [Agent cannot reach a host-side HTTP service](../reference/troubleshooting#agent-cannot-reach-a-host-side-http-service).
-</Note>
-
-<Warning>
-Adding a host to the egress policy permits a connection only when the endpoint, port, method, and binary rules match.
-OpenShell still applies SSRF protection separately, so it can deny a request when the final address resolves to a loopback, private, link-local, or otherwise blocked internal range.
-If a package installer or browser runtime download still fails with an SSRF-style denial after you add the public host, install that binary into the sandbox image at build time with [`$$nemoclaw onboard --from`](../reference/commands#--from-dockerfile) instead of relying on runtime egress.
-</Warning>
+Change the baseline policy when every future sandbox needs the same durable endpoint access.
+NemoClaw reads the policy from the host when it creates the sandbox.
 
 ## Prerequisites
 
-- A running NemoClaw sandbox for dynamic changes, or the NemoClaw source repository for static changes.
-- The OpenShell CLI on your `PATH`.
+- Use a NemoClaw source checkout on the host.
+- Keep the OpenShell CLI on your `PATH`.
 
-> [!IMPORTANT]
-> Make static policy edits on the host, not inside the sandbox.
-> The sandbox image includes a small set of operational tools such as `vi`, `jq`, and `dos2unix`, but host-side policy files remain the durable source of truth.
-> The sandbox discards changes made only inside the sandbox when it is recreated.
+<Warning>
+Make policy file changes on the host.
+The sandbox discards changes made only inside the sandbox when it is recreated.
+</Warning>
 
-## Static Changes
-
-Static changes modify the baseline policy file and take effect after the next sandbox creation.
-
-### Edit the Policy File
+## Edit the Policy File
 
 <AgentOnly variant="openclaw">
 Open `nemoclaw-blueprint/policies/openclaw-sandbox.yaml` and add or modify endpoint entries.
-
-To include a built-in preset in the baseline policy, merge its `network_policies` entries into this file and re-run `$$nemoclaw onboard`.
-
-To apply a preset to a running sandbox, use `$$nemoclaw <name> policy-add` under [Dynamic Changes](#dynamic-changes).
-That updates the live policy and does not edit `openclaw-sandbox.yaml`.
 </AgentOnly>
 <AgentOnly variant="hermes">
-Open the Hermes policy additions and shared sandbox policy files under `agents/hermes/` and `nemoclaw-blueprint/policies/`, then add or modify endpoint entries.
-
-To include a built-in preset in the baseline policy, merge its `network_policies` entries into the appropriate policy file and re-run `$$nemoclaw onboard`.
-
-To apply a preset to a running sandbox, use `$$nemoclaw <name> policy-add` under [Dynamic Changes](#dynamic-changes).
-That updates the live policy and does not edit the baseline policy files.
+Open `agents/hermes/policy-additions.yaml` and add or modify endpoint entries.
 </AgentOnly>
 
-Edit YAML manually when you need to allow custom hosts that a preset does not cover, such as an internal API or a weather service.
-
-Each entry in the `network` section defines an endpoint group with the following fields:
+Edit YAML manually when a maintained preset does not cover the required host, such as a reviewed public partner API.
+Each entry in the `network_policies` section defines an endpoint group with these fields:
 
 `endpoints`
 : Host and port pairs that the sandbox can reach.
 
 `binaries`
-: Executables allowed to use this endpoint.
+: Executables allowed to use the endpoint.
 
 `rules`
-: HTTP methods and paths that are permitted.
+: HTTP methods and paths that the endpoint permits.
 
 `allow_encoded_slash`
-: Allows percent-encoded slashes such as `%2F` in request paths. Leave this disabled unless the service uses encoded slashes as part of its documented route format, such as ClawHub scoped package names.
+: Allows percent-encoded slashes such as `%2F` in request paths.
+Leave this field disabled unless the service uses encoded slashes in its documented route format, such as ClawHub scoped package names.
 
-### Re-Run Onboard
+To include a maintained preset in the baseline policy, merge its `network_policies` entries into the applicable baseline file.
+Use [Apply Policy Presets](apply-policy-presets) when you need to add a preset to one running sandbox.
 
-Apply the updated policy by re-running the onboard wizard:
+<AgentOnly variant="openclaw">
+
+## Add Blueprint Policy Additions
+
+If you maintain a custom blueprint, add extra policy entries under `components.policy.additions` in `nemoclaw-blueprint/blueprint.yaml`.
+NemoClaw validates those entries with the same policy schema used by preset files.
+During sandbox creation, it fetches the live policy, merges the additions into `network_policies`, and applies the merged policy through OpenShell.
+The run metadata records the applied additions so you can audit the blueprint-level entries that were active.
+
+</AgentOnly>
+
+## Re-Run Onboarding
+
+Apply the updated baseline by running onboarding again:
 
 ```bash
 $$nemoclaw onboard
@@ -985,7 +1083,7 @@ $$nemoclaw onboard
 
 The wizard reads the modified policy file and applies it to the sandbox.
 
-### Verify the Policy
+## Verify the Policy
 
 Check that the sandbox is running with the updated policy:
 
@@ -993,72 +1091,245 @@ Check that the sandbox is running with the updated policy:
 $$nemoclaw <name> status
 ```
 
-### Add Blueprint Policy Additions
+Use `$$nemoclaw <name> policy-list` to inspect the tracked preset state.
+Use `openshell policy get <name>` when you need to inspect the effective OpenShell policy.
 
-If you maintain a custom blueprint, add extra policy entries under `components.policy.additions` in `nemoclaw-blueprint/blueprint.yaml`.
-NemoClaw validates those entries with the same policy schema used by preset files, fetches the live policy during sandbox creation, merges the additions into `network_policies`, and applies the merged policy through OpenShell.
-The applied additions are recorded in the run metadata so you can audit which blueprint-level policy entries were active for that sandbox run.
+## Related Topics
 
-## Dynamic Changes
+- [Customize the Network Policy](../customize-network-policy) helps you choose the correct policy workflow.
+- [Create Custom Policy Presets](create-custom-policy-presets) adds durable access for one sandbox without changing the baseline.
+- [Network Policies](../../reference/network-policies) explains the baseline policy schema and tiers.
 
-Dynamic changes apply a policy update to a running sandbox without restarting it.
 
-> [!WARNING]
-> `openshell policy set` **replaces** the sandbox's live policy with the contents of the file you provide.
-> It does not merge.
-> A running sandbox's live policy is the baseline policy plus every preset that was layered on during onboarding.
-> Applying a file that contains only the baseline (or only a single preset) silently drops every other preset that was in effect.
+========================================
+[FILE: docs/network-policy/configure-raw-tls-passthrough.mdx]
+========================================
 
-### Add a Preset File with `policy-add` (Recommended)
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Configure Raw TLS Passthrough"
+sidebar-title: "Configure Raw TLS"
+description: "Use a scoped raw TLS tunnel when an allowed endpoint cannot use OpenShell L7 inspection."
+description-agent: "Configures scoped raw TLS passthrough with tls skip. Use when a Cloudflare-fronted endpoint or direct TLS protocol fails through the inspected proxy."
+keywords: ["openshell tls skip", "nemoclaw raw tls passthrough", "network policy connect tunnel"]
+content:
+  type: "how_to"
+skill:
+  priority: 10
+---
+Use raw TLS passthrough only when an allowed endpoint requires direct TLS negotiation.
+Keep L7 inspection for every endpoint that supports it.
 
-This path preserves existing policy entries and is the only NemoClaw-supported flow for merging new entries into a running policy.
+## Identify the TLS Failure
 
-1. Create a preset-format YAML file under `nemoclaw-blueprint/policies/presets/`, for example `nemoclaw-blueprint/policies/presets/influxdb.yaml`:
+OpenShell normally terminates TLS for allowed HTTPS endpoints so it can inspect traffic.
+The proxy creates a new TLS connection to the upstream, including endpoints with `access: full`.
+Some Cloudflare-fronted upstreams reset that new handshake.
+Clients can report `ECONNRESET` or a TLS error such as `curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL`.
 
-   ```yaml
-   preset:
-     name: influxdb
-     description: "InfluxDB time-series database"
-   network_policies:
-     influxdb:
-       name: influxdb
-       endpoints:
-         - host: influxdb.internal.example.com
-           port: 8086
-           protocol: rest
-           enforcement: enforce
-           rules:
-             - allow: { method: GET, path: "/**" }
-             - allow: { method: POST, path: "/api/v2/write" }
-       binaries:
-         - { path: /usr/bin/curl }
-   ```
+Protocols that require direct TLS negotiation can fail in the same way.
+For example, the WhatsApp HTTP/1.1 Noise-over-WebSocket handshake cannot use the proxy's HTTP/2 ALPN negotiation.
 
-2. Apply it to the running sandbox:
+## Create a Passthrough Preset
 
-```bash
-$$nemoclaw my-assistant policy-add
+Set `access: full` and `tls: skip` for the exact endpoint:
+
+```yaml
+preset:
+  name: cf-fronted-api
+  description: "Cloudflare-fronted API that resets re-originated TLS"
+network_policies:
+  cf_fronted_api:
+    name: cf_fronted_api
+    endpoints:
+      - host: api.example.com
+        port: 443
+        access: full
+        tls: skip
+    binaries:
+      - { path: /usr/local/bin/node }
 ```
 
-NemoClaw reads the round-trippable base policy with `openshell policy get --base`, structurally merges your preset's `network_policies` into it, and writes the merged result back.
-Provider-composed `_provider_*` entries are excluded because OpenShell reserves that namespace and rejects it in `policy set`.
-Existing presets and the baseline remain in place.
-The preset file under `presets/` also persists across sandbox recreations.
+Save the file as `nemoclaw-blueprint/policies/presets/cf-fronted-api.yaml`.
+The filename without `.yaml` must match `preset.name`.
 
-### Custom Recipe: URL-Based MCP Server
+Apply the catalog preset:
 
-Adding a Streamable HTTP MCP server URL to OpenClaw (for example `https://mcp.example.com/mcp`) can result in the sandbox proxy denying the CONNECT tunnel with `HTTP 403 Forbidden` because the target host is not in the default allowlist.
-The symptom in `~/.openclaw/logs` or in the MCP tool output is:
+```bash
+$$nemoclaw my-assistant policy-add cf-fronted-api
+```
+
+Run the same command after editing the file.
+NemoClaw compares the preset with the live policy and applies changed content.
+
+The maintained `whatsapp` channel preset uses this structure for `web.whatsapp.com`.
+<AgentOnly variant="openclaw">
+Refer to `src/lib/messaging/channels/whatsapp/policy/openclaw.yaml` for an example.
+</AgentOnly>
+<AgentOnly variant="hermes">
+Refer to `src/lib/messaging/channels/whatsapp/policy/hermes.yaml` for an example.
+</AgentOnly>
+It combines `tls: skip` tunnel endpoints with inspected `protocol: rest` endpoints.
+
+## Understand the Security Boundary
+
+<Warning>
+`tls: skip` disables L7 inspection and egress-boundary credential resolution for that endpoint.
+The proxy cannot filter the HTTP method, path, or body after it creates the tunnel.
+Endpoint `rules` cannot constrain what the agent sends through the tunnel.
+The proxy also cannot replace an OpenShell credential placeholder inside the encrypted request.
+This configuration does not unblock endpoints that require both raw passthrough and egress-boundary credential resolution.
+</Warning>
+
+The declared host, port, and `binaries` scope remain in effect.
+Use `tls: skip` only for the exact hosts that require raw passthrough.
+Do not use a broad wildcard.
+
+## Related Topics
+
+- [Create Custom Policy Presets](create-custom-policy-presets) explains custom preset validation and application.
+- [Apply Policy Presets](apply-policy-presets) explains reapplication and persistence.
+- [OpenShell Policy Schema](https://docs.nvidia.com/openshell/latest/reference/policy-schema.html) provides the complete endpoint schema.
+
+
+========================================
+[FILE: docs/network-policy/create-custom-policy-presets.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Create Custom Policy Presets"
+sidebar-title: "Create Custom Presets"
+description: "Author and apply a scoped network policy preset for an endpoint that NemoClaw does not include."
+description-agent: "Creates and applies custom policy presets. Use when adding a reviewed endpoint, applying preset files, or allowing a URL-based MCP server."
+keywords: ["nemoclaw custom policy preset", "policy-add from-file", "url mcp network policy"]
+content:
+  type: "how_to"
+skill:
+  priority: 10
+---
+Create a custom preset when a sandbox needs a reviewed endpoint that no maintained NemoClaw preset covers.
+Custom presets add scoped access to one sandbox without changing the baseline policy.
+
+<Warning>
+Custom preset hosts bypass NemoClaw's review process and can widen sandbox egress.
+Review every host before applying a custom preset, especially when the file originates outside your team.
+</Warning>
+
+## Author a Preset
+
+Create a preset-format YAML file:
+
+```yaml
+preset:
+  name: my-service-api
+  description: "Reviewed external service"
+network_policies:
+  my-service-api:
+    name: my-service-api
+    endpoints:
+      - host: api.example.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /usr/local/bin/node }
+```
+
+The top-level `preset.name` must be a lowercase RFC 1123 label with letters, digits, and hyphens.
+It must not collide with a maintained preset name such as `slack` or `pypi`.
+Rename `preset.name` if NemoClaw reports a collision.
+
+Each endpoint must name a specific host or a scoped subdomain wildcard such as `*.example.com`.
+NemoClaw rejects catch-all destinations, including `*`, `0.0.0.0`, `0.0.0.0/0`, `::`, and `::/0`.
+Rule matchers must match the endpoint protocol.
+
+| Protocol | Rule fields |
+|----------|-------------|
+| REST | `method` and `path`; `method` accepts standard HTTP methods or `*` |
+| WebSocket | `method` and `path`; `method` accepts `GET`, `WEBSOCKET_TEXT`, or `*` |
+| JSON-RPC | `method` only |
+| MCP | `method` with optional `tool` or `params.name` |
+
+The same protocol-specific matcher shape applies to `deny_rules`.
+
+User-authored presets must not declare `allowed_ips` for ordinary endpoints.
+NemoClaw rejects that field in files passed through `--from-file` or `--from-dir` because it can widen the private ranges that OpenShell checks during SSRF protection.
+Use hostnames, ports, protocols, methods, paths, and binary restrictions instead.
+The only exception is the `host.openshell.internal` bridge endpoint for explicit sandbox-to-host service access.
+
+## Apply a Single File
+
+Preview the file before you apply it:
+
+```bash
+$$nemoclaw my-assistant policy-add --from-file ./presets/my-service-api.yaml --dry-run
+$$nemoclaw my-assistant policy-add --from-file ./presets/my-service-api.yaml --yes
+```
+
+NemoClaw records the complete YAML content with the sandbox.
+You can remove the preset later without keeping the original file.
+
+## Apply Every File in a Directory
+
+Apply preset files in lexicographic order:
+
+```bash
+$$nemoclaw my-assistant policy-add --from-dir ./presets/ --yes
+```
+
+Processing stops at the first failure.
+NemoClaw does not remove presets that it already applied.
+Fix the failing file and run the command again to continue.
+
+## Add a Preset to the Source Catalog
+
+Save a maintained local preset under `nemoclaw-blueprint/policies/presets/`.
+The filename without `.yaml` must match `preset.name`.
+The preset catalog reads `preset.name`, while `policy-add <name>` loads `presets/<name>.yaml`.
+A mismatch can list a preset that the named command cannot load.
+
+Apply the catalog preset by name:
+
+```bash
+$$nemoclaw my-assistant policy-add my-service-api
+```
+
+Run the same command after editing the file.
+NemoClaw compares the preset with the live policy and applies changed content.
+
+## Remove a Custom Preset
+
+Remove the preset by its recorded name:
+
+```bash
+$$nemoclaw my-assistant policy-remove my-service-api --yes
+```
+
+Run `$$nemoclaw <name> policy-list` to see every maintained and custom preset recorded for the sandbox.
+
+## Configure a URL-Based MCP Server
+
+Prefer the managed workflow in [Add an MCP Server](../../manage-sandboxes/mcp-servers/add-an-mcp-server) when the server uses authenticated HTTPS Streamable HTTP.
+Use this custom policy recipe only for an agent-native URL registration that is outside the managed workflow.
+Adding a URL such as `https://mcp.example.com/mcp` can cause a denied CONNECT tunnel.
+The proxy returns `HTTP 403 Forbidden` when the target host is not in the default allowlist.
+The related MCP client output contains this message:
 
 ```text
 CONNECT tunnel failed, response 403
 ```
 
-This recipe applies only when URL-based MCP traffic uses the sandbox proxy and fails with that CONNECT 403 response.
-An OAuth MCP login failure such as `getaddrinfo EAI_AGAIN`, or any direct-DNS path that bypasses the proxy, is a separate transport problem and is not fixed by widening this allowlist.
+This recipe applies only when URL-based MCP traffic uses the sandbox proxy and fails with this CONNECT response.
+An OAuth MCP login failure such as `getaddrinfo EAI_AGAIN` is a different transport problem.
+A direct-DNS path that bypasses the proxy is also a different problem.
+Widening this allowlist does not fix either case.
 
-Add a preset with the MCP host, the exact Streamable HTTP MCP route, the HTTP methods that route uses (`GET`, `POST`, and `DELETE`), and only the process binary that opens the connection.
-Streamable HTTP MCP clients can use `DELETE` on the same endpoint to terminate a session, so keep that method scoped to the exact MCP route instead of widening the path:
+Add the MCP host, exact Streamable HTTP route, required methods, and only the binary that opens the connection:
 
 ```yaml
 preset:
@@ -1080,304 +1351,237 @@ network_policies:
       - { path: /usr/local/bin/node }
 ```
 
-Save it under `nemoclaw-blueprint/policies/presets/my-mcp.yaml` and apply it to the running sandbox:
+Streamable HTTP clients can use `DELETE` on the same endpoint to terminate a session.
+Keep that method scoped to the exact MCP route.
+Do not replace the route with `/**` unless the server contract requires every path.
+
+Save the file as `nemoclaw-blueprint/policies/presets/my-mcp.yaml`.
+Apply it by name:
 
 ```bash
-$$nemoclaw my-assistant policy-add --from-file nemoclaw-blueprint/policies/presets/my-mcp.yaml
+$$nemoclaw my-assistant policy-add my-mcp
 ```
 
-NemoClaw prompts for confirmation because the preset targets a custom host that is not part of the vetted allowlist, then reports `Widening sandbox egress — adding: mcp.example.com`.
-For a publicly routed host that passes the separate SSRF checks, re-invoke the MCP tool and confirm that the CONNECT tunnel to `mcp.example.com:443` succeeds.
+NemoClaw previews the effective egress scope and prompts for confirmation before applying it.
+For a publicly routed host that passes SSRF checks, invoke the MCP tool again and confirm that the CONNECT tunnel succeeds.
+
+The `binaries` list must include only the process that opens the connection.
+The example assumes the Node runtime opens the MCP connection.
+Replace the example path with the requesting binary that OpenShell reports in `openshell term`.
+Shell-invoked clients need their own binary path, such as `/usr/bin/curl`.
+Confirm a candidate path inside the sandbox:
+
+```bash
+$$nemoclaw my-assistant exec -- which node
+```
+
+A preset with an endpoint but no matching binary authorizes no process, so requests still fail.
+OpenShell uses `protocol: rest` for this HTTP-based policy even though Streamable HTTP MCP carries JSON-RPC.
+
+An allowlist entry does not disable OpenShell SSRF protection or create host routes.
+If the hostname resolves to a private, loopback, or link-local address, establish the required host or VPN route.
+Then follow the approved private-destination configuration.
+Refer to [Agent cannot reach a host-side HTTP service](../../reference/troubleshooting#agent-cannot-reach-a-host-side-http-service) for routing and private-destination diagnostics.
+
+## Related Topics
+
+- [Apply Policy Presets](apply-policy-presets) explains preset persistence and reapplication.
+- [Configure Raw TLS Passthrough](configure-raw-tls-passthrough) covers endpoints that cannot use L7 inspection.
+- [Network Policies](../../reference/network-policies) describes the policy schema.
+
+
+========================================
+[FILE: docs/network-policy/customize-network-policy.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Customize the Sandbox Network Policy"
+sidebar-title: "Customize the Network Policy"
+description: "Choose the supported workflow for changing sandbox network access."
+description-agent: "Routes network policy changes to their canonical workflow. Use when choosing between baseline edits, policy presets, custom presets, raw TLS, live replacement, and agent policy context."
+keywords: ["customize nemoclaw network policy", "sandbox egress policy configuration"]
+content:
+  type: "how_to"
+skill:
+  priority: 10
+---
+Choose the policy workflow that matches the scope and persistence of the network access change.
+NemoClaw declares sandbox policy in YAML, and [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) enforces it at runtime.
+
+| Goal | Use this workflow |
+|---|---|
+| Change every future sandbox for an agent | [Change the Baseline Network Policy](configure-policies/change-baseline-network-policy) |
+| Add or remove a maintained preset for one sandbox | [Apply Policy Presets](configure-policies/apply-policy-presets) |
+| Add a reviewed endpoint that no maintained preset covers | [Create Custom Policy Presets](configure-policies/create-custom-policy-presets) |
+| Allow direct TLS negotiation for an exact endpoint | [Configure Raw TLS Passthrough](configure-policies/configure-raw-tls-passthrough) |
+| Replace the complete live policy | [Replace the Live Network Policy](configure-policies/replace-live-network-policy) |
+| Give the sandbox agent a redacted policy summary | [Explain Network Policy to Agents](explain-network-policy-to-agents) |
+| Approve or deny one blocked request | [Approve or Deny Network Requests](approve-network-requests) |
 
 <Note>
-The `binaries` list must include only the process that opens the connection.
-The example assumes the Node runtime opens the MCP connection, so it lists `/usr/local/bin/node`; use `/usr/local/bin/openclaw` instead if that executable is the connection opener in your installation.
-MCP client tools invoked directly from a shell need their own binary path, such as `/usr/bin/curl`.
-Confirm the paths inside the sandbox with `$$nemoclaw my-assistant exec -- which node` and `$$nemoclaw my-assistant exec -- which openclaw`, since the sandbox image and install method can change these locations.
-A preset that lists only the endpoint but no matching binary widens the allowlist but no process is authorized to use it, so requests still fail.
-OpenShell uses `protocol: rest` for this HTTP-based policy even though Streamable HTTP MCP carries JSON-RPC rather than REST semantics.
+If a sandbox needs an HTTP service on the host, expose the service on a host IP that the OpenShell gateway can reach.
+Apply a custom preset with `$$nemoclaw <sandbox> policy-add --from-file`.
+Do not rely on `host.docker.internal` as a general host-service path because it bypasses the OpenShell policy path and may not be reachable.
+Refer to [Agent cannot reach a host-side HTTP service](../reference/troubleshooting#agent-cannot-reach-a-host-side-http-service).
 </Note>
 
 <Warning>
-Keep each rule scoped to the exact MCP endpoint, such as `/mcp`; do not replace it with `/**` unless the server contract genuinely requires every path.
-An allowlist entry does not disable OpenShell's SSRF protection or create host routes.
-If the MCP hostname resolves to a private, loopback, or link-local address, adding the policy alone does not make it reachable; establish the required host or VPN route and follow your deployment's approved private-destination configuration.
-Refer to [Agent cannot reach a host-side HTTP service](../reference/troubleshooting#agent-cannot-reach-a-host-side-http-service) for routing and private-destination diagnostics.
-`preset.name` must be a lowercase RFC 1123 label (letters, digits, and hyphens; no underscores).
-The `network_policies` key can use underscores because that field feeds the policy schema rather than the preset filename.
+Adding a host to the egress policy permits a connection only when the endpoint, port, method, and binary rules match.
+OpenShell applies SSRF protection separately.
+It can deny a request when the final address resolves to a loopback, private, link-local, or blocked internal range.
+If a package installer or browser download still fails after you allow the public host, install the binary at build time.
+Use [`$$nemoclaw onboard --from`](../reference/commands#--from-dockerfile) instead of runtime egress.
 </Warning>
 
-### Export, Edit, and Set the Base Policy
+## Static Changes
 
-Use this path only when you cannot add a file under the NemoClaw source tree.
-Start from the current base policy so the presets layered on at onboarding stay in the file you apply.
-Requires OpenShell 0.0.72+ for the round-trippable `policy get --base` and `policy set --wait` syntax.
-Use NemoClaw to validate the base policy and strip the OpenShell metadata header before writing your editable copy.
+Static changes modify the policy source that NemoClaw reads during sandbox creation.
+Follow [Change the Baseline Network Policy](configure-policies/change-baseline-network-policy) to edit agent policy files, add blueprint policy additions, rerun onboarding, and verify the result.
 
-```bash
-$$nemoclaw my-assistant policy-get > current-policy.yaml
-```
+## Dynamic Changes
 
-The command exits non-zero instead of emitting a partial policy when retrieval or validation fails.
-Do not use `--raw` for this workflow because raw output retains the metadata header.
-
-Edit `current-policy.yaml` to add your entries under `network_policies:`, keeping the existing `version` field intact, then apply:
-
-```bash
-openshell policy set --policy current-policy.yaml --wait my-assistant
-```
-
-### Scope of Dynamic Changes
-
-Dynamic changes apply only to the current session.
-When the sandbox stops, the running policy resets to the baseline policy plus the presets recorded for the sandbox.
-Custom presets applied through `$$nemoclaw <sandbox> policy-add --from-file` or `--from-dir` are recorded with the sandbox, including their full YAML content.
-Snapshot restore and rebuild replay those recorded presets, so they survive sandbox recreation even if the original files are no longer on disk.
-For permanent baseline changes that apply to every future sandbox, edit the source policy for the target agent and re-run `$$nemoclaw onboard`.
-
-### Approve Requests Interactively
-
-For one-off access, approve blocked requests in the OpenShell TUI instead of editing the baseline policy:
-
-```bash
-openshell term
-```
-
-Use this flow to test a destination before you decide whether it belongs in a permanent preset or custom policy file.
+Dynamic changes update a running sandbox.
+Use [Apply Policy Presets](configure-policies/apply-policy-presets) for reviewed additions that NemoClaw records and replays.
+Use [Approve or Deny Network Requests](approve-network-requests) for one-off access.
+Use [Replace the Live Network Policy](configure-policies/replace-live-network-policy) only when a preset cannot express the complete change.
 
 ## Policy Presets
 
-NemoClaw ships preset policy files for common integrations in `nemoclaw-blueprint/policies/presets/`.
-Apply a preset as-is or use it as a starting template for a custom policy.
-For guided post-install examples, refer to [Common Integration Policy Examples](integration-policy-examples).
-
-During onboarding, the [policy tier](../reference/network-policies#policy-tiers) you select determines which presets are enabled by default.
-You can add or remove individual presets in the interactive preset screen that follows tier selection.
-Built-in preset choices are scoped to the sandbox's active agent, so unsupported messaging channel presets do not appear in `policy-list` or the interactive `policy-add` picker for agents without matching channel policy files.
-
-Available presets:
-
-| Preset | Endpoints |
-|--------|-----------|
-| `brave` | Brave Search API |
-| `brew` | Homebrew (Linuxbrew) package manager |
-| `discord` | Discord API, gateway, and CDN access |
-| `github` | GitHub and GitHub REST API |
-| `huggingface` | Hugging Face Hub (download-only) and inference router |
-| `jira` | Atlassian Jira API |
-| `local-inference` | Local Ollama and vLLM through the host gateway |
-| `npm` | npm and Yarn registries |
-| `openclaw-pricing` | OpenClaw model-pricing reference fetch (LiteLLM and OpenRouter) |
-| `outlook` | Microsoft 365 and Outlook |
-| `pypi` | Python Package Index |
-| `slack` | Slack API and webhooks |
-| `tavily` | Tavily Search API |
-| `telegram` | Telegram Bot API |
-| `wechat` | WeChat (personal) iLink Bot API (experimental) |
-| `whatsapp` | WhatsApp Web messaging (experimental) |
-
-To apply a preset to a running sandbox:
-
-```bash
-$$nemoclaw <name> policy-add
-```
-
-<Note>
-Preset selection is interactive when you omit a preset name.
-Pass a preset name with `--yes` for scripted workflows.
-</Note>
-
-For example, to interactively add PyPI access to a running sandbox:
-
-```bash
-$$nemoclaw my-assistant policy-add
-```
-
-To list which presets are applied to a sandbox:
-
-```bash
-$$nemoclaw <name> policy-list
-```
-
-<AgentOnly variant="openclaw">
-To include a preset in the baseline, merge its entries into `openclaw-sandbox.yaml` and re-run `$$nemoclaw onboard`.
-</AgentOnly>
-<AgentOnly variant="hermes">
-To include a preset in the baseline, merge its entries into the Hermes policy additions and re-run `$$nemoclaw onboard`.
-</AgentOnly>
-
-<Note>
-The `openshell policy set --policy <file> --wait <sandbox-name>` command operates on raw policy files and does not accept the `preset:` metadata block used in preset YAML files.
-Use `$$nemoclaw <name> policy-add` for presets.
-</Note>
-
-For scripted workflows, `policy-add` and `policy-remove` accept the preset name as a positional argument:
-
-```bash
-$$nemoclaw my-assistant policy-add pypi --yes
-$$nemoclaw my-assistant policy-remove pypi --yes
-```
-
-Set `NEMOCLAW_NON_INTERACTIVE=1` instead of `--yes` to drive the same flow from an environment variable.
-Refer to [Commands](../reference/commands#$$nemoclaw-name-policy-add) for the full flag reference.
-
-`$$nemoclaw <name> rebuild` reapplies every policy preset to the recreated sandbox, so presets survive an agent-version upgrade without manual reapplication.
+Maintained policy presets cover common integrations and package services.
+Follow [Apply Policy Presets](configure-policies/apply-policy-presets) to preview, apply, reapply, list, or remove them.
+For guided service workflows, refer to [Common Integration Policy Examples](integration-policy-examples).
 
 ## Custom Preset Files
 
-Apply a user-authored preset YAML file to a running sandbox without editing the baseline or using `openshell policy set`.
+Custom preset files add reviewed endpoint access without changing the baseline.
+Follow [Create Custom Policy Presets](configure-policies/create-custom-policy-presets) to author, validate, apply, and remove a custom preset.
+That page also contains the URL-based MCP server recipe formerly located in this guide.
 
-### Authoring
+## Raw TLS Passthrough
 
-A custom preset follows the same shape as the built-in ones under `nemoclaw-blueprint/policies/presets/`:
+Some endpoints require direct TLS negotiation and fail through inspected L7 proxying.
+Follow [Configure Raw TLS Passthrough](configure-policies/configure-raw-tls-passthrough) for the bounded `access: full` and `tls: skip` recipe.
 
-```yaml
-preset:
-  name: my-internal-api
-  description: "Internal service"
-network_policies:
-  my-internal-api:
-    name: my-internal-api
-    endpoints:
-      - host: api.example.internal
-        port: 443
-        protocol: rest
-        enforcement: enforce
-        rules:
-          - allow: { method: GET, path: "/**" }
-    binaries:
-      - { path: /usr/local/bin/node }
-```
+## Live Policy Replacement
 
-The top-level `preset.name` must be a lowercase RFC 1123 label (letters, digits, hyphens) and must not collide with a built-in preset name such as `slack` or `pypi`.
-Rename `preset.name` if NemoClaw refuses to apply the file because of a collision.
-Each endpoint must name a specific host or a scoped subdomain wildcard such as `*.example.com`.
-NemoClaw rejects catch-all destinations including `*`, `0.0.0.0`, `0.0.0.0/0`, `::`, and `::/0` before it applies a custom preset.
-Rule matchers must match the endpoint protocol.
-REST and WebSocket rules require `method` and `path`; REST accepts standard HTTP methods or `*`, while WebSocket accepts `GET`, `WEBSOCKET_TEXT`, or `*`.
-JSON-RPC rules accept only `method`, and MCP rules accept `method` plus optional `tool` or `params.name` matchers.
-The same protocol-specific matcher shape applies to `deny_rules`.
-User-authored presets must not declare `allowed_ips` for ordinary endpoints.
-NemoClaw rejects that field in files passed through `--from-file` or `--from-dir` because it can widen the private-address ranges that OpenShell checks during SSRF protection.
-Use hostnames, ports, protocols, methods, paths, and binary restrictions instead.
-The only exception is the `host.openshell.internal` bridge endpoint used for explicit sandbox-to-host service access.
-
-### Apply a Single File
-
-```bash
-$$nemoclaw my-assistant policy-add --from-file ./presets/my-internal-api.yaml
-```
-
-Use `--dry-run` to preview endpoints without applying changes.
-Use `--yes` or export `NEMOCLAW_NON_INTERACTIVE=1` to skip the confirmation prompt.
-
-### Apply Every File in a Directory
-
-```bash
-$$nemoclaw my-assistant policy-add --from-dir ./presets/ --yes
-```
-
-NemoClaw processes files in lexicographic order.
-Processing stops at the first failure.
-NemoClaw does not roll back presets that were already applied.
-Fix the failing file and re-run the command to continue.
-
-<Warning>
-Custom preset hosts bypass NemoClaw's review process and can widen sandbox egress to arbitrary destinations.
-Review every host in a custom preset before applying it, especially when the file originates outside your team.
-</Warning>
-
-### Remove a Custom Preset
-
-NemoClaw records custom presets applied with `--from-file` or `--from-dir` in the sandbox registry alongside their full YAML content.
-Remove them by name without keeping the original file on disk:
-
-```bash
-$$nemoclaw my-assistant policy-remove my-internal-api --yes
-```
-
-`policy-remove` accepts both built-in and custom preset names.
-Run `$$nemoclaw <name> policy-list` to see every preset currently applied to the sandbox.
+OpenShell `policy set` replaces the complete live policy.
+Follow [Replace the Live Network Policy](configure-policies/replace-live-network-policy) to export the round-trippable base, preserve existing entries, and apply a validated replacement.
 
 ## Agent Policy Context
 
-When an agent runs in the sandbox, it needs a compact view of the active policy so it can decide whether a host or integration is allowed and what to suggest when something fails.
-`$$nemoclaw <name> policy-explain` prints that view as a redacted summary.
-The summary includes the recorded tier, applied presets and their allowed host categories, known presets that are not applied, inspect/add/remove commands that change policy, and support boundaries between NemoClaw, OpenShell, and the agent.
+Agents need a redacted view of active presets and policy verification state.
+Follow [Explain Network Policy to Agents](explain-network-policy-to-agents) to print or refresh that context and interpret failure classifications.
+
+## Related Topics
+
+- [Common Integration Policy Examples](integration-policy-examples) provides maintained service workflows.
+- [Network Policies](../reference/network-policies) is the canonical policy reference.
+- [OpenShell Policy Schema](https://docs.nvidia.com/openshell/latest/reference/policy-schema.html) provides the complete YAML schema.
+- [OpenShell Sandbox Policies](https://docs.nvidia.com/openshell/latest/sandboxes/policies.html) explains OpenShell-layer policy iteration.
+
+
+========================================
+[FILE: docs/network-policy/explain-network-policy-to-agents.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Explain Network Policy to Agents"
+sidebar-title: "Explain Policy to Agents"
+description: "Generate a redacted policy summary that helps an agent classify network failures."
+description-agent: "Explains the active network policy to sandbox agents. Use when generating a redacted policy summary, interpreting verification status, or classifying network failures."
+keywords: ["nemoclaw policy-explain", "agent network policy context", "POLICY.md"]
+content:
+  type: "how_to"
+skill:
+  priority: 10
+---
+Use `policy-explain` to give a sandbox agent a compact, redacted view of its active network policy.
+The summary helps the agent distinguish policy denials, missing credentials, unsupported capabilities, and upstream failures.
+
+## Print the Policy Context
+
+Print the redacted summary:
 
 ```bash
 $$nemoclaw my-assistant policy-explain
 ```
 
-Pass `--json` to emit the same context as a structured object the agent can read:
+Pass `--json` when a tool needs a structured object:
 
 ```bash
 $$nemoclaw my-assistant policy-explain --json
 ```
 
-During onboarding, NemoClaw seeds the rendered context inside the sandbox at `/sandbox/.openclaw/workspace/POLICY.md`.
-It refreshes that file on every `policy-add` or `policy-remove`, so the in-sandbox agent picks it up when it scans the workspace.
-Pass `--write` to refresh that file on demand without changing the policy:
+<AgentOnly variant="openclaw">
+During OpenClaw onboarding, NemoClaw writes the rendered context to `/sandbox/.openclaw/workspace/POLICY.md`.
+It refreshes that file after `policy-add` or `policy-remove`.
+Refresh the file without changing policy:
 
 ```bash
 $$nemoclaw my-assistant policy-explain --write
 ```
+</AgentOnly>
+<AgentOnly variant="hermes">
+For Hermes, use the printed Markdown or JSON through an operator-controlled prompt or file workflow.
+The `--write` target is the OpenClaw workspace and is not a Hermes agent-context integration.
+</AgentOnly>
 
-The output is intentionally redacted.
-Network policy rule bodies, credential metadata, and binary allowlists are not included.
-Only host stems and category-level summaries appear.
-Host stems that resolve to RFC 1918 ranges (10/8, 172.16/12, 192.168/16), loopback (127/8, `::1`), link-local (169.254/16, `fe80::/10`), cloud metadata (`169.254.169.254`), unique-local IPv6 (`fc00::/7`), reserved zero (0.0.0.0/8), CGNAT (100.64/10), benchmarking (198.18/15), `localhost`, and the internal DNS suffixes `.local`, `.internal`, `.lan`, `.home`, `.home.arpa`, `.corp`, `.intra`, `.intranet`, `.localdomain` are dropped from `allowedHostCategories` and surface as a `redactedHostCount`.
+## Understand Redaction
 
-Each active preset also carries a `verification` field that tells the agent whether the OpenShell gateway actually enforces it:
+The summary includes the recorded tier, applied presets, allowed host categories, known presets that are not applied, and policy management commands.
+It also explains the support boundaries between NemoClaw, OpenShell, and the agent.
+
+The output omits network rule bodies, credential metadata, and binary allowlists.
+It includes only host stems and category-level summaries.
+NemoClaw drops private, loopback, link-local, metadata, unique-local, reserved, CGNAT, benchmarking, and internal-suffix hosts from `allowedHostCategories`.
+It reports their count in `redactedHostCount`.
+
+## Interpret Verification Status
+
+Each active preset includes a `verification` value:
 
 | Status | Meaning |
 |--------|---------|
-| `verified` | Registry lists the preset and the gateway confirms it is enforced. Safe to treat the host stems as allowed. |
-| `registry-only` | Registry lists the preset but the gateway does not enforce it (drift). Treat allowed hosts as unverified. The agent should not assume the traffic will reach the host. |
-| `gateway-only` | Gateway enforces a preset the registry does not list. Reported as active so the agent does not misclassify allowed hosts as blocked. |
-| `gateway-unavailable` | Could not probe the gateway (no live snapshot). The whole report is advisory; rely on `nemoclaw <sandbox> policy-list` once the gateway is reachable. |
+| `verified` | The registry lists the preset, and the gateway confirms enforcement. |
+| `registry-only` | The registry lists the preset, but the gateway does not enforce it. Treat the allowed hosts as unverified. |
+| `gateway-only` | The gateway enforces a preset that the registry does not list. |
+| `gateway-unavailable` | NemoClaw could not probe the gateway. Treat the report as advisory until the gateway is reachable. |
 
-The context also documents how the agent should classify a failed host or integration attempt.
-The classifier evaluates rules in order so HTTP 403 has a single interpretation per call.
-When the host matches an applied preset, the request is treated as an authentication failure.
-Otherwise, the request is treated as a policy denial.
+## Classify a Failed Request
 
-1. `unsupported`: The caller asserts the capability is not offered for this sandbox, such as a messaging channel that the active agent does not support.
-   The agent should surface the limitation without retrying.
-2. `missing-approval`: The host is allowed by an applied preset and the request was refused with HTTP 401.
-   The network path is open.
-   Credentials are missing or invalid.
-3. `missing-approval` (low confidence): The host is allowed by an applied preset and the request was refused with HTTP 403.
-   This is ambiguous because OpenShell policies enforce by method, path, protocol, and binary, so a 403 on an allowed host can still be a finer-grained policy denial rather than missing credentials.
-   Confirm credentials first, then run `openshell policy get` to check whether the specific method or path is blocked.
-4. `blocked-by-policy`: Either the host is not allowed by any applied preset and either an existing built-in or custom preset declares it (apply that preset), or the request is refused with a network-block error code (`EHOSTUNREACH`, `ENETUNREACH`, `ENOTFOUND`, `ECONNREFUSED`, `ETIMEDOUT`, `EAI_AGAIN`) or HTTP 403.
-   The same network-block codes also surface as `blocked-by-policy` (low confidence) when the host is on an applied but unverified preset (`registry-only` or `gateway-unavailable`), because a block code on a host the registry says should be allowed is the strongest signal that the gateway is not enforcing the preset.
-5. `unknown`: None of the above apply.
-   The agent should surface the underlying error.
-   A network-block code on a host that matches a verified preset stays `unknown` because the gateway has confirmed enforcement, so the block must be an upstream connectivity failure rather than a policy denial.
+The classifier evaluates conditions in this order:
 
-Each classification also carries a `confidence` field set to `high` or `low`.
-Low-confidence verdicts mean the agent should report multiple possibilities to the user instead of treating the next-step recommendation as authoritative.
-Common low-confidence triggers are:
+1. `unsupported` means the active agent does not offer the asserted capability.
+   Surface the limitation without retrying.
+2. `missing-approval` with high confidence means a host on an applied preset returned HTTP 401.
+   The network path is open, but credentials are missing or invalid.
+3. `missing-approval` with low confidence means a host on an applied preset returned HTTP 403.
+   Confirm credentials, then inspect the effective policy for a method, path, protocol, or binary denial.
+4. `blocked-by-policy` means no applied preset allows the host or the request returned a network-block error.
+   Apply an applicable preset or create a custom preset.
+5. `unknown` means no classification matched.
+   Surface the underlying error.
 
-- HTTP 403 on an active host (ambiguous between missing credentials and a finer-grained OpenShell denial by method, path, protocol, or binary).
-- The matched preset is `registry-only` (the registry lists it but the gateway does not enforce it), so the agent must not assume the host is reachable.
-- The matched preset is `gateway-unavailable` (no live gateway snapshot was available), so the verdict is registry-derived and advisory.
+Network-block error codes include `EHOSTUNREACH`, `ENETUNREACH`, `ENOTFOUND`, `ECONNREFUSED`, `ETIMEDOUT`, and `EAI_AGAIN`.
+A block code on a host from a `registry-only` or `gateway-unavailable` preset produces a low-confidence policy verdict.
+A block code on a host from a verified preset stays `unknown` because the gateway already confirmed enforcement.
 
-Callers that already hold a verified gateway snapshot can pass it to the classifier so verdicts about hosts on verified presets stay high-confidence.
+Each verdict includes `confidence` set to `high` or `low`.
+Low confidence means the agent must report multiple possibilities instead of treating one next step as authoritative.
 
-Use the classification to pick the next step.
-For `blocked-by-policy`, run `$$nemoclaw <name> policy-add <preset>` or author a [custom preset](#custom-preset-files).
-For `missing-approval`, confirm the API token and scopes for the integration.
-For `unsupported`, surface the limitation to the user without retrying.
+For `blocked-by-policy`, run `$$nemoclaw <name> policy-add <preset>` or follow [Custom Preset Files](customize-network-policy#custom-preset-files).
+For `missing-approval`, confirm the API token and scopes.
+For `unsupported`, surface the limitation without retrying.
 
 ## Related Topics
 
-- [Approve or Deny Agent Network Requests](approve-network-requests) for real-time operator approval.
-- [Common Integration Policy Examples](integration-policy-examples) for maintained preset examples such as Outlook, messaging, GitHub, Jira, web search, package managers, Hugging Face, and local inference.
-- [Network Policies](../reference/network-policies) for the full baseline policy reference.
-- OpenShell [Policy Schema](https://docs.nvidia.com/openshell/latest/reference/policy-schema.html) for the full YAML policy schema reference.
-- OpenShell [Sandbox Policies](https://docs.nvidia.com/openshell/latest/sandboxes/policies.html) for applying, iterating, and debugging policies at the OpenShell layer.
+- [Apply Policy Presets](configure-policies/apply-policy-presets) changes the recorded preset set.
+- [Create Custom Policy Presets](configure-policies/create-custom-policy-presets) adds a reviewed custom destination.
+- [Network Policies](../reference/network-policies) explains policy enforcement and tiers.
 
 
 ========================================
@@ -1433,27 +1637,27 @@ An approval updates the running policy, but it does not create a reviewable Nemo
 NemoClaw ships maintained policy presets for common services in `nemoclaw-blueprint/policies/presets/`.
 Messaging channel presets are scoped to the sandbox's active agent; if an agent does not have a matching channel policy, that channel preset is omitted from `policy-list` and `policy-add <preset>` reports it as unknown.
 
-| Workflow | Preset |
-|----------|--------|
-| Brave Search | `brave` |
-| Homebrew packages | `brew` |
-| Discord messaging | `discord` |
-| GitHub and GitHub API | `github` |
-| Gmail IMAP and SMTP | `gmail` |
-| Hugging Face Hub and Inference API | `huggingface` |
-| Jira and Atlassian Cloud | `jira` |
-| Local Ollama or vLLM through the host gateway | `local-inference` |
-| OpenClaw model-pricing reference fetch | `openclaw-pricing` |
-| npm and Yarn packages | `npm` |
-| Microsoft 365, Outlook, and Graph API | `outlook` |
-| Public reference APIs | `public-reference` |
-| Python Package Index | `pypi` |
-| Slack messaging | `slack` |
-| Tavily Search | `tavily` |
-| Telegram Bot API | `telegram` |
-| Weather and geocoding APIs | `weather` |
-| WeChat (personal) iLink Bot API (experimental) | `wechat` |
-| WhatsApp Web messaging (experimental) | `whatsapp` |
+| Workflow | Preset | Agent support |
+|----------|--------|---------------|
+| Brave Search | `brave` | OpenClaw |
+| Homebrew packages | `brew` | OpenClaw and Hermes |
+| Discord messaging | `discord` | OpenClaw and Hermes |
+| GitHub and GitHub API | `github` | OpenClaw and Hermes |
+| Gmail IMAP and SMTP | `gmail` | OpenClaw and Hermes |
+| Hugging Face Hub and Inference API | `huggingface` | OpenClaw and Hermes |
+| Jira and Atlassian Cloud | `jira` | OpenClaw and Hermes |
+| Local Ollama or vLLM through the host gateway | `local-inference` | OpenClaw and Hermes |
+| OpenClaw model-pricing reference fetch | `openclaw-pricing` | OpenClaw |
+| npm and Yarn packages | `npm` | OpenClaw and Hermes |
+| Microsoft 365, Outlook, and Graph API | `outlook` | OpenClaw and Hermes |
+| Public reference APIs | `public-reference` | OpenClaw and Hermes |
+| Python Package Index | `pypi` | OpenClaw and Hermes |
+| Slack messaging | `slack` | OpenClaw and Hermes |
+| Tavily Search | `tavily` | OpenClaw and Hermes |
+| Telegram Bot API | `telegram` | OpenClaw and Hermes |
+| Weather and geocoding APIs | `weather` | OpenClaw and Hermes |
+| WeChat (personal) iLink Bot API (experimental) | `wechat` | OpenClaw and Hermes |
+| WhatsApp Web messaging (experimental) | `whatsapp` | OpenClaw and Hermes |
 
 Preview the endpoints before applying:
 
@@ -1486,7 +1690,12 @@ $$nemoclaw my-assistant policy-add outlook --dry-run
 $$nemoclaw my-assistant policy-add outlook --yes
 ```
 
-`policy-add` exits non-zero if the `outlook` preset is already applied. If you applied it in the lifecycle example above, run `$$nemoclaw my-assistant policy-remove outlook --yes` first (or skip this apply step).
+When the `outlook` preset is already applied, `policy-add outlook` compares the preset with the live policy.
+If they match, the command exits zero without changing the live policy.
+If they differ, the command applies the preset again.
+This includes changes to the preset file.
+You do not need to remove the preset before you apply it again.
+Removing it first temporarily deletes its entries from the live policy.
 
 Then configure the email or calendar tool credentials through the integration you run in the sandbox.
 Keep OAuth client secrets and refresh tokens out of policy files.
@@ -1787,18 +1996,136 @@ $$nemoclaw my-assistant status
 
 ## Gmail With an App Password
 
+Use the `gmail` preset for Python IMAP or SMTP workflows that use a dedicated Gmail App Password.
+Follow [Set Up Gmail With an App Password](set-up-gmail-with-an-app-password) for the security boundary, prerequisites, examples, and cleanup steps.
+
+## Inspect or Replace the Live Policy
+
+Use `policy-list` for normal preset state.
+Follow [Replace the Live Network Policy](configure-policies/replace-live-network-policy) only when you need to export, edit, and replace the complete policy.
+Use [Apply Policy Presets](configure-policies/apply-policy-presets) to merge maintained or custom preset entries.
+
+## Next Steps
+
+- [Approve or Deny Agent Network Requests](approve-network-requests) for the interactive OpenShell TUI flow.
+- [Customize the Sandbox Network Policy](customize-network-policy) to choose the correct policy workflow.
+- [Set Up Gmail With an App Password](set-up-gmail-with-an-app-password) for the full Gmail IMAP and SMTP workflow.
+- [Choose Messaging Channels](../manage-sandboxes/messaging-channels/choose-messaging-channels) for Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams configuration.
+- [Commands](../reference/commands) for the full `policy-get`, `policy-add`, `policy-list`, `policy-remove`, and `channels` command reference.
+
+
+========================================
+[FILE: docs/network-policy/replace-live-network-policy.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Replace the Live Network Policy"
+sidebar-title: "Replace the Live Policy"
+description: "Export, edit, validate, and replace the complete live policy for a NemoClaw sandbox."
+description-agent: "Replaces the complete live sandbox policy. Use when a full policy edit cannot use NemoClaw policy presets."
+keywords: ["openshell policy set", "nemoclaw policy-get", "replace live network policy"]
+content:
+  type: "how_to"
+skill:
+  priority: 10
+---
+Replace the live policy only when you cannot express the change as a NemoClaw preset.
+This workflow requires OpenShell 0.0.72+.
+
+<Warning>
+`openshell policy set` replaces the sandbox's live policy with the file you provide.
+It does not merge.
+A running policy contains the baseline plus every preset layered during onboarding and later operations.
+Applying a file that contains only one part silently removes the other entries.
+</Warning>
+
+## Export the Base Policy
+
+Start from the current round-trippable base policy so the applied presets remain in the file:
+
+```bash
+$$nemoclaw my-assistant policy-get > current-policy.yaml
+```
+
+The command retrieves and validates the base policy.
+It exits nonzero instead of writing partial output when retrieval or validation fails.
+Do not use `--raw` because raw output retains the OpenShell metadata header.
+
+## Edit the Complete Policy
+
+Edit `current-policy.yaml`.
+Add entries under `network_policies` and keep the existing `version` field.
+Preserve every baseline and preset entry that the sandbox still needs.
+
+The `openshell policy set` command accepts a raw policy file.
+It does not accept a preset file that starts with a `preset:` metadata block.
+Use [Apply Policy Presets](apply-policy-presets) when a maintained or custom preset can express the change.
+
+## Apply the Replacement
+
+Apply the complete file:
+
+```bash
+openshell policy set --policy current-policy.yaml --wait my-assistant
+```
+
+The change applies to the running sandbox.
+For a durable source-of-truth change, update the baseline policy or record a custom preset with NemoClaw.
+
+## Verify the Result
+
+Inspect the tracked preset state:
+
+```bash
+$$nemoclaw my-assistant policy-list
+```
+
+Inspect the effective OpenShell policy before testing the endpoint:
+
+```bash
+openshell policy get my-assistant
+```
+
+## Related Topics
+
+- [Create Custom Policy Presets](create-custom-policy-presets) records scoped additions with the sandbox.
+- [Change the Baseline Network Policy](change-baseline-network-policy) changes every future sandbox.
+- [Approve or Deny Network Requests](../approve-network-requests) handles one-off access.
+
+
+========================================
+[FILE: docs/network-policy/set-up-gmail-with-an-app-password.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Set Up Gmail With an App Password"
+description: "Configure Gmail IMAP and SMTP access for a Python workflow with a dedicated App Password."
+description-agent: "Configures Gmail IMAP and SMTP access for a Python workflow with a dedicated App Password. Use when applying the Gmail policy preset, uploading an App Password, downloading Gmail attachments, sending a test message, or removing Gmail credentials and access."
+keywords: ["nemoclaw gmail app password", "gmail imap smtp policy", "gmail attachment download"]
+content:
+  type: "how_to"
+skill:
+  priority: 15
+---
 Use the `gmail` preset when a Python script needs to receive mail through IMAP or send mail through SMTP with a Gmail App Password.
 The preset allows only `/usr/bin/python3` to open raw TLS connections to `imap.gmail.com:993` and `smtp.gmail.com:465`.
+
 OpenShell enforces the exact hosts, ports, and binary, but it cannot inspect individual IMAP or SMTP commands inside the encrypted connections.
 This preset does not grant Gmail REST API, Google OAuth, or service-account endpoints.
 
 <Warning>
 Google recommends [App Passwords](https://support.google.com/accounts/answer/185833) only for clients that cannot use Sign in with Google.
 This workflow stores the App Password inside the sandbox, where the agent can read it while the file exists.
-Create an App Password only for this workflow, delete the uploaded file, and revoke the App Password after the task.
+Create an App Password only for this workflow.
+Delete the uploaded file after the task.
+Revoke the App Password after the task.
 </Warning>
 
-### Prerequisites
+## Prerequisites
 
 Prepare the Google Account before applying the preset:
 
@@ -1808,16 +2135,16 @@ Prepare the Google Account before applying the preset:
 
 Google documents the TLS endpoints and ports in [IMAP, POP, and SMTP](https://developers.google.com/workspace/gmail/imap/imap-smtp).
 
-### Apply the Preset
+## Apply the Preset
 
-Preview and apply the preset from the host:
+Run these commands from the host:
 
 ```bash
 $$nemoclaw my-assistant policy-add gmail --dry-run
 $$nemoclaw my-assistant policy-add gmail --yes
 ```
 
-### Upload the App Password
+## Upload the App Password
 
 Create `gmail_config.json` on the host outside any source checkout:
 
@@ -1828,7 +2155,10 @@ Create `gmail_config.json` on the host outside any source checkout:
 }
 ```
 
-Restrict the host file, prepare a sandbox directory, upload the file, and restrict the uploaded copy:
+Restrict the host file.
+Prepare a sandbox directory.
+Upload the file.
+Restrict the uploaded copy:
 
 ```bash
 chmod 600 /path/to/gmail_config.json
@@ -1839,7 +2169,7 @@ $$nemoclaw my-assistant exec -- chmod 600 /sandbox/hand/gmail_config.json
 
 Do not commit `gmail_config.json` or paste its contents into chat, logs, issues, or pull requests.
 
-### Download Recent Attachments
+## Download Recent Attachments
 
 Save this standard-library example as `download_attachments.py` on the host.
 It reads the 10 most recent messages without marking them as read and writes attachments under `/sandbox/hand/gmail_attachments`:
@@ -1857,7 +2187,7 @@ ATTACHMENTS = ROOT / "gmail_attachments"
 ATTACHMENTS.mkdir(mode=0o700, parents=True, exist_ok=True)
 ATTACHMENTS.chmod(0o700)
 
-with imaplib.IMAP4_SSL("imap.gmail.com", 993) as mailbox:
+with imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=30) as mailbox:
     mailbox.login(CONFIG["email"], CONFIG["app_password"])
     status, _ = mailbox.select("INBOX", readonly=True)
     if status != "OK":
@@ -1891,7 +2221,9 @@ with imaplib.IMAP4_SSL("imap.gmail.com", 993) as mailbox:
             print(destination)
 ```
 
-Upload and run the script, then copy the attachment directory back to the host:
+Upload the script.
+Run the script.
+Copy the attachment directory back to the host:
 
 ```bash
 $$nemoclaw my-assistant upload ./download_attachments.py /sandbox/hand/download_attachments.py
@@ -1902,7 +2234,7 @@ $$nemoclaw my-assistant download /sandbox/hand/gmail_attachments/ ./gmail_attach
 Treat every downloaded attachment as untrusted content.
 Do not execute an attachment in the sandbox or on the host without reviewing it.
 
-### Send a Test Message
+## Send a Test Message
 
 Save this standard-library example as `send_email.py` on the host.
 The example sends a test message back to the configured account:
@@ -1927,14 +2259,14 @@ with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
     smtp.send_message(message)
 ```
 
-Upload and run the script:
+Run these commands:
 
 ```bash
 $$nemoclaw my-assistant upload ./send_email.py /sandbox/hand/send_email.py
 $$nemoclaw my-assistant exec -- python3 /sandbox/hand/send_email.py
 ```
 
-### Remove Credentials and Access
+## Remove Credentials and Access
 
 Delete the host and uploaded credential files, along with the temporary sandbox files, after downloading any attachments you need:
 
@@ -1949,40 +2281,11 @@ $$nemoclaw my-assistant policy-remove gmail --yes
 Removing the preset does not delete uploaded files or revoke the App Password.
 Revoke the dedicated App Password in your Google Account when the sandbox no longer needs it.
 
-## Inspect or Replace the Live Policy
+## Related Topics
 
-Use `policy-list` for normal preset state:
-
-```bash
-$$nemoclaw my-assistant policy-list
-```
-
-Use the NemoClaw policy export when you need an editable copy of the round-trippable base policy.
-Requires OpenShell 0.0.72+ for the round-trippable `policy get --base` and `policy set --wait` syntax.
-
-```bash
-$$nemoclaw my-assistant policy-get > current-policy.yaml
-```
-
-The export strips OpenShell metadata and exits non-zero if the base policy cannot be retrieved or validated.
-Do not add `--raw` when you plan to edit and reapply the file.
-
-If you must replace the live policy, edit the policy file and apply it back to the sandbox:
-
-```bash
-openshell policy set --policy current-policy.yaml --wait my-assistant
-```
-
-`openshell policy set` replaces the live policy with the file you provide.
-It does not accept a preset file that starts with a `preset:` block, and it does not merge a single endpoint into the existing policy.
-Use `$$nemoclaw my-assistant policy-add` for maintained NemoClaw presets.
-
-## Next Steps
-
-- [Approve or Deny Agent Network Requests](approve-network-requests) for the interactive OpenShell TUI flow.
-- [Customize the Sandbox Network Policy](customize-network-policy) for static policy edits and raw OpenShell policy files.
-- [Choose Messaging Channels](../manage-sandboxes/messaging-channels/choose-messaging-channels) for Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams configuration.
-- [Commands](../reference/commands) for the full `policy-get`, `policy-add`, `policy-list`, `policy-remove`, and `channels` command reference.
+- [Common Integration Policy Examples](integration-policy-examples) lists other maintained integration presets.
+- [Apply Policy Presets](configure-policies/apply-policy-presets) explains preset persistence and reapplication.
+- [Credential Storage](../security/credential-storage) explains NemoClaw credential boundaries.
 
 
 ========================================
@@ -2980,7 +3283,8 @@ $$nemoclaw my-dcode rebuild --no-observability --yes
 
 Removing the `observability-otlp-local` policy stops delivery immediately but does not clear the recorded opt-in.
 A later rebuild restores the preset on Balanced and Open tiers, while Restricted continues to suppress it.
-For the complete collector setup, privacy boundary, policy recovery, verification, and a host-side LangSmith exporter example, refer to [Quickstart with LangChain Deep Agents Code](/user-guide/deepagents/get-started/quickstart#export-traces-through-a-local-collector).
+For policy recovery and the host-side LangSmith exporter example, refer to [Set Up Deep Agents Trace Export](/user-guide/deepagents/monitoring/set-up-deepagents-trace-export).
+Review [Understand Deep Agents Trace Export](/user-guide/deepagents/monitoring/understand-deepagents-trace-export) for the privacy boundary, [Verify Deep Agents Trace Export](/user-guide/deepagents/monitoring/verify-deepagents-trace-export) for delivery checks, and [Manage Deep Agents Trace Export](/user-guide/deepagents/monitoring/manage-deepagents-trace-export) for lifecycle operations.
 
 </AgentOnly>
 
@@ -3838,7 +4142,7 @@ Terminal agents do not have a gateway runtime and fail as unsupported.
 ### `$$nemoclaw <name> stop`
 
 Stop the sandbox's Docker container while preserving all of its state.
-Workspace files, credentials, network policies, the registry entry, and the OpenShell sandbox record stay in place; only the container stops running.
+Workspace files, credentials, network policies, the registry entry, and the OpenShell sandbox record stay in place.
 Use this to free CPU, memory, and GPU resources without destroying the sandbox; use [`$$nemoclaw <name> destroy`](#$$nemoclaw-name-destroy) when you want to delete it instead.
 
 ```bash
@@ -3847,8 +4151,17 @@ $$nemoclaw my-assistant stop
 
 For OpenClaw-managed gateways, the command first asks the in-sandbox gateway to shut down its channels gracefully; agent-managed gateways (for example Hermes) are supervised inside the sandbox and shut down with the container's stop signal.
 Then the container stops; a container stuck in a crash loop is stopped the same way, which also disarms its restart policy.
+<AgentOnly variant="openclaw,hermes">
+After the container stops, NemoClaw attempts to stop that sandbox's host dashboard forward.
+If the container does not stop, NemoClaw leaves the dashboard forward running.
+</AgentOnly>
 The shared host gateway, tunnel services, and any local NIM inference container serve other sandboxes and keep running.
+<AgentOnly variant="openclaw,hermes">
+Stopping an already-stopped sandbox succeeds and attempts to remove any leftover dashboard forward for that sandbox.
+</AgentOnly>
+<AgentOnly variant="deepagents">
 Stopping an already-stopped sandbox succeeds without changes.
+</AgentOnly>
 The command controls the local container directly, so it is available for local-container drivers (the default Docker driver and the vm driver) and unavailable for remote drivers such as kubernetes; if the Docker daemon itself is unreachable, the command reports the outage instead of guessing at container state.
 
 ### `$$nemoclaw <name> start`
@@ -4355,7 +4668,15 @@ $$nemoclaw my-assistant policy-add pypi --yes
 
 The positional form is required in scripted workflows.
 Set `NEMOCLAW_NON_INTERACTIVE=1` instead of `--yes` if you want the same behavior from an environment variable.
-If the preset name is unknown or already applied, the command exits non-zero with a clear error.
+If the preset name is unknown, the command exits non-zero with a clear error.
+If a named preset is already applied, the command compares the preset content with the live policy.
+When the content matches, the command reports no changes and exits zero.
+When the content differs, the command shows the normal preview and asks for confirmation before applying the preset again.
+This includes changes to the preset file.
+The comparison requires both the preset content and the live policy.
+If either cannot be read, the command exits non-zero.
+The command also exits non-zero when the name belongs to a custom preset applied with `--from-file`.
+Use `--from-file` to apply that custom preset again.
 Built-in preset choices are scoped to the sandbox's active agent. Messaging channel presets appear only when NemoClaw has a matching channel policy for that agent; unavailable channel presets use the standard unknown-preset error before endpoint preview or confirmation.
 Custom preset files are tracked with the sandbox that applied them.
 `policy-list`, `policy-add`, and `policy-remove` compare the local registry and live gateway state using that sandbox-scoped preset metadata, so custom presets do not appear missing just because they are not part of the built-in preset catalog.
@@ -5103,9 +5424,16 @@ The in-sandbox staging artefact is additionally created with `umask 077` and rem
 
 ### `$$nemoclaw <name> download <sandbox-path> [host-dest]`
 
-Host-side wrapper around `openshell sandbox download` that adds a live-sandbox readiness check.
-The sandbox source path is forwarded to OpenShell verbatim; a relative host destination is resolved against the caller's working directory before it reaches OpenShell, so the downloaded file lands where the user invoked the CLI from rather than inside the install directory.
-Absolute host destinations pass through unchanged, and the OpenShell transport keeps its file-system semantics (single-file vs directory copy, trailing-slash handling, overwrite behaviour).
+Host-side wrapper around `openshell sandbox download` that checks the live sandbox.
+The command confirms before and after transfer that the source remains a file or directory.
+Symbolic links, source-type changes, and other special source types are refused.
+If the command cannot confirm the source type, it exits without publishing.
+The command downloads to a fresh private temporary directory on the host, verifies that OpenShell wrote an artifact, publishes the artifact to your destination, and removes the temporary directory.
+An existing destination directory is resolved to its canonical path before publication.
+The command refuses an existing file destination that is a symbolic link and a new destination below a symbolic-link parent.
+Regular files are published through a private temporary entry and atomically replace an existing regular file.
+Relative host destinations resolve against the caller's working directory.
+Absolute host destinations do not use caller-working-directory resolution.
 With no `host-dest` the destination defaults to the current directory.
 
 <AgentOnly variant="openclaw">
@@ -5347,7 +5675,8 @@ $$nemoclaw my-assistant snapshot list
 Restore sandbox state from a snapshot.
 The sandbox must be running before you restore.
 If no selector is provided, the latest snapshot is used.
-Restore performs a clean replacement of each state directory, removing files that were added after the snapshot was taken.
+Restore removes files added after the snapshot only from state directories selected for cleanup.
+It preserves directories that exist only in the target manifest or whose backup failed.
 The state replacement, mutable-config permission repair, and policy reconciliation run under the same per-sandbox transition.
 An expired auto-restore timer can interrupt that work and restore lockdown.
 
@@ -5783,10 +6112,20 @@ $$nemoclaw gc [--dry-run] [--yes|-y|--force]
 
 ### `$$nemoclaw uninstall`
 
-Run `uninstall.sh` to remove NemoClaw sandboxes, gateway resources, related images and containers, and local state.
+Run `uninstall.sh` to remove NemoClaw sandboxes, local gateway resources, related images and containers, and local state.
 The CLI runs the local `uninstall.sh` shipped with the installed npm package.
 If that local script is missing, the CLI does not auto-fetch a remote copy.
 It prints the versioned URL of the matching `uninstall.sh` so you can download, review, and run it manually.
+
+When the gateway is externally supervised, uninstall preserves its process, Docker resources, and OpenShell binaries.
+It still deletes the selected sandboxes and attempts to remove the modern local gateway registration.
+When uninstall confirms that no sibling gateways remain, it also deletes NemoClaw provider registrations.
+It does not use the legacy `gateway destroy` command for that gateway.
+<AgentOnly variant="openclaw">
+
+Refer to [Declare the OpenShell Gateway Lifecycle Authority](../deployment/gateway-lifecycle-authority).
+
+</AgentOnly>
 
 Uninstall also stops any orphaned `openshell` host processes left behind by previous onboard or destroy cycles, including `openshell sandbox create`, `openshell ssh-proxy`, and SSH sessions spawned by OpenShell.
 Earlier releases only stopped `openshell forward` processes, so those orphans accumulated across runs.
@@ -5796,7 +6135,9 @@ For Local Ollama setups, uninstall also stops matching Ollama auth proxy process
 For Hermes setups, uninstall inspects the selected gateway's managed port-forward watcher state, stops each verified watcher process and its sandbox-scoped forward, and leaves sibling gateway state untouched.
 If any watcher or forward cleanup cannot be confirmed, uninstall exits nonzero and preserves the selected gateway's watcher state so you can retry cleanup.
 
-On Linux, uninstall removes `~/.local/state/nemoclaw`, which contains Docker-driver gateway SQLite data, audit logs, VM-driver state, and standalone-fallback gateway PID files.
+On Linux, uninstall removes `~/.local/state/nemoclaw`, which contains NemoClaw-owned Docker-driver gateway SQLite data, audit logs, VM-driver state, and standalone-fallback gateway PID files.
+Keep a declared external gateway state directory outside that NemoClaw-owned path.
+Uninstall does not otherwise target the declared external directory.
 
 | Flag | Effect |
 |---|---|
@@ -5826,8 +6167,10 @@ The default gateway uses `~/.nemoclaw/`; a non-default gateway uses `~/.nemoclaw
 | `backups/` | Host-side workspace backups that `scripts/backup-workspace.sh` writes. Refer to [Transfer State Manually](../manage-sandboxes/state-and-backups/transfer-state-manually). |
 | `sandboxes.json` | Host-side sandbox registry. NemoClaw uses it to map sandbox names back to their persistence directories when you reinstall. |
 
-When no sibling gateways remain, uninstall also removes shared host resources such as the gateway source clone, runtime state, and the Ollama auth proxy PID file.
+When uninstall confirms that no sibling gateways remain, it also removes shared host resources such as the gateway source clone, runtime state, and the Ollama auth proxy PID file.
 When sibling gateways remain, it removes only the selected gateway's resources and port-scoped state while preserving those shared host resources.
+If the OpenShell command is unavailable or its gateway list cannot be read, uninstall cannot confirm that the selected gateway is the last one, so it uses the same scoped path and preserves the shared resources.
+When the command itself is unavailable, uninstall exits nonzero before OpenShell cleanup so you can restore the command and retry.
 
 `--yes` deliberately remains non-destructive for user data.
 It only acknowledges the global `Proceed?` confirmation prompt and still preserves the listed entries.
@@ -5847,7 +6190,11 @@ Decision matrix:
 The preserved entries survive uninstall as inert files on disk.
 Reinstall NemoClaw and re-onboard the sandbox before `$$nemoclaw <name> snapshot restore` can use them.
 
-Preserving `sandboxes.json` does not make the recorded sandboxes recoverable on their own: uninstall removes the gateway registration, provider registrations, and Docker image those records depend on.
+The preserved `sandboxes.json` file does not make the recorded sandboxes recoverable on its own.
+Uninstall deletes the selected sandboxes and attempts to remove the local gateway registration.
+After uninstall confirms that no sibling gateways remain, it also deletes provider registrations.
+For a NemoClaw-managed gateway, it also removes the Docker image.
+For an externally supervised gateway, it preserves Docker resources, but the registry still cannot recover deleted sandbox and provider resources.
 Uninstall warns about this at preserve time.
 After reinstalling, the installer reports such records as not found on their recorded gateway instead of claiming they were recovered; run `$$nemoclaw <name> destroy` to clear a stranded record, then `$$nemoclaw onboard` to rebuild it.
 Pass `--destroy-user-data` at uninstall time if you prefer to purge the registry along with its dependencies.
@@ -6222,14 +6569,16 @@ Local bases are accepted only when NemoClaw builds and pins them during the curr
 <AgentOnly variant="deepagents">
 
 Set `NEMOCLAW_LANGCHAIN_DEEPAGENTS_CODE_SANDBOX_BASE_IMAGE_REF` to a LangChain Deep Agents Code sandbox-base tag or digest to override base-image resolution during onboarding.
-NemoClaw requires environment overrides to use the official remote repository and resolve to an immutable repository digest, then validates the requested image against the manifest-required `deepagents-code` package version before using it. Local bases are accepted only when NemoClaw builds and pins them during the current operation.
+NemoClaw requires environment overrides to use the official remote repository and resolve to an immutable repository digest, then validates the requested image against the manifest-required `deepagents-code` package version before using it.
+Local bases are accepted only when NemoClaw builds and pins them during the current operation.
 
 </AgentOnly>
 
 <AgentOnly variant="hermes">
 
 Set `NEMOCLAW_HERMES_SANDBOX_BASE_IMAGE_REF` to a Hermes sandbox-base tag or digest to override base-image resolution during onboarding.
-NemoClaw requires environment overrides to use the official remote repository and resolve to an immutable repository digest, validates the requested image for the required MCP runtime, and keeps the final image bound to that trusted base. Local bases are accepted only when NemoClaw builds and pins them during the current operation.
+NemoClaw requires environment overrides to use the official remote repository and resolve to an immutable repository digest, validates the requested image for the required MCP runtime, and keeps the final image bound to that trusted base.
+Local bases are accepted only when NemoClaw builds and pins them during the current operation.
 
 </AgentOnly>
 
@@ -6264,7 +6613,8 @@ Collector and exporter failures are non-fatal to agent work.
 Native LangSmith tracing and ambient OTLP configuration remain disabled in the sandbox.
 The explicit opt-in can export bounded prompts, responses, tool arguments, tool results, and operational metadata, so operators must treat trace payloads as sensitive application data.
 The collector must enforce the operator's filtering and redaction requirements before remote forwarding because the local policy applies to the managed Python interpreter and does not provide authenticated tenant identity.
-For the complete receiver contract and a runnable LangSmith collector setup, refer to [Quickstart with LangChain Deep Agents Code](/user-guide/deepagents/get-started/quickstart#export-traces-through-a-local-collector).
+For a runnable LangSmith collector setup, refer to [Set Up Deep Agents Trace Export](/user-guide/deepagents/monitoring/set-up-deepagents-trace-export).
+For the receiver trust contract, refer to [Understand Deep Agents Trace Export](/user-guide/deepagents/monitoring/understand-deepagents-trace-export).
 
 </AgentOnly>
 
@@ -6306,17 +6656,29 @@ Defaults are sized for typical hardware; override only if you see false-positive
 | `NEMOCLAW_SANDBOX_EXEC_TIMEOUT_MS` | per call site (typically `15000`) | Overrides the default timeout for `openshell sandbox exec` calls issued by recovery and lifecycle helpers. Integer milliseconds; non-positive or non-numeric values fall back to the per-call-site default. |
 | `NEMOCLAW_STATUS_PROBE_TIMEOUT_MS` | built-in default | Overrides the timeout for the OpenShell status probe used by `$$nemoclaw <name> status`. Integer milliseconds; non-positive or non-numeric values fall back to the default. |
 
-### Onboard Timeouts
+### Onboard and Sandbox Readiness Timeouts
 
 The following environment variables tune onboard-time wall-clock limits.
+`NEMOCLAW_SANDBOX_READY_TIMEOUT` also covers OpenShell command re-registration after onboarding applies policy presets.
+
+<AgentOnly variant="openclaw,hermes">
+`NEMOCLAW_SANDBOX_READY_TIMEOUT` also applies when managed recovery transactionally recreates an existing sandbox.
+</AgentOnly>
 Set them before running `$$nemoclaw onboard` if a slow connection or large model pull risks tripping the default.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `NEMOCLAW_OLLAMA_PULL_TIMEOUT` | `1800` (30 minutes) | Wall-clock timeout for `ollama pull` during onboard, in seconds. Accepts integer or float values. Already-downloaded layers are kept; re-running the pull resumes them. |
 | `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` | `180` | Wall-clock timeout for the inference-server validation probe during onboard, in seconds. Raise on slow networks or for very large prompts. |
-| `NEMOCLAW_SANDBOX_READY_TIMEOUT` | `180` | Wall-clock timeout for the post-create readiness wait, in seconds. Raise when the sandbox image build, gateway upload, or in-sandbox boot exceeds the default (typical on 70B+ models, first-time gateway uploads over slow links, or DGX Station / remote-VM first runs). When the deadline expires onboarding deletes the orphaned sandbox and prints the retry hint. |
+| `NEMOCLAW_SANDBOX_READY_TIMEOUT` | `180` | Wall-clock timeout for post-create readiness and OpenShell command re-registration after policy application, in seconds. Raise when the sandbox image build, gateway upload, in-sandbox boot, or post-policy re-registration exceeds the default (typical on 70B+ models, first-time gateway uploads over slow links, or DGX Station / remote-VM first runs). When the post-create deadline expires, onboarding deletes an orphaned sandbox and prints the retry hint. |
 | `NEMOCLAW_SANDBOX_READY_ERROR_DEBOUNCE` | `30` | Consecutive `Error`-phase polls (2s apart, so ~60s by default) the post-create readiness wait tolerates before treating `Error` as terminal. The gateway can briefly report a just-created sandbox in `Error` while it re-registers the sandbox (seen on DGX Spark); the debounce lets that transient recover to `Ready`. `Failed` and `CrashLoopBackOff` always fail immediately. Set to `1` to restore fast-fail on the first `Error` poll. |
+
+<AgentOnly variant="openclaw,hermes">
+
+For managed recovery, the same timeout covers OpenShell re-registration after transactional recreation.
+When the deadline expires, the primary dashboard or API host forward stays stopped.
+
+</AgentOnly>
 
 ```bash
 export NEMOCLAW_OLLAMA_PULL_TIMEOUT=3600
@@ -6324,9 +6686,10 @@ export NEMOCLAW_SANDBOX_READY_TIMEOUT=600
 $$nemoclaw onboard
 ```
 
-If a timeout fires, onboarding emits the elapsed budget plus a hint to raise the relevant variable.
+If the Ollama pull or post-create readiness timeout fires, onboarding emits the elapsed budget plus a hint to raise the relevant variable.
 The Ollama pull preserves its partial download for the next attempt.
-The readiness wait deletes the orphaned sandbox first so the next `$$nemoclaw onboard` starts clean.
+The post-create readiness wait deletes the orphaned sandbox first so the next `$$nemoclaw onboard` starts clean.
+A post-policy re-registration failure leaves the sandbox in place and reports that OpenShell did not re-register it.
 
 ### Lifecycle Behavior Flags
 
@@ -6963,7 +7326,7 @@ Sandbox Python can forge spans and resource attributes.
 The explicit `--observability` opt-in can export bounded prompts, responses, tool arguments, tool results, and operational metadata.
 Managed size and recognized-key redaction do not detect secrets embedded in ordinary content values.
 The collector must enforce the operator's filtering and redaction requirements before forwarding traces, and it must not treat span fields such as `service.name` as authenticated tenant identity.
-For a safe host binding, policy recovery commands, a runnable collector, and end-to-end verification, refer to [Export Traces Through a Local Collector](../get-started/quickstart#export-traces-through-a-local-collector).
+For a safe host binding, policy recovery commands, and a runnable collector, refer to [Set Up Deep Agents Trace Export](../monitoring/set-up-deepagents-trace-export).
 
 </AgentOnly>
 
@@ -7206,7 +7569,7 @@ They are listed here so launch material, sales conversations, and support triage
 | Item | Status | Why |
 |------|--------|-----|
 | Podman / other container runtimes | Unsupported | Onboard surfaces an explicit unsupported-runtime error for Podman (`src/lib/onboard/fatal-runtime-preflight.ts` prints the rejection; `src/lib/onboard/preflight.ts` flags the unsupported runtime upstream). Only Docker Engine, Docker Desktop, and Colima are supported. See issue #420 (closed). |
-| Intel Mac (macOS x86_64) | Unsupported | OpenShell does not publish macOS x86_64 standalone gateway assets. Install hard-fails on x86_64 macOS (`scripts/install-openshell.sh:689`). See issue #954 (closed). |
+| Intel Mac (macOS x86_64) | Unsupported | OpenShell does not publish macOS x86_64 standalone gateway assets. The top-level installer rejects Intel Mac hosts before release-ref resolution or downloads (`install.sh:108`), and the OpenShell installer retains a downstream asset guard (`scripts/install-openshell.sh:689`). See issue #954 (closed). |
 | Non-Ubuntu/Debian Linux distros | Unsupported | Installer assumes `apt-get`. Fedora/Rocky/Alma/Arch/NixOS are not validated and the installer's package-manager probes do not cover them. See open issue #899 (Fedora hang). |
 | Native Kubernetes or OpenShift deployments | Unsupported | NemoClaw runs the sandbox as a Docker container, not a Kubernetes pod. The default Docker-driver topology does not embed k3s. Operator-managed K8s/OpenShift deployments are out of scope; see issue #407 (community OpenShift through agent-sandbox CRD). |
 | Air-gapped / offline installs | Unsupported | Onboard assumes network reachability for package fetches, container pulls, and provider validation. See open issues #4872 and #2218 (production-deployment epic covering air-gapped support, China network guidance, multi-host topology). |
@@ -8850,6 +9213,9 @@ openshell sandbox list
 $$nemoclaw <name> status
 ```
 
+If onboarding instead reports that the sandbox "did not re-register with OpenShell after policy application," the same timeout controls that post-policy command-readiness probe.
+Raise the budget before retrying, then inspect the same gateway and sandbox status if re-registration still fails.
+
 ### Sandbox onboard fails with "entered Error phase before it became ready"
 
 Onboarding ends with:
@@ -8995,6 +9361,31 @@ If the sandbox still cannot start or reports that no baseline is available, rebu
 ```bash
 $$nemoclaw <name> rebuild
 ```
+
+### `shields up` or `shields down` fails after `.config-hash` was removed
+
+`/sandbox/.openclaw/.config-hash` is the integrity sidecar for `openclaw.json`; deleting it during a manual config edit removes the file the shields guard captures alongside the config.
+From the default mutable posture, `$$nemoclaw <name> shields up` regenerates a stale hash from the current `openclaw.json` bytes.
+On sandboxes with the updated guard, the same command synthesizes a truly absent `.config-hash` under the frozen tree.
+Only a truly absent file is repaired; an unexpected file type at that name still fails closed.
+`$$nemoclaw <name> shields down` does not synthesize the hash: with the file missing it fails closed without modifying the config.
+If shields are already up, another `shields up` also fails closed when the hash is missing.
+Do not use mutable-posture synthesis to recover a locked sandbox.
+
+Sandboxes created by an older NemoClaw release keep the older guard baked into the container image, where a missing `.config-hash` makes the transition fail closed and quarantine `openclaw.json` by renaming it to `.nemoclaw-rejected-openclaw.json-<random>` in the same directory.
+The config bytes are preserved, not deleted.
+Upgrade the NemoClaw CLI before either recovery path because an older CLI restages the older guard.
+To preserve the quarantined settings, copy the file to the host before rebuilding:
+
+```bash
+docker exec <container> ls -a /sandbox/.openclaw
+docker cp <container>:/sandbox/.openclaw/<quarantine-file> ./openclaw.json.recovered
+$$nemoclaw <name> rebuild --yes
+```
+
+After the rebuild, inspect `./openclaw.json.recovered` and reapply required settings with the host-side `config set` command.
+Do not overwrite the regenerated `openclaw.json` with an unreviewed quarantine copy.
+To discard the quarantined settings, upgrade the CLI and run `$$nemoclaw <name> rebuild --yes` without copying the file.
 
 </AgentOnly>
 
@@ -10121,54 +10512,48 @@ nemohermes onboard --resume --non-interactive
 # Advisory Early Warning and Audit Provenance
 
 Status: correlation module, scan CLI, and audit provenance implemented.
-Scheduled operation and the response policy are a separate follow-up, gated on
-product/security-owner sign-off recorded on issue #7338 (evidence from #7276).
+Scheduled operation and the response policy are a separate follow-up.
+Product and security owner sign-off on issue #7338 gates that work, based on evidence from #7276.
 
-Public upstream GitHub Security Advisories are often published weeks before the
-global reviewed ecosystem record that `npm audit` enforces. For
-`fast-uri` (GHSA-4c8g-83qw-93j6) the upstream repository advisory appeared on
-June 29 while the reviewed record propagated on July 21, so the same vulnerable
-version audited clean at 18:46 UTC and reported High at 20:09 UTC. This page
-documents the early-warning correlation that narrows that gap and the
-provenance every audit now records so such timelines are provable from retained
-artifacts.
+Public upstream GitHub Security Advisories are often published weeks before the global reviewed ecosystem record that `npm audit` enforces.
+For `fast-uri` (GHSA-4c8g-83qw-93j6), the upstream repository advisory appeared on June 29, while the reviewed record propagated on July 21.
+The same vulnerable version audited clean at 18:46 UTC and reported High at 20:09 UTC.
 
-The correlation draws on all three types of the global advisory database, which
-contribute differently:
+This page documents the early-warning correlation that narrows that gap.
+It also documents the provenance that each audit records so retained artifacts can prove these timelines.
 
-- reviewed records are the corpus `npm audit` enforces — a match here means
-  package-level enforcement is imminent or already active, and the signal
-  confirms the reviewed gate will catch it;
-- unreviewed records are NVD-sourced and often appear before curation reaches
-  the reviewed feed — they usually lack a verified npm mapping, so they flow
-  through the ambiguous, informational-only path and provide the earlier
-  heads-up;
-- malware records name npm packages published as malware — a match against the
-  reviewed inventory correlates like any other record and is equally
-  non-blocking.
+The correlation draws on all three types of the global advisory database:
 
-Polling upstream *repository* advisories directly (the earliest public signal,
-e.g. `fastify/fast-uri`'s own advisory) needs a package-to-repository map and
-is the planned extension; the correlation module already accepts that record
-shape unchanged.
+- Reviewed records are the corpus that `npm audit` enforces.
+  A match means package-level enforcement is imminent or active, and the signal confirms that the reviewed gate detects it.
+- Unreviewed records come from NVD and often appear before curation reaches the reviewed feed.
+  They usually lack a verified npm mapping, so they follow the ambiguous, informational path and provide earlier notice.
+- Malware records name npm packages published as malware.
+  A match against the reviewed inventory correlates like any other record and remains non-blocking.
 
-## How the early-warning correlation works
+Polling upstream repository advisories directly requires a package-to-repository map.
+These advisories can provide the earliest public signal, such as the advisory from `fastify/fast-uri`.
+This polling is the planned extension, and the correlation module already accepts that record shape unchanged.
 
-- `scripts/lib/advisory-early-warning.mts` correlates GitHub Security Advisory
-  JSON (repository-level and global records share the shape) with the reviewed
-  npm inventory and emits structured signals:
-  `{advisoryId, package, vulnerableRange, matchedVersions, source, confidence, action}`.
-- The inventory is derived from `ci/reviewed-npm-audit.json`: every committed
-  archive package spec plus the installed packages of each locked graph's
-  `package-lock.json`.
-- Confidence is encoded, never guessed: only an exact npm ecosystem +
-  package-name + parseable semver-range match yields `confidence: "exact"` and
-  `action: "investigate"`. Name collisions from non-npm (CPE-derived) records
-  and unparseable ranges yield `confidence: "ambiguous"` and
-  `action: "informational"`. Ambiguous matches never block or mutate a release.
-- The reviewed npm audit gate (`scripts/audit-reviewed-npm-graph.mts`, enforced
-  in CI) remains enabled and authoritative for exact npm package/version-range
-  decisions. The early-warning path only triggers investigation and rescanning.
+## How the Early-Warning Correlation Works
+
+- `scripts/lib/advisory-early-warning.mts` correlates GitHub Security Advisory JSON with the reviewed npm inventory.
+  Repository-level and global records share the same shape.
+  The module emits structured signals:
+  `{advisoryId, cveId?, package, vulnerableRange, matchedVersions, source, confidence, action}`.
+  The optional `cveId` appears only when the advisory has a well-formed `cve_id`.
+  It supports the supplementary NVD reconciliation described below.
+- The inventory comes from `ci/reviewed-npm-audit.json`.
+  It contains each committed archive package spec and the installed packages from each locked graph's `package-lock.json`.
+  Pass `--inventory <file>` to use an explicit `{name, version}` inventory for hermetic offline runs.
+  A malformed entry fails the run instead of silently reducing the inventory.
+- Confidence is encoded instead of inferred.
+  Only an exact npm ecosystem, package name, and parseable semantic-version range match yields `confidence: "exact"` and `action: "investigate"`.
+  Name collisions from non-npm, CPE-derived records and unparseable ranges yield `confidence: "ambiguous"` and `action: "informational"`.
+  Ambiguous matches never block or mutate a release.
+- The reviewed npm audit gate in `scripts/audit-reviewed-npm-graph.mts` remains enabled in CI.
+  It is authoritative for exact npm package and version-range decisions.
+  The early-warning path triggers only investigation and rescanning.
 
 `scripts/advisory-early-warning-scan.mts` is the CLI over the module.
 It reads only local files and exits 0 whether or not signals are found.
@@ -10185,37 +10570,105 @@ node --experimental-strip-types scripts/advisory-early-warning-scan.mts \
   --advisories advisories.json --output signals.json
 ```
 
-Advisory records come from the GitHub `/advisories` API — all three types,
-paginated, filtered by `affects=` batches of the inventory package names.
+Advisory records come from the GitHub `/advisories` API.
+The request includes all three types, uses pagination, and filters `affects=` by batches of inventory package names.
 
-Running this correlation on a schedule and routing signals to an alert
-destination is deliberately not wired up yet: #7338 requires product/security
-owners to define the supported historical-image scope, rescan ownership, alert
-destination, and response expectations first. A follow-up adds the scheduled
-workflow once that sign-off is recorded on the issue.
+Running this correlation on a schedule and routing signals to an alert destination is not implemented.
+Issue #7338 requires product and security owners to define the supported historical-image scope, rescan ownership, alert destination, and response expectations.
+A follow-up adds the scheduled workflow after the issue records that sign-off.
 
-## Provenance recorded per audit
+## NVD Supplementary Reconciliation
 
-Each reviewed npm audit report now has a `*.provenance.json` sidecar
-(`coverage/reviewed-npm-audit/` artifacts, and `npm-audit.provenance.json` for
-the WeChat locked runtime graph audit) recording:
+Signals with a CVE ID can be reconciled against the National Vulnerability Database at `services.nvd.nist.gov/rest/json/cves/2.0`.
+NVD is a supplementary source.
+Issue #7338 prohibits treating ambiguous NVD or CPE matches as authoritative npm mappings.
+Reconciliation is informational and never changes a signal's `action` or `confidence`.
 
-- scanner identity: `npm audit`, npm version, Node.js version;
-- the configured registry, with URL credentials removed, plus the derived bulk
-  advisory endpoint npm posts the dependency graph to (npm >= 7 has no
-  quick-audit fallback: on request failure npm reports no advisory data, and
-  the note records this);
-- run start and finish timestamps (ISO 8601);
-- the audited graph label and committed package specs;
-- the raw machine-readable report path (`rawReportPath`, by convention
-  relative to the directory containing the sidecar);
-- the GHSA advisory ids extracted from the report; and
-- a `failure` marker when the audit attempt itself failed, so the sidecar
-  still records the attempt.
+- `scripts/lib/nvd-reconciliation.mts` parses NVD 2.0 API responses.
+  It records the CVE ID, `vulnStatus`, publication and modification dates, and the CPE criteria marked vulnerable.
+  It annotates each signal with one of three agreement states:
+  `corroborated`, `nvd-missing`, or `nvd-divergent`.
+  `corroborated` means that NVD lists the same CVE ID and has not rejected it.
+  `nvd-missing` means that NVD has no record, which is typical while a CVE is reserved or awaiting NVD processing.
+  The earlier upstream signal remains valid.
+  `nvd-divergent` means that NVD rejected the CVE ID or returned a different record.
+  CPE criteria surface only as a count in the note, never as package matches.
+- Pass `--nvd-records <file>` to `scripts/advisory-early-warning-scan.mts` to attach reconciliations from previously fetched NVD responses.
+  The CLI never makes network requests.
 
-Comparing the `advisoryIds` of consecutive retained runs identifies the last
-comparable non-detection and the first detection of a newly surfaced advisory,
-even when an unrelated finding failed the earlier run.
+Querying NVD on a schedule and annotating the alert destination belong to the scheduled workflow.
+The same #7338 sign-off gate applies to this work.
+
+## Provenance Recorded for Each Audit
+
+Each reviewed npm audit report has a `*.provenance.json` sidecar.
+The sidecars include `coverage/reviewed-npm-audit/` artifacts and `npm-audit.provenance.json` for the WeChat locked runtime graph audit.
+Each sidecar records:
+
+- Scanner identity, including `npm audit`, npm version, and Node.js version.
+- The configured registry with URL credentials removed.
+  The sidecar also records the derived bulk advisory endpoint where npm posts the dependency graph.
+  npm 7 and newer have no quick-audit fallback.
+  When the request fails, npm reports no advisory data, and the note records this condition.
+- Run start and finish timestamps in ISO 8601 format.
+- The audited graph label and committed package specs.
+- The raw machine-readable report path in `rawReportPath`.
+  By convention, the path is relative to the directory that contains the sidecar.
+- The GHSA advisory IDs extracted from the report.
+- A `failure` marker when the audit attempt fails, so the sidecar still records the attempt.
+
+Comparing the `advisoryIds` of consecutive retained runs identifies the last comparable non-detection and the first detection of a newly surfaced advisory.
+This comparison remains possible when an unrelated finding failed the earlier run.
+
+## #7276 Post-Mortem Detection Triggers
+
+Issue #7338 asks two questions of the #7276 evidence.
+The answers rely only on the retained evidence and inherit its limits.
+The evidence does not support one universal feed-delay root cause.
+A finding that the evidence cannot prove is classified as unproven rather than attributed.
+
+### Q1 Detection Trigger
+
+The #7338 acceptance criteria classify each finding as a reviewed-mapping delay, an audit or rescan coverage gap, or unproven because evidence is missing.
+
+- `fast-uri` (CVE-2026-13676, GHSA-4c8g-83qw-93j6): **Reviewed-mapping delay, directly demonstrated.**
+  The upstream repository advisory existed from June 29, yet the 18:46 UTC `npm audit` on July 21 did not report `fast-uri@3.1.2`.
+  The global reviewed ecosystem record propagated at 19:03 UTC.
+  At 20:09 UTC, an audit of the same vulnerable version returned GHSA-4c8g-83qw-93j6 as High.
+  This before-and-after evidence demonstrates that reviewed package-mapping propagation triggered detection.
+- `@opentelemetry/core` (CVE-2026-54285, GHSA-8988-4f7v-96qf): **Audit or rescan coverage gap.**
+  Its reviewed record had existed since June 15, more than a month before detection, so delayed reviewed-feed publication cannot explain it.
+  It first surfaced when the July 21 build reached the plugin audit.
+  This result shows a gap in audit coverage or execution order.
+- Jaeger propagator (CVE-2026-59892, GHSA-45rx-2jwx-cxfr): **Consistent with reviewed-mapping delay, but unproven.**
+  The reviewed record appeared at 19:07 UTC on July 21.
+  The first plugin audit that reached this graph reported the finding at 20:26 UTC.
+  This sequence is consistent with reviewed mapping propagation, but earlier builds stopped before the plugin audit.
+  No controlled pre-review comparison exists.
+- `tar` (CVE-2026-59873, GHSA-23hp-3jrh-7fpw): **Unproven because evidence is missing.**
+  The June 27 upstream disclosure-to-detection gap is real.
+  A July 21 Trivy scan reported vulnerable `tar@7.5.11` and `7.5.15`, and the reviewed record dates to July 20.
+  No comparable pre-review scan was retained, so the exact trigger is unproven.
+
+### Q2 Ideal Trigger and Current Coverage
+
+The ideal trigger is the earliest public upstream disclosure, evaluated against the exact dependency inventory on a schedule that does not depend on how far any one build progressed.
+Mapping each demonstrated gap to a mechanism:
+
+- Reviewed-mapping delay (`fast-uri` and plausibly the Jaeger propagator): The correlation path reads unreviewed NVD-sourced records alongside reviewed and malware records from the supplied advisory file.
+  It also reads previously fetched NVD responses supplied through `--nvd-records`; the CLI does not fetch them.
+  The planned scheduled workflow will fetch those NVD records, pass them to the CLI, and run every six hours after the #7338 sign-off.
+  A disclosure that names an inventory package raises a signal before the reviewed mapping exists.
+  NVD reconciliation provides supplementary corroboration.
+  Polling upstream repository advisories directly is not implemented.
+  This earliest public signal requires a package-to-repository map and remains the planned extension.
+- Audit or rescan coverage gap (`@opentelemetry/core` and the limit on the Jaeger conclusion): The scheduled scan correlates every advisory type against the full reviewed inventory every six hours, independent of build execution order.
+  The same #7338 sign-off gate applies.
+  Rescanning maintained immutable image digests is not implemented.
+  The image-scan pipeline waits for product and security owners to define the supported-image scope required by #7338.
+- Unproven trigger (`tar`): No trigger design can recover missing evidence.
+  Each reviewed npm audit now writes a provenance sidecar with endpoints, timestamps, and advisory IDs.
+  Consecutive retained runs can establish the last comparable non-detection and first detection for future findings.
 
 
 ========================================
@@ -11599,7 +12052,7 @@ Rerun onboarding when you change providers because the provider selection and cr
 NemoClaw supports opt-in, backend-neutral OTLP tracing for the managed Deep Agents harness through an operator-run host collector.
 The sandbox sends traces only to the fixed local receiver and does not receive `LANGSMITH_API_KEY`, remote OTLP exporter headers, or backend credentials.
 Native LangSmith tracing and ambient OpenTelemetry exporter configuration remain disabled inside `dcode`.
-Keep backend credentials in the host collector, and refer to [Export Traces Through a Local Collector](../get-started/quickstart#export-traces-through-a-local-collector) for the supported setup.
+Keep backend credentials in the host collector, and refer to [Understand Deep Agents Trace Export](../monitoring/understand-deepagents-trace-export) for the supported boundary.
 </AgentOnly>
 
 NemoClaw still keeps non-secret operational state under `~/.nemoclaw/` (such as the sandbox registry).
@@ -13884,6 +14337,146 @@ restart/rebuild, and cleanup without a conditional skip or expected failure.
 7. The physical #6379 Spark run completes an authenticated real MCP tool call and
    reports any failure honestly. Inclusion of `40194f93` alone cannot close the
    issue.
+
+
+========================================
+[FILE: docs/security/sandbox-base-libexpat-jq-2026-07-24-dependency-review.md]
+========================================
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Sandbox base libexpat and jq dependency review
+
+Review date: 2026-07-24
+
+## Decision
+
+Upgrade only the affected `sandbox-base` operating-system packages:
+
+- `libexpat1` from `2.7.1-2` to `2.8.2-1` for CVE-2026-45186;
+- `jq` and `libjq1` from `1.7.1-6+deb13u2` to `1.8.2-1` for CVE-2026-49839.
+
+As of the review date, Debian Trixie does not carry either fixed version.
+`Dockerfile.base` therefore installs the official Debian packages from the immutable `20260724T000000Z` snapshot and verifies an architecture-specific SHA-256 before installation.
+The fixed packages are installed before the existing apt layer commits, so that layer does not retain a superseded jq or Expat package.
+
+This review deliberately excludes Perl, Vim, gosu, npm, and repository-level `node-tar` findings.
+Those findings have separate owners and remediation paths.
+
+## Reviewed identities
+
+| Component | Current identity | Target identity | Required fix |
+| --- | --- | --- | --- |
+| Expat source | `R_2_7_1` / `f9a3eeb3e09fbea04b1c451ffc422ab2f1e45744` | `R_2_8_2` / `c61098da494eea1cbd091118118dcee417faacea` | CVE-2026-45186 is fixed by `4cd4eb0683e04cd45a2ffc81a08ca2a2663994b5` and released in 2.8.1 |
+| Debian Expat package | `libexpat1=2.7.1-2` | `libexpat1=2.8.2-1` | Debian records 2.8.2-1 as fixed |
+| jq source | `jq-1.7.1` / `71c2ab509a8628dbbad4bc7b3f98a64aa90d3297` | `jq-1.8.2` / `34f7186b86743a083a589741b6cea95293524108` | CVE-2026-49839 is fixed by `e987df0d463d85fd70825e042a082427e8275b86` |
+| Debian jq packages | `jq=1.7.1-6+deb13u2`, `libjq1=1.7.1-6+deb13u2` | `jq=1.8.2-1`, `libjq1=1.8.2-1` | Debian records 1.8.2-1 as fixed |
+
+The affected published image was
+`ghcr.io/nvidia/nemoclaw/sandbox-base:d87acc16`, index digest
+`sha256:7df21f757f2cb9d1840ddf21db87e5d70e335734f01b3f1ed5bda43a85f98ffc`.
+Its amd64 child was
+`sha256:981a8d0d094b7498e0894c1300aa400d4f522e0d8d6385c4ad29436ff45da68d`,
+and its arm64 child was
+`sha256:a99bf6500b946a3b8e30f85859621f88827f63e5e4563ed5128005adfde29dfb`.
+
+## Artifact integrity
+
+The package identities and SHA-256 values were read from Debian's signed package indexes.
+Builds fetch the same immutable snapshot paths over TLS and fail closed unless these hashes match:
+
+| Package | amd64 SHA-256 | arm64 SHA-256 |
+| --- | --- | --- |
+| `libexpat1_2.8.2-1` | `37d24b40a745107941f823d1f22c38f197f01981f7f0783777fe0026af016463` | `df928e3a8e4da79408d4b18e8cd80a03dffa90130d0698e50041aab5e14f9397` |
+| `libjq1_1.8.2-1` | `9a5bf964cef39ed8f0f162e20d856e31961d28a57772b5313989b42a8be7e941` | `eae4a828df2eb53d728f88109d9f9549e0983a90b573cf0c7fa1e4bbc7533a7e` |
+| `jq_1.8.2-1` | `b973a5d304f666845e8ccefab492e3850d4bc2e7aa2a1e7450862095125f2cc0` | `c25086443abd04d1457cbb322a0837f9ba986f82b28f44670467c8dc9be1f696` |
+
+The target packages require only dependencies already satisfied by the Trixie base:
+`libjq1` requires `libc6 >= 2.39` and `libonig5 >= 6.8.1`, while `libexpat1`
+requires `libc6 >= 2.38`.
+The pinned base provides `libc6 2.41` and `libonig5 6.9.9`.
+
+## Complete source range ledger
+
+The release-ledger collector rejects the upstream `jq-*` and `R_*` tag formats as non-semantic-version tags.
+The equivalent audit used full sanitized clones, explicit adjacent ancestry ranges, release notes, changed paths, fix diffs, and regression tests.
+No upstream code was executed.
+
+### jq
+
+| Range | Commits | NemoClaw-relevant result |
+| --- | ---: | --- |
+| `jq-1.7.1` to `jq-1.8.0` | 155 | Security fixes, parser limits, and CLI/function behavior changes. NemoClaw uses ordinary object selection, construction, comparison, and mutation and does not depend on the documented breaking cases. |
+| `jq-1.8.0` to `jq-1.8.1` | 17 | Security, portability, and performance fixes; the 1.8.0 `reduce`/`foreach` state-variable change was reverted. |
+| `jq-1.8.1` to `jq-1.8.2` | 86 | Security hardening and bug fixes, including the exact raw-file heap-overflow fix at `e987df0d`. |
+
+The CVE fix stops raw-file loading after `jv_string_append_buf` returns an invalid value.
+It changes two lines in `src/jv_file.c` and does not alter successful jq filter output.
+
+### Expat
+
+| Range | Commits | NemoClaw-relevant result |
+| --- | ---: | --- |
+| `R_2_7_1` to `R_2_7_2` | 105 | Adds allocation-amplification protection and two opt-in tuning APIs. Existing callers retain default protection. |
+| `R_2_7_2` to `R_2_7_3` | 53 | Correctness and portability fixes, including non-amd64 allocation alignment. |
+| `R_2_7_3` to `R_2_7_4` | 158 | Security and overflow fixes plus optional symbol versioning, which Debian does not enable incompatibly for the existing ABI. |
+| `R_2_7_4` to `R_2_7_5` | 49 | Three denial-of-service and error-path security fixes. |
+| `R_2_7_5` to `R_2_8_0` | 117 | Strengthens hash-flooding entropy and adds `XML_SetHashSalt16Bytes`; existing APIs remain present. |
+| `R_2_8_0` to `R_2_8_1` | 35 | Fixes CVE-2026-45186 by replacing quadratic default-attribute collision checks with a hash lookup. |
+| `R_2_8_1` to `R_2_8_2` | 201 | Additional parser memory-safety and integer-overflow fixes without an ABI-major change. |
+
+The CVE pull request includes seven duplicate-attribute regression cases.
+Expat retains `libexpat.so.1`; its version moves from `1.10.2` to `1.12.2`.
+New public APIs are additive, and existing Python and Git consumers remain dynamically compatible.
+
+## Downstream contract audit
+
+`jq` is a runtime tool in the base image.
+NemoClaw uses it for JSON construction, selection, validation, and safe configuration merges.
+The reviewed release notes do not remove or incompatibly change those operations.
+
+`libexpat1` is a transitive runtime library.
+The base image's Python `pyexpat` binding and Git executable load and execute with 2.8.2.
+No NemoClaw source calls the newly added Expat APIs or the deprecated hash-salt API.
+
+The child `Dockerfile` installs unrelated exact packages and does not request a jq or Expat downgrade.
+No lockfile, generated manifest, cache key, migration, persisted state, rollback data, or compatibility shim carries a second production selector for these packages.
+
+## Concern ledger
+
+| ID | Severity | Failure mode | Evidence and disposition |
+| --- | --- | --- | --- |
+| `OSPKG-1` | High | A mutable download or wrong-architecture package could replace a reviewed binary | Immutable snapshot paths, separate architecture branches, exact package names, and SHA-256 verification fail the build before installation. Resolved. |
+| `OSPKG-2` | High | jq 1.8 behavior changes could break configuration mutation | Both architectures pass a runtime object-selection probe; the audited breaking cases are outside NemoClaw's jq usage. Resolved. |
+| `OSPKG-3` | High | Expat's minor-version and shared-library changes could break Python or Git | Both architectures import Python `pyexpat` as `expat_2.8.2` and execute Git successfully while retaining `libexpat.so.1`. Resolved. |
+| `OSPKG-4` | High | Installing fixed packages could unintentionally modify the separately owned Perl remediation | The Docker build captures the installed Perl package version before the three package installs and fails if it changes. Both architecture proofs retain `perl=5.40.1-6`. Resolved. |
+| `OSPKG-5` | Medium | Mixing fixed Debian packages into Trixie could leave unsatisfied dependencies | Target dependency floors are below the pinned Trixie `libc6` and `libonig5` versions; `dpkg -i` and runtime probes pass on amd64 and arm64. Resolved. |
+| `OSPKG-6` | Medium | A scanner could classify a fixed package using Trixie advisory metadata instead of its installed version | Docker Scout sees the target package versions and reports zero Critical or High for the two CVEs, but its current Debian feed still labels them Low and Unspecified with an imprecise `>0` range. The authoritative nSpect rescan of published digests remains a promotion gate. |
+
+Unresolved high-severity concerns: `0`.
+
+## Verification and remaining gates
+
+Completed evidence:
+
+- the focused provisioning and security contract run passed all 97 tests;
+- normal pre-commit hooks passed;
+- `npm run docs` passed;
+- Dockerfile static build check passed with no warnings;
+- amd64 and arm64 package-layer builds downloaded and verified all six package artifacts;
+- complete 21-stage `Dockerfile.base` builds passed for amd64 and arm64;
+- both images report `libexpat1=2.8.2-1`, `libjq1=1.8.2-1`, and `jq=1.8.2-1`;
+- jq object selection, Python `pyexpat`, and Git runtime probes passed on both architectures;
+- both builds retained `perl=5.40.1-6` and `perl-base=5.40.1-6`;
+- Docker Scout indexed 455 packages on each architecture and reported zero Critical and zero High for CVE-2026-45186 and CVE-2026-49839.
+
+Before promotion:
+
+- build and publish the complete `sandbox-base` image for amd64 and arm64 under a new immutable tag and digest;
+- register and rescan both published child digests with nSpect;
+- require zero Critical and zero High findings before promotion;
+- keep the Perl, Vim, gosu, npm, and repository `node-tar` work in their independently owned changes.
 
 
 ========================================
