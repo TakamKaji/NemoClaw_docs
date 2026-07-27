@@ -1477,6 +1477,7 @@ The downstream scheduled reconciliation remains available if the event-driven di
 - Treat the dated MDX entry as the canonical release history. A conventional Release Notes page or post-tag Announcement draft cannot replace it.
 - If `origin/main` changes after plan generation, regenerate the plan before cutting the tag.
 - Before asking for release confirmation, satisfy the canonical [pre-tag E2E evidence policy](../nemoclaw-maintainer-policies/references/release-train.md#pre-tag-e2e-evidence) for that commit.
+- Load `nemoclaw-maintainer-e2e` and run full mode when the candidate has no applicable exact Brev Launchable evidence.
 - Ask the maintainer to paste the confirmation phrase from the plan before cutting the tag.
 - Push only the semver tag (`vX.Y.Z`) from the agent-controlled step.
 - Never push `latest` or `lkg` from this skill.
@@ -1552,14 +1553,36 @@ When the entry is waived, show the recorded waiver reason in the plan presentati
 
 For the plan's full `origin/main` SHA, review `.github/workflows/e2e.yaml` at that commit and build the evidence ledger required by the canonical [pre-tag E2E evidence policy](../nemoclaw-maintainer-policies/references/release-train.md#pre-tag-e2e-evidence). The workflow is the sole source of truth; do not substitute or maintain a separate release-gating test list.
 
+Find an applicable full-mode E2E run for the candidate SHA.
+If none exists, load `nemoclaw-maintainer-e2e` and dispatch full mode for that SHA.
+Do not substitute an ordinary E2E run or a selective `staging-brev-launchable` run.
+Require the full-mode run to include the default-enabled suite and `Exact staging Brev Launchable`.
+
+Before accepting that run, require:
+
+- the workflow `head_sha` to equal the plan candidate SHA;
+- the trusted dispatch receipt to prove empty selectors and `include_staging_brev_launchable=true`;
+- the workflow conclusion to be `success`;
+- the `Exact staging Brev Launchable` job conclusion to be `success`;
+- the job URL and workflow attempt number;
+- qualification identity for the same SHA; and
+- cleanup evidence that reports the qualified workspace as `ABSENT`.
+
+Treat a skipped job as missing evidence even when the workflow concludes `success`.
+If the plan candidate SHA changes, discard the run and qualification evidence.
+Run full mode again for the new candidate SHA.
+No release-note-only delta exception is currently defined.
+
 Before showing the confirmation prompt, present:
 
 - the candidate SHA;
 - the number of tests with green evidence out of the number required by the workflow;
 - each required test mapped to a successful run or job URL and attempt; and
-- an itemized maintainer exception for every test without green evidence, including its current result or failure summary and the rationale for proceeding.
+- the full-mode workflow URL, `Exact staging Brev Launchable` job URL, attempt, qualification identity, and cleanup result; and
+- a separate itemized maintainer exception for each test without successful evidence, including its test identifier, run links, current result, and rationale; and
+- a separate itemized maintainer exception for missing or invalid exact Brev Launchable qualification, including run and job URLs, the current result or missing receipt, and rationale.
 
-Do not ask for the phrase until every test has green evidence or an explicit itemized maintainer exception. If `origin/main` moves or the candidate SHA otherwise changes, regenerate the plan and rebuild the ledger for the new SHA.
+Do not ask for the phrase until each test and the exact Brev Launchable qualification has successful evidence or its own itemized maintainer exception. If `origin/main` moves or the candidate SHA otherwise changes, regenerate the plan and rebuild the ledger for the new SHA.
 
 Ask the maintainer to paste this phrase:
 
@@ -1693,6 +1716,9 @@ If the Announcement is valid, return its URL with the release artifacts and mark
 
 - Plan generation fails: fix the named precondition, then regenerate the plan.
 - Planned changelog entry is missing or malformed: stop before plan generation and run the pre-tag `nemoclaw-contributor-update-docs` workflow. Use post-release recovery only when the tag already exists.
+- Full-mode E2E readiness is disabled: stop before dispatch. Ask a release administrator to complete the protected environment, secrets, staging Launchable ID, and ownership setup, then enable the persistent readiness variable.
+- Full-mode E2E ran for another SHA or skipped `Exact staging Brev Launchable`: reject the run and dispatch full mode for the plan candidate SHA.
+- Qualification or cleanup evidence is missing or invalid: reject the run. Do not infer qualification from the workflow conclusion.
 - `origin/main` moved after plan generation: regenerate the plan and ask for the new confirmation phrase.
 - Remote semver tag already exists: stop; do not retag unless the maintainer explicitly starts protected-tag remediation.
 - `latest` workflow fails or times out: report the workflow/status; do not move `latest` manually.
@@ -1804,6 +1830,227 @@ Read `state.json` to avoid repeated context.
 
 
 ========================================
+[FILE: .agents/skills/nemoclaw-maintainer-e2e/SKILL.md]
+========================================
+
+---
+name: nemoclaw-maintainer-e2e
+description: Dispatches and verifies trusted GitHub Actions E2E for NemoClaw maintainers. Use for requests such as run the E2E suite, run the full E2E suite, deploy pre-release full E2E, run pre-tag full E2E, or run release-candidate E2E.
+---
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Run Maintainer E2E
+
+Use `.github/workflows/e2e.yaml` from trusted `main`.
+Do not substitute local `npm run test:live-e2e` unless the maintainer explicitly requests local execution.
+
+## Select the Mode
+
+| Request | Mode | `include_staging_brev_launchable` |
+|---|---|---|
+| “Run the E2E suite” | Ordinary | `false` |
+| “Run the full E2E suite” | Full | `true` |
+| “deploy pre-release full E2E” | Full | `true` |
+| “run pre-tag full E2E” | Full | `true` |
+| “run release-candidate E2E” | Full | `true` |
+
+A generic E2E request must not authorize the protected Brev path.
+Do not infer full mode from words such as “all” or “complete.”
+Ask for clarification only when the request contains conflicting mode phrases.
+
+Ordinary mode runs the default-enabled GitHub Actions suite.
+Full mode runs that suite and `Exact staging Brev Launchable` in the same workflow run.
+
+## Resolve the Candidate
+
+Run from a trusted NemoClaw checkout:
+
+```bash
+gh auth status
+git fetch --prune origin main
+CANDIDATE_SHA="$(git rev-parse origin/main)"
+```
+
+For a pre-tag request, use the full candidate SHA from the generated release plan.
+Require that SHA to equal `origin/main` before dispatch.
+Stop and regenerate the release plan when they differ.
+
+Record `CANDIDATE_SHA` for every dispatch.
+Do not use a relative revision in the evidence report.
+
+## Check Full-Mode Readiness
+
+Skip this step in ordinary mode.
+
+Read only the persistent readiness variable:
+
+```bash
+gh variable get NEMOCLAW_BREV_LAUNCHABLE_E2E_ENABLED \
+  --repo NVIDIA/NemoClaw --json value --jq .value
+```
+
+Require the value `true`.
+If the variable is absent or disabled, do not dispatch.
+Report this prerequisite:
+
+> A release administrator must set `NEMOCLAW_BREV_LAUNCHABLE_E2E_ENABLED=true` after the protected environment, secrets, staging Launchable ID, and ownership are configured.
+
+Do not inspect, print, or handle cloud credentials.
+Do not change the readiness variable around a run.
+
+## Dispatch One Trusted Run
+
+Generate a unique correlation ID:
+
+```bash
+CORRELATION_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+```
+
+For ordinary mode:
+
+```bash
+gh workflow run .github/workflows/e2e.yaml \
+  --repo NVIDIA/NemoClaw \
+  --ref main \
+  -f targets= \
+  -f jobs= \
+  -f inference_mode=mock \
+  -f include_staging_brev_launchable=false \
+  -f "correlation_id=${CORRELATION_ID}"
+```
+
+For full mode:
+
+```bash
+gh workflow run .github/workflows/e2e.yaml \
+  --repo NVIDIA/NemoClaw \
+  --ref main \
+  -f targets= \
+  -f jobs= \
+  -f inference_mode=mock \
+  -f include_staging_brev_launchable=true \
+  -f "correlation_id=${CORRELATION_ID}"
+```
+
+Do not set `jobs=staging-brev-launchable` for full mode.
+Empty `jobs` and `targets` select the default suite.
+The boolean input adds qualification to that same run.
+
+Find the run by its unique title:
+
+```bash
+RUN_TITLE="E2E main (${CORRELATION_ID})"
+for POLL_INDEX in $(seq 1 30); do
+  RUNS="$(gh run list --repo NVIDIA/NemoClaw --workflow e2e.yaml \
+    --event workflow_dispatch --branch main --limit 50 \
+    --json databaseId,displayTitle,headSha,status,url)"
+  MATCHES="$(jq -c --arg title "$RUN_TITLE" \
+    '[.[] | select(.displayTitle == $title)]' <<<"$RUNS")"
+  [ "$(jq 'length' <<<"$MATCHES")" -le 1 ] || {
+    echo "Correlation matched more than one E2E run" >&2
+    exit 1
+  }
+  RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$MATCHES")"
+  [ -z "$RUN_ID" ] || break
+  sleep 10
+done
+test -n "${RUN_ID:-}"
+RUN_SHA="$(jq -r '.[0].headSha' <<<"$MATCHES")"
+test "$RUN_SHA" = "$CANDIDATE_SHA"
+```
+
+Reject a run for another SHA.
+Do not reuse it as evidence.
+
+Wait for completion:
+
+```bash
+gh run watch "$RUN_ID" --repo NVIDIA/NemoClaw --exit-status
+```
+
+Full mode can wait for protected-environment approval.
+Queued, waiting, or accepted dispatch state is not success.
+
+## Verify the Result
+
+Create a private temporary evidence directory:
+
+```bash
+EVIDENCE_DIR="$(mktemp -d)"
+chmod 700 "$EVIDENCE_DIR"
+trap 'rm -rf "$EVIDENCE_DIR"' EXIT
+gh api "repos/NVIDIA/NemoClaw/actions/runs/$RUN_ID" >"$EVIDENCE_DIR/run.json"
+gh api "repos/NVIDIA/NemoClaw/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" \
+  >"$EVIDENCE_DIR/jobs.json"
+```
+
+For ordinary mode, require `run.json` to report:
+
+- `head_sha` equal to `CANDIDATE_SHA`;
+- `status` equal to `completed`; and
+- `conclusion` equal to `success`.
+
+Return the run URL and conclusion.
+
+For full mode, download the qualification evidence:
+
+```bash
+gh run download "$RUN_ID" --repo NVIDIA/NemoClaw \
+  --name "staging-brev-launchable-${CANDIDATE_SHA}-${RUN_ID}" \
+  --dir "$EVIDENCE_DIR"
+node --experimental-strip-types --no-warnings \
+  .agents/skills/nemoclaw-maintainer-e2e/scripts/validate-full-e2e-evidence.mts \
+  --candidate-sha "$CANDIDATE_SHA" \
+  --run-json "$EVIDENCE_DIR/run.json" \
+  --jobs-json "$EVIDENCE_DIR/jobs.json" \
+  --dispatch-json "$EVIDENCE_DIR/dispatch.json" \
+  --qualification-json "$EVIDENCE_DIR/qualification.json" \
+  --cleanup-json "$EVIDENCE_DIR/cleanup.json"
+```
+
+The validator requires:
+
+- the workflow run to succeed for the selected SHA;
+- `dispatch.json` to bind the run and attempt to empty selectors and `include_staging_brev_launchable=true`;
+- `Exact staging Brev Launchable` to conclude `success` in the reported attempt;
+- `qualification.json` to identify the selected SHA in the repository and provision records;
+- the booted repository to be unmodified;
+- the in-guest full E2E to pass; and
+- `cleanup.json` to report the same workspace as `ABSENT`.
+
+A skipped, cancelled, queued, or failed qualification job is not evidence.
+A selective `jobs=staging-brev-launchable` run is not full-mode evidence.
+A missing, mismatched, or failed cleanup receipt is not evidence.
+
+## Bind Release Evidence
+
+If no release plan exists, label a successful full run against `origin/main` as provisional release evidence.
+Return:
+
+- candidate SHA;
+- workflow run URL and conclusion;
+- `Exact staging Brev Launchable` job URL;
+- workflow attempt number;
+- qualification identity; and
+- cleanup result.
+
+If the release candidate SHA changes, discard the earlier run and rerun full mode.
+No release-note-only delta exception is currently defined.
+
+When `nemoclaw-maintainer-cut-release-tag` invokes this skill, return the validated fields for its pre-tag E2E evidence ledger.
+The trusted `dispatch.json` receipt proves that full mode selected the default suite.
+The release evidence ledger proves the result of each default-suite execution.
+Do not ask for the release confirmation phrase in this skill.
+
+## Access Failures
+
+Follow the shared [Git and GitHub Access Hard Stop](../_shared/git-github-hard-stop.md).
+Stop on authentication, authorization, remote-access, or permission failures.
+
+
+========================================
 [FILE: .agents/skills/nemoclaw-maintainer-evening/SKILL.md]
 ========================================
 
@@ -1859,14 +2106,28 @@ If a docs PR or any other intended PR merges after `release:plan`, regenerate th
 
 ## Step 4: Cut the Tag and Publish Release Notes
 
-Load `cut-release-tag`. The version is already known — default to patch bump, but still show the commit, changelog, post-tag carry-forward and label-retirement plan, and release notes draft for confirmation. After the release plan freezes the candidate SHA, review the pre-tag E2E evidence ledger derived from `.github/workflows/e2e.yaml` at that commit. Do not ask for the release confirmation phrase until every test has green evidence or an explicit itemized maintainer exception. NemoClaw releases are tag-based: tag the confirmed release commit with `vX.Y.Z`, let the workflow move `latest`, automatically carry remaining open issues/PRs to the next patch label, delete the released label, and prepare the release notes announcement for the maintainer to post.
+Load `cut-release-tag`.
+The version is already known, so use a patch bump unless the maintainer selects another bump.
+Show the commit, changelog, carry-forward plan, label-retirement plan, and release notes draft.
+
+After the release plan freezes the candidate SHA, load `nemoclaw-maintainer-e2e`.
+Run full mode when that SHA has no applicable exact Brev Launchable evidence.
+Review the pre-tag E2E evidence ledger from `.github/workflows/e2e.yaml` at that commit.
+Require a successful `Exact staging Brev Launchable` job, matching qualification identity, and verified workspace absence.
+Each missing test result requires its own itemized maintainer exception.
+Missing or invalid qualification requires a separate itemized exception with run and job URLs, the result or missing receipt, and rationale.
+Do not ask for the release confirmation phrase until each required result has successful evidence or its own exception.
+
+Tag the confirmed release commit with `vX.Y.Z`.
+Let the workflow move `latest`, carry open work forward, and delete the released label.
+Prepare the Announcement draft for the maintainer to post.
 
 ## Step 5: Confirm and Share
 
 After the tag is cut and release notes are drafted or posted by the maintainer, present the final summary:
 
 - **Tag**: `v0.0.8` at commit `abc1234`
-- **Pre-tag E2E evidence**: 12/13 tests green for the candidate SHA; 1 itemized maintainer exception
+- **Pre-tag E2E evidence**: 12/13 tests and exact Brev Launchable qualification passing for the candidate SHA; 1 itemized maintainer exception
 - **Release notes draft**: `../nemoclaw-release-v0.0.8/release-note-draft.md`
 - **Shipped**: 4 items (#1234, #1235, #1236, #1237)
 - **Moved to v0.0.9**: 1 item (#1238 — still needs CI fix)
@@ -3229,10 +3490,10 @@ The prefix in each skill name indicates who it is for.
 For end users operating a NemoClaw sandbox.
 Covers routing human users' AI agents to the canonical NemoClaw Markdown documentation.
 
-### `nemoclaw-maintainer-*` (14 skills)
+### `nemoclaw-maintainer-*` (15 skills)
 
 For project maintainers.
-Covers the daily maintainer cadence (morning standup, daytime loop, evening handoff), workflow policy reference, documentation information-architecture refactors, cutting releases, drafting release notes, finding PRs to review, comparing PRs, cross-issue sweeps, triage, normalizing issue and PR title tags, performing security code reviews, and verifying whether stale bug reports still reproduce on the latest release.
+Covers the daily maintainer cadence, trusted E2E dispatch, workflow policy, documentation refactors, releases, review selection, comparison, triage, security review, and stale bug verification.
 
 ### `nemoclaw-contributor-*` (5 skills)
 
@@ -3262,6 +3523,7 @@ documentation updates, and onboarding new messaging channels.
 | `nemoclaw-maintainer-day` | Run one daytime maintainer pass for the release version. Select a merge, salvage, security, test, conflict, or sequencing workflow. Designed for `/loop`. |
 | `nemoclaw-maintainer-evening` | End-of-day handoff: require the pre-tag dated changelog PR, check version progress, identify stragglers, generate a QA handoff summary, cut the release tag, carry stragglers forward, retire the released label, and hand off the Announcement. |
 | `nemoclaw-maintainer-cut-release-tag` | Verify the dated changelog entry, cut an annotated semver tag on a maintainer-confirmed `origin/main` commit, wait for workflow-managed `latest`, carry remaining open items forward, and delete the released label; `lkg` stays manual. |
+| `nemoclaw-maintainer-e2e` | Dispatch ordinary or full trusted GitHub Actions E2E and verify exact-candidate Brev Launchable qualification evidence. |
 | `nemoclaw-maintainer-release-notes` | Draft the post-tag Announcement from live tag/compare data, with the three-paragraph narrative, categorized change list, and external-only contributor thanks. |
 | `nemoclaw-maintainer-find-review-pr` | Find open security PRs with Urgent or High Project Priority. Link each PR to its issue and identify competing PRs. |
 | `nemoclaw-maintainer-pr-comparator` | Compare open PRs for the same issue. Apply gates and score the eligible PRs before you recommend one to merge. |
@@ -3294,7 +3556,7 @@ Skills are cumulative. Each role includes the skills from the roles above it:
 |------|----------------|-------|------------|
 | User | `nemoclaw-user-*` | 1 | `nemoclaw-user-guide` |
 | Contributor | `nemoclaw-user-*` + `nemoclaw-contributor-*` | 6 | `nemoclaw-contributor-onboard` |
-| Maintainer | All skills | 20 | `nemoclaw-maintainer-morning` |
+| Maintainer | All skills | 21 | `nemoclaw-maintainer-morning` |
 
 After identifying the role, present the applicable skills from the Skill Catalog above and recommend the starting skill.
 

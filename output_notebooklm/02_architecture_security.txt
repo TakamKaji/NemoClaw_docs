@@ -2505,6 +2505,13 @@ nemoclaw-blueprint/
 │   └── presets/                    Shared policy presets
 ```
 
+The blueprint schema and runner enforce these name constraints before the runner invokes OpenShell:
+
+| Field | Constraint |
+|---|---|
+| `components.sandbox.name` | Use 1–63 lowercase letters, numbers, or internal hyphens, starting with a letter and ending with a letter or number. |
+| `components.inference.profiles.<profile>.provider_name` | Use 1–128 letters, numbers, dots, underscores, or hyphens, starting with a letter. |
+
 <AgentOnly variant="openclaw">
 The default OpenClaw policy starts from `nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
 </AgentOnly>
@@ -4022,6 +4029,44 @@ $$nemoclaw my-assistant config get --key model --format yaml
 | `--key <dotpath>` | Print one value from the sanitized config |
 | `--format json\|yaml` | Output format. Defaults to JSON |
 
+#### `$$nemoclaw <name> config set`
+
+<AgentOnly variant="openclaw,hermes">
+
+Write one value into the agent configuration in a sandbox.
+The command validates every HTTP and HTTPS URL in the value, including URLs nested inside JSON objects or arrays.
+It pins an HTTP host to the validated IP address.
+Config changes are unavailable while shields are up, so lower shields with `$$nemoclaw <name> shields down` first.
+
+```bash
+$$nemoclaw my-assistant config set --key agents.defaults.model.primary --value nvidia/nemotron
+$$nemoclaw my-assistant config set --key agents.defaults.timeoutSeconds --value 600 --restart
+```
+
+| Flag | Description |
+|------|-------------|
+| `--key <dotpath>` | Dotpath to update in the config. Required |
+| `--value <value>` | Value to write. The command parses a JSON value when it can, and otherwise writes the text as a string. Required |
+| `--restart` | Restart a supported OpenClaw or Hermes gateway after writing |
+| `--config-accept-new-path` | Write a dotpath that does not already exist in the config |
+
+The command treats a dotpath that does not already exist in the config as a possible typo.
+An interactive run asks for confirmation before writing the new dotpath.
+A run without a TTY, or a run with `NEMOCLAW_NON_INTERACTIVE=1`, refuses the write.
+Pass `--config-accept-new-path`, or set `NEMOCLAW_CONFIG_ACCEPT_NEW_PATH=1`, to write the new dotpath without the confirmation.
+If the confirmation reaches the end of input, for example when you press `Ctrl-D` or run the command from a harness that closes stdin, the command exits non-zero without writing and repeats the same guidance.
+
+The command refuses to write `gateway` or any dotpath under `gateway.`, which holds credentials.
+
+</AgentOnly>
+<AgentOnly variant="deepagents">
+
+For Deep Agents sandboxes, `config set` is unavailable because the `dcode` configuration is baked into the sandbox image at build time.
+Run `$$nemoclaw onboard --agent dcode --name <sandbox-name> --fresh` when you need to change it.
+Use `$$nemoclaw <name> config get` to read the current values.
+
+</AgentOnly>
+
 #### `$$nemoclaw <name> shields`
 
 Manage the sandbox config lockdown posture from the host.
@@ -5128,8 +5173,27 @@ Identical HTTP 400, 401, or 403 rejections raise a warning that names the hypoth
 For HTTP 401 or 403, a confirmed-valid credential means the host is not rewriting placeholders and agent runtimes receive the same auth failure and skip the server; HTTP 400 remains inconclusive because the endpoint may reject the probe request itself.
 Every other outcome — differing rejections (an endpoint may reject two different literal bearers differently), endpoints that skip authentication, endpoint outages, policy denials, and unreachable sandboxes — reports as `unknown` rather than blaming the credential rewrite, and a persisted URL that fails the current authenticated-endpoint boundary is never probed.
 
+Pass `--tools` with one server name to request a live tool inventory.
+The shared client runs through the managed registration's existing OpenShell credential provider and policy; OpenShell injects the credential at that boundary, and the runtime never accepts it as an argument, environment value, or authorization option.
+It performs `initialize`, `notifications/initialized`, and paginated `tools/list`, then attempts to close the MCP session and transport.
+Cleanup errors do not replace the bounded discovery result.
+It retains and returns deterministic tool names only, never prints the other tool-definition fields returned by `tools/list`, and never calls a tool.
+The operation is bounded by total and per-request timeouts plus response-byte, page, tool-count, cursor-length, and tool-name limits.
+
+Use `--tools` only with a configured endpoint you trust to advertise names while authenticated.
+The endpoint controls its returned names and can derive them from the request or credential it receives; NemoClaw validates and bounds the text but cannot prove that the endpoint did not encode credential-derived data in an otherwise valid name.
+
+The `toolDiscovery` JSON field contains `ok`, `count`, `tools`, and `truncated`, plus a redacted `detail` on failure or a bounded partial result.
+These names are the server's point-in-time advertised tools, not an attestation of the exact tools visible to the model after agent filters, progressive disclosure, or session state.
+An older sandbox image without the shared client reports that the sandbox must be rebuilt.
+
+Tool discovery is opt-in and sends authenticated network traffic to the configured endpoint.
+Passing `--tools` suppresses the named-server credential-resolution probe that otherwise runs by default.
+Pass `--probe --tools` to request both checks explicitly.
+An unsuccessful discovery does not remove the ordinary provider, policy, environment, or adapter status from the result.
+
 ```bash
-$$nemoclaw my-assistant mcp status [server] [--json] [--probe|--no-probe]
+$$nemoclaw my-assistant mcp status [server] [--json] [--probe|--no-probe] [--tools]
 ```
 
 | Flag | Description |
@@ -5137,6 +5201,7 @@ $$nemoclaw my-assistant mcp status [server] [--json] [--probe|--no-probe]
 | `--json` | Emit status as JSON without credential values |
 | `--probe` | Request the wire-level credential-resolution probe for every listed server; entries that fail readiness checks are skipped |
 | `--no-probe` | Skip the probe; it defaults on only when a single server is named |
+| `--tools` | Request advertised tool names from one trusted configured endpoint through its managed credential provider; suppresses the implicit credential probe unless `--probe` is also passed |
 
 ### `$$nemoclaw <name> mcp restart`
 
@@ -6632,7 +6697,6 @@ Set them before running `$$nemoclaw onboard`.
 | `NEMOCLAW_SKIP_TELEGRAM_REACHABILITY` | `1` to enable | Skips the Telegram bot reachability probe during onboard (useful in restricted networks). |
 | `NEMOCLAW_SKIP_SLACK_AUTH_VALIDATION` | `1`, `true`, `yes`, or `on` to enable | Skips the live Slack `auth.test` and `apps.connections.open` credential probes during onboard and `channels add slack`. Use only in restricted networks or hermetic test environments; Slack token format checks still apply. |
 </AgentOnly>
-| `NEMOCLAW_CONFIG_ACCEPT_NEW_PATH` | `1` to enable | Accepts a new sandbox config path without an interactive prompt when the stored path differs from the discovered one. |
 | `NEMOCLAW_RESOURCE_PROFILE` | profile name or `default` | Selects a sandbox CPU/RAM resource profile from the blueprint during onboarding. `default` means no resource preference, so NemoClaw passes no OpenShell CPU or memory flags. Unknown names fail fast. |
 | `NEMOCLAW_CPU` | percentage or Kubernetes CPU quantity | Overrides the selected profile's CPU size passed to OpenShell `--cpu`. Percentages resolve against detected capacity. |
 | `NEMOCLAW_RAM` | percentage or Kubernetes memory quantity | Overrides the selected profile's memory size passed to OpenShell `--memory`. Percentages resolve against detected capacity. |
@@ -6791,6 +6855,9 @@ The following flags change defaults for commands that manage existing sandboxes.
 | Variable | Format | Effect |
 |----------|--------|--------|
 | `NEMOCLAW_CLEANUP_GATEWAY` | `1`, `true`, or `yes` to enable; `0`, `false`, or `no` to disable | Overrides the platform default (macOS unattended: cleanup; Linux/Windows: preserve) for whether `$$nemoclaw <name> destroy` removes the shared gateway when destroying the last sandbox. Command-line `--cleanup-gateway` and `--no-cleanup-gateway` still take precedence. |
+<AgentOnly variant="openclaw,hermes">
+| `NEMOCLAW_CONFIG_ACCEPT_NEW_PATH` | Exactly `"1"` to opt in (`true`, `yes`, `on` are not accepted) | Allows `$$nemoclaw <name> config set` to write a dotpath that does not already exist in the sandbox config, without the interactive confirmation. Equivalent to passing `--config-accept-new-path`, and it takes precedence over `NEMOCLAW_NON_INTERACTIVE=1`. Without it, a run without a TTY refuses the write instead. |
+</AgentOnly>
 | `NEMOCLAW_CONFIRM_LEGACY_MANAGED_RECREATE` | Exact JSON array of sandbox names | Confirms to the installer that the exact listed set of pre-fingerprint OpenClaw or Hermes sandboxes used NemoClaw-managed images, allowing recovery onto the current managed image. The normalized names must exactly match the installer's printed array. Set it only after verifying every named sandbox. Recorded custom-image evidence remains blocked. |
 | `NEMOCLAW_DISABLE_INFERENCE_ROUTE_REPAIR` | `1` to enable | Skips the automatic DNS-proxy repair for stale `inference.local` routes during `$$nemoclaw <name> connect` and `$$nemoclaw <name> connect --probe-only`. Use only as a troubleshooting escape hatch. |
 | `NEMOCLAW_DISABLE_SUPERVISOR_RELAUNCH` | `1` to enable | Skips the automatic trusted container recreation during `$$nemoclaw <name> recover` when two managed scans find no supervisor while PID 1 remains stable. Use only as a troubleshooting escape hatch; recovery then falls back to the rebuild or re-onboard guidance. |
@@ -10523,6 +10590,22 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 
 The issues below are common problems you may encounter when running Hermes through `nemohermes`.
 For setup, refer to [Quickstart with Hermes](../../hermes/get-started/quickstart).
+
+### Managed Hermes local image build fails
+
+For a managed Hermes image on a local Docker-driver gateway, NemoClaw may first attempt the image build with host-side BuildKit.
+If that exact staged build starts and fails with a nonzero exit status or no exit status, NemoClaw preserves the BuildKit failure instead of retrying the managed Dockerfile with the incompatible gateway builder.
+The preceding BuildKit output contains the root cause.
+Fix the reported base-image, package, network, or Dockerfile error rather than treating it as a builder-selection failure.
+
+Then resume onboarding:
+
+```bash
+nemohermes onboard --resume
+```
+
+A disabled or unavailable local prebuild retains the existing gateway path.
+A custom Hermes Dockerfile supplied with `--from`, an OpenClaw image, or a build on a remote gateway also retains its existing builder behavior.
 
 ### Hermes dashboard config did not converge
 
@@ -14580,6 +14663,203 @@ restart/rebuild, and cleanup without a conditional skip or expected failure.
 7. The physical #6379 Spark run completes an authenticated real MCP tool call and
    reports any failure honestly. Inclusion of `40194f93` alone cannot close the
    issue.
+
+
+========================================
+[FILE: docs/security/sandbox-base-2026-07-25-dependency-review.md]
+========================================
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Sandbox base dependency review: Vim, jq, Expat, Perl modules, and bundled npm
+
+Date: 2026-07-25
+
+## Scope
+
+This review covers the sandbox dependency changes that:
+
+- standardize the OpenClaw, Hermes, and Deep Agents Code base images on fixed Debian `libexpat1=2.8.2-1`, `libjq1=1.8.2-1`, `jq=1.8.2-1`, `vim-common=2:9.2.0782-1`, and `vim-tiny=2:9.2.0782-1` packages, with the reviewed `libonig5=6.9.9-1+b1` jq runtime dependency;
+- replace the `brace-expansion@5.0.7` copy inside the reviewed `npm@11.18.0` package with `brace-expansion@5.0.8`; and
+- verify the security-relevant dual-life module versions shipped by the checksum-pinned Perl 5.44.0 build.
+
+The OpenClaw base image retains its existing reviewed jq and Expat identities, while the Hermes and Deep Agents Code base images move to the same package boundary.
+These changes preserve the existing supported image behavior and do not create a new integration or product surface.
+
+## Release and artifact identities
+
+| Dependency | Previous identity | Reviewed identity | Artifact binding |
+| --- | --- | --- | --- |
+| Vim | All managed images: Debian trixie `2:9.1.1230-2` | Debian sid `2:9.2.0782-1` | Debian Snapshot `20260724T000000Z` and package SHA-256 values below |
+| jq | OpenClaw: `1.8.2-1`; Hermes and Deep Agents Code: `1.7.1-6+deb13u2` | All managed images: `libjq1=1.8.2-1` and `jq=1.8.2-1` | Debian Snapshot `20260724T000000Z` and architecture-specific SHA-256 values below |
+| Oniguruma | Distro-selected jq runtime dependency | All managed images: `libonig5=6.9.9-1+b1` | Debian Snapshot `20260724T000000Z` and architecture-specific SHA-256 values below |
+| Expat | OpenClaw: `2.8.2-1`; Hermes and Deep Agents Code: distro-selected package | All managed images: `libexpat1=2.8.2-1` | Debian Snapshot `20260724T000000Z` and architecture-specific SHA-256 values below |
+| npm | `npm@11.18.0` | unchanged | Existing reviewed npm archive and integrity |
+| npm private `brace-expansion` | `5.0.7` | `5.0.8` | Registry tarball and SHA-512 integrity below |
+| Perl | `5.44.0-1nemoclaw1` | unchanged | Existing CPAN archive SHA-256 and complete upstream test suite |
+
+The fixed Vim source package is later than every reviewed 9.2 patch boundary.
+The Debian security tracker records `2:9.2.0782-1` as fixed for the affected Vim issues while trixie's `2:9.1.1230-2` remains affected.
+
+The immutable Debian package SHA-256 values are:
+
+| Package | amd64 | arm64 |
+| --- | --- | --- |
+| `libexpat1_2.8.2-1` | `37d24b40a745107941f823d1f22c38f197f01981f7f0783777fe0026af016463` | `df928e3a8e4da79408d4b18e8cd80a03dffa90130d0698e50041aab5e14f9397` |
+| `libonig5_6.9.9-1+b1` | `3abee130696244050500bcc7870e3b4cb82ddd87149ece3fd55010c3d4e1d18c` | `137e708575c0622d347815d19cb471a107546b16e9602805ee27afad7bba107f` |
+| `libjq1_1.8.2-1` | `9a5bf964cef39ed8f0f162e20d856e31961d28a57772b5313989b42a8be7e941` | `eae4a828df2eb53d728f88109d9f9549e0983a90b573cf0c7fa1e4bbc7533a7e` |
+| `jq_1.8.2-1` | `b973a5d304f666845e8ccefab492e3850d4bc2e7aa2a1e7450862095125f2cc0` | `c25086443abd04d1457cbb322a0837f9ba986f82b28f44670467c8dc9be1f696` |
+| `vim-common_9.2.0782-1_all` | `6b063038246492c4a20e0a212c896dde4d5aa9f59d6fb43ff33d10080bc53a39` | same architecture-independent package |
+| `vim-tiny_9.2.0782-1` | `0e6e231d6d2430a92cf76f8a78506090418fa37758c33b31ed50dfbfc76e22ed` | `be30f7e9de0b872bec0128ccd890452c0e0e29d99017d16c0f3aa74164f6700d` |
+
+The reviewed npm replacement is:
+
+- version: `brace-expansion@5.0.8`;
+- integrity: `sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg==`; and
+- tarball: `https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz`.
+
+## Contract audit
+
+### Managed-image Debian package compatibility
+
+Each managed base image downloads the six exact Debian packages from the same immutable snapshot and verifies every package checksum before installation.
+Each image installs the complete jq runtime closure and matching Vim package pair together, verifies every dpkg identity, confirms that jq links to `libonig.so.5`, exercises jq and Python Expat, and verifies that the Vim runtime reports version 9.2.
+The package architecture is selected from `dpkg --print-architecture`, and any architecture other than amd64 or arm64 fails closed.
+The base writes that architecture and the six exact package identities to a root-owned, read-only inventory.
+Each completed OpenClaw, Hermes, and Deep Agents Code image reasserts the inventory metadata and exact content, every installed dpkg identity, jq-to-Oniguruma linkage, jq, Expat, and Vim runtime probes, and an empty `dpkg --audit` result.
+
+`vim-tiny=2:9.2.0782-1` depends on:
+
+- `vim-common=2:9.2.0782-1`;
+- `libacl1 >= 2.2.23`;
+- `libc6 >= 2.38`;
+- `libselinux1 >= 3.1~`; and
+- `libtinfo6 >= 6`.
+
+The pinned trixie bases satisfy those library floors.
+`libjq1=1.8.2-1` requires `libonig5 >= 6.9.7.1`; the exact `libonig5=6.9.9-1+b1` artifact closes that dependency on both architectures.
+The packages remain visible to dpkg and the generated software inventory, and no manual file overlay is used.
+
+The final reviewed dependency set and range evidence is:
+
+| Package or component | Previous or affected boundary | Final reviewed boundary | Runtime and inventory proof |
+| --- | --- | --- | --- |
+| `libexpat1` | distro-selected package or `2.8.2-1` | `2.8.2-1` | exact dpkg identity and Python `pyexpat` reports Expat 2.8.2 |
+| `libonig5` | jq dependency floor `>= 6.9.7.1` | `6.9.9-1+b1` | exact dpkg identity and `/usr/bin/jq` links to `libonig.so.5` |
+| `libjq1` | `1.7.1-6+deb13u2..1.8.2-1` | `1.8.2-1` | exact dpkg identity and matching `jq` runtime |
+| `jq` | `1.7.1-6+deb13u2..1.8.2-1` | `1.8.2-1` | exact dpkg identity, `jq-1.8.2`, and a JSON expression probe |
+| `vim-common` and `vim-tiny` | `2:9.1.1230-2..2:9.2.0782-1` | `2:9.2.0782-1` | exact dpkg identities and Vim 9.2 runtime probe |
+| npm private `brace-expansion` | `5.0.7..5.0.8` | `5.0.8` | complete-tree identity, dependency-shape, SRI, rollback, and npm/npx ordering guards |
+| Perl and reviewed dual-life modules | Perl `5.43.10..5.44.0`; `HTTP::Tiny < 0.095`; `IO::Compress < 2.223` | Perl `5.44.0`; `HTTP::Tiny 0.096`; `IO::Compress 2.223`; component identities listed below | native package identity and direct interpreter/module version probes |
+
+### Bundled npm package compatibility
+
+The npm release remains `11.18.0`.
+Its private dependency tree contains one top-level `brace-expansion@5.0.7` package with the existing `balanced-match@^4.0.2` contract.
+The replacement `5.0.8` package preserves that dependency contract, and its Node engine floor is compatible with the Node 22 and Node 24 base images.
+
+The replacement helper:
+
+1. rejects npm identities other than the reviewed `11.18.0`;
+2. rejects every symlink except a `node_modules/.bin` link that resolves to a regular file inside the reviewed `node_modules` root;
+3. downloads the exact registry tarball without invoking npm;
+4. verifies the packed bytes against the reviewed SHA-512 integrity;
+5. extracts without restoring archive owners or modes;
+6. rejects unsafe extracted members;
+7. replaces the complete private package directory transactionally;
+8. restores the original directory if verification fails;
+9. disarms rollback immediately after the verified replacement becomes authoritative, then retries backup cleanup without risking the live tree; and
+10. invokes npm and npx only after the fixed package is active.
+
+All managed base images apply the helper after the complete npm upgrade.
+Their final images reassert the same idempotent contract so the scanned filesystem, not an intermediate stage, owns the dependency boundary.
+
+### Perl component versions
+
+Perl remains the checksum-pinned 5.44.0 source release.
+The existing build runs the complete upstream test selection on native amd64 and arm64 runners before building native packages.
+
+Perl 5.44.0 includes these reviewed component versions:
+
+- `Socket 2.041`;
+- `Storable 3.41`;
+- `HTTP::Tiny 0.096`;
+- `IO::Compress 2.223`;
+- `IO::Uncompress::Unzip 2.223`; and
+- `File::GlobMapper 1.001`.
+
+The image build checks the IO::Compress distribution version through `IO::Compress::Base` and checks each affected module directly.
+The HTTP::Tiny floor is `0.095`, and the reviewed IO::Compress fixes are in `2.223`.
+The core interpreter version check also remains the binding for core-language fixes included after Perl 5.43.10.
+
+## Concern ledger
+
+### DEP-1: affected trixie Vim package
+
+- Range: `2:9.1.1230-2..2:9.2.0782-1`
+- Surface: native package and runtime editor
+- Severity: high
+- Confidence: high
+- Failure mode: attacker-controlled editor inputs can reach defects fixed across the reviewed Vim 9.2 patch range.
+- Disposition: migrate, pin, test
+- Implementation: install the matching immutable Debian Snapshot packages for amd64 and arm64 after SHA-256 verification in every managed base image.
+- Verification: exact `RUN`-chain execution, checksum-rejection tests, dpkg identity checks, Vim runtime checks, and native image builds.
+- Remaining gate: multi-image, multi-architecture CI.
+
+### DEP-2: affected package inside npm's private tree
+
+- Range: `brace-expansion 5.0.7..5.0.8`
+- Surface: transitive bundled npm dependency
+- Severity: high
+- Confidence: high
+- Failure mode: changing NemoClaw lockfiles does not replace npm's private package copy.
+- Disposition: migrate, pin, guard, test
+- Implementation: transactional, SRI-pinned complete-directory replacement after the reviewed npm archive is installed.
+- Verification: pre-swap and post-swap rollback, idempotence, unsafe-tree, layout-drift, command-order, Dockerfile-order, and real-registry tests.
+- Remaining gate: multi-image CI.
+
+### DEP-3: Perl package identity does not expose dual-life module versions
+
+- Range: Perl `5.44.0` with bundled component versions
+- Surface: native package inventory and runtime modules
+- Severity: high
+- Confidence: high
+- Failure mode: a package-only inventory can miss that the fixed module versions are already present in the interpreter distribution.
+- Disposition: runtime-proof, test, document
+- Implementation: exact runtime version assertions for every reviewed module family in addition to the existing interpreter and regression checks.
+- Verification: native amd64 and arm64 image builds.
+- Remaining gate: multi-architecture base-image build.
+
+### DEP-4: managed jq, Oniguruma, and Expat identities differ
+
+- Range: `libexpat1` distro-selected or `2.8.2-1` to `2.8.2-1`; `libjq1` and `jq` `1.7.1-6+deb13u2..1.8.2-1`; `libonig5 >= 6.9.7.1` to exact `6.9.9-1+b1`.
+- Surface: native packages and runtime libraries
+- Severity: high
+- Confidence: high
+- Failure mode: a managed image can retain an older jq or Expat runtime, or fail to configure jq when its architecture-specific Oniguruma dependency is absent.
+- Disposition: migrate, pin, test, runtime-proof
+- Implementation: use the same snapshot, architecture-specific checksums, dpkg identities, and runtime guards in every managed base image.
+- Verification: exact base-package and completed-image `RUN`-chain execution, immutable inventory content and metadata checks, checksum-rejection tests, installed dpkg identities, runtime probes, and empty dpkg audit for all three images on amd64 and arm64.
+- Remaining gate: multi-image, multi-architecture CI.
+
+## Removal conditions
+
+Remove the Debian snapshot override only when the supported Debian suite publishes packages at or beyond every reviewed fix boundary and the replacements pass the same amd64 and arm64 package and runtime checks for all managed base images.
+
+Remove the private brace-expansion helper only when every pinned Node base installs a reviewed npm release whose complete private tree contains no brace-expansion version below 5.0.8.
+Updating the npm archive without revisiting this helper must fail the image contract.
+
+## Verification
+
+Required evidence for the final pull-request head:
+
+- focused helper and exact security-package `RUN`-chain tests for every managed base image and architecture;
+- source-identity and optimized build-context tests;
+- real reviewed npm archive replacement using the registry artifact;
+- repository formatting and type checks;
+- amd64 and arm64 builds for the OpenClaw, Hermes, and Deep Agents Code base images; and
+- completed-image dependency inventory.
 
 
 ========================================

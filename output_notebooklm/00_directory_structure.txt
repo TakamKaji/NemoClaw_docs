@@ -60,6 +60,12 @@
 │       │       ├── triage.ts
 │       │       ├── version-progress.ts
 │       │       └── version-target.ts
+│       ├── nemoclaw-maintainer-e2e
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── scripts
+│       │       └── validate-full-e2e-evidence.mts
 │       ├── nemoclaw-maintainer-evening
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-find-review-pr
@@ -517,6 +523,7 @@
 │       ├── openshell-0.0.71-gateway-auth-review.mdx
 │       ├── openshell-0.0.72-compatibility-review.mdx
 │       ├── openshell-0.0.85-migration-review.md
+│       ├── sandbox-base-2026-07-25-dependency-review.md
 │       ├── sandbox-base-libexpat-jq-2026-07-24-dependency-review.md
 │       └── tcb-boundary.mdx
 ├── fern
@@ -2959,4 +2966,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-242 directories, 2718 files
+245 directories, 2722 files
