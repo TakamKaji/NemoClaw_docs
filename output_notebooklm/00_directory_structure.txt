@@ -39,7 +39,9 @@
 │       │   └── validation
 │       │       └── backtest.md
 │       ├── nemoclaw-maintainer-cut-release-tag
-│       │   └── SKILL.md
+│       │   ├── SKILL.md
+│       │   └── scripts
+│       │       └── release-e2e-evidence.mts
 │       ├── nemoclaw-maintainer-day
 │       │   ├── HOTSPOTS.md
 │       │   ├── MERGE-GATE.md
@@ -395,6 +397,7 @@
 │   │   ├── 2026-07-22.mdx
 │   │   ├── 2026-07-23.mdx
 │   │   ├── 2026-07-24.mdx
+│   │   ├── 2026-07-25.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -2966,4 +2969,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-245 directories, 2722 files
+246 directories, 2724 files

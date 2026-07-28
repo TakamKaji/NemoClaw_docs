@@ -796,16 +796,33 @@ List the presets available to the sandbox:
 $$nemoclaw <name> policy list
 ```
 
+<AgentOnly variant="openclaw,hermes">
 For the maintained preset catalog and guided service workflows, refer to [Common Integration Policy Examples](../integration-policy-examples).
+</AgentOnly>
+<AgentOnly variant="deepagents">
+For Deep Agents baseline, tier, Tavily, and observability preset behavior, refer to [Network Policies](../../reference/network-policies#policy-tiers).
+</AgentOnly>
 
 ## Preview and Apply a Preset
 
 Use `--dry-run` to review the endpoints, rules, and binaries before applying the preset:
 
+<AgentOnly variant="openclaw,hermes">
+
 ```bash
 $$nemoclaw my-assistant policy add pypi --dry-run
 $$nemoclaw my-assistant policy add pypi --yes
 ```
+
+</AgentOnly>
+<AgentOnly variant="deepagents">
+
+```bash
+$$nemoclaw my-assistant policy add weather --dry-run
+$$nemoclaw my-assistant policy add weather --yes
+```
+
+</AgentOnly>
 
 Omit the preset name to use the interactive picker:
 
@@ -837,9 +854,20 @@ $$nemoclaw <name> policy list
 
 Remove a preset when the sandbox no longer needs its access:
 
+<AgentOnly variant="openclaw,hermes">
+
 ```bash
 $$nemoclaw my-assistant policy remove pypi --yes
 ```
+
+</AgentOnly>
+<AgentOnly variant="deepagents">
+
+```bash
+$$nemoclaw my-assistant policy remove weather --yes
+```
+
+</AgentOnly>
 
 `policy remove` accepts maintained and custom preset names.
 
@@ -867,7 +895,9 @@ For the complete approval workflow, refer to [Approve or Deny Network Requests](
 ## Related Topics
 
 - [Create Custom Policy Presets](create-custom-policy-presets) adds an endpoint that no maintained preset covers.
+<AgentOnly variant="openclaw,hermes">
 - [Explain Network Policy to Agents](../explain-network-policy-to-agents) summarizes active and missing presets.
+</AgentOnly>
 - [Commands](../../reference/commands#$$nemoclaw-name-policy-add) lists every policy command flag.
 
 
@@ -961,6 +991,8 @@ They are not persisted to the baseline policy file.
 To keep an endpoint allowed for future sandbox instances, update the policy YAML or apply a preset as described in [Customize the Sandbox Network Policy](customize-network-policy).
 Rejected rules stay blocked unless you later approve the same rule or add a matching endpoint to the policy.
 
+<AgentOnly variant="openclaw,hermes">
+
 ## Run the Walkthrough Script
 
 The walkthrough script is available in the NemoClaw repository at [`scripts/walkthrough.sh`](https://github.com/NVIDIA/NemoClaw/blob/main/scripts/walkthrough.sh).
@@ -995,13 +1027,17 @@ The script opens a split tmux session with the TUI on the left and the agent on 
 The walkthrough requires `tmux`, the `NVIDIA_INFERENCE_API_KEY` environment variable, and at least one onboarded sandbox attached to the active gateway.
 It attaches to an existing sandbox.
 
+</AgentOnly>
+
 </Steps>
 
 ## Related Topics
 
 - [Customize the Sandbox Network Policy](customize-network-policy) to add endpoints permanently.
 - [Network Policies](../reference/network-policies) for the full baseline policy reference.
+<AgentOnly variant="openclaw,hermes">
 - [Monitor Sandbox Activity](../monitoring/monitor-sandbox-activity) for general sandbox monitoring.
+</AgentOnly>
 
 
 ========================================
@@ -1014,8 +1050,8 @@ It attaches to an existing sandbox.
 title: "Change the Baseline Network Policy"
 sidebar-title: "Change the Baseline Policy"
 description: "Edit the policy that NemoClaw applies when it creates a sandbox."
-description-agent: "Changes the baseline sandbox network policy. Use when adding durable endpoints to every future sandbox or maintaining blueprint policy additions."
-keywords: ["nemoclaw baseline network policy", "sandbox policy yaml", "blueprint policy additions"]
+description-agent: "Changes the baseline sandbox network policy. Use when adding durable endpoints to every future sandbox."
+keywords: ["nemoclaw baseline network policy", "sandbox policy yaml"]
 content:
   type: "how_to"
 skill:
@@ -1041,6 +1077,9 @@ Open `nemoclaw-blueprint/policies/openclaw-sandbox.yaml` and add or modify endpo
 </AgentOnly>
 <AgentOnly variant="hermes">
 Open `agents/hermes/policy-additions.yaml` and add or modify endpoint entries.
+</AgentOnly>
+<AgentOnly variant="deepagents">
+Open `agents/langchain-deepagents-code/policy-additions.yaml` and add or modify endpoint entries.
 </AgentOnly>
 
 Edit YAML manually when a maintained preset does not cover the required host, such as a reviewed public partner API.
@@ -1203,8 +1242,8 @@ Do not use a broad wildcard.
 title: "Create Custom Policy Presets"
 sidebar-title: "Create Custom Presets"
 description: "Author and apply a scoped network policy preset for an endpoint that NemoClaw does not include."
-description-agent: "Creates and applies custom policy presets. Use when adding a reviewed endpoint, applying preset files, or allowing a URL-based MCP server."
-keywords: ["nemoclaw custom policy preset", "policy add from-file", "url mcp network policy"]
+description-agent: "Creates and applies custom policy presets. Use when adding a reviewed endpoint or applying preset files."
+keywords: ["nemoclaw custom policy preset", "policy add from-file"]
 content:
   type: "how_to"
 skill:
@@ -1237,8 +1276,14 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/local/bin/node }
+      - { path: /path/to/requesting-binary }
 ```
+
+Replace `/path/to/requesting-binary` with the exact executable path reported for the blocked request in `openshell term`.
+<AgentOnly variant="deepagents">
+For Deep Agents Code, OpenShell commonly reports `/usr/local/bin/dcode` or `/opt/venv/bin/python3*`.
+Authorize only the process that needs the reviewed endpoint.
+</AgentOnly>
 
 The top-level `preset.name` must be a lowercase RFC 1123 label with letters, digits, and hyphens.
 It must not collide with a maintained preset name such as `slack` or `pypi`.
@@ -1312,6 +1357,8 @@ $$nemoclaw my-assistant policy remove my-service-api --yes
 
 Run `$$nemoclaw <name> policy list` to see every maintained and custom preset recorded for the sandbox.
 
+<AgentOnly variant="openclaw,hermes">
+
 ## Configure a URL-Based MCP Server
 
 Prefer the managed workflow in [Add an MCP Server](../../manage-sandboxes/mcp-servers/add-an-mcp-server) when the server uses authenticated HTTPS Streamable HTTP.
@@ -1383,10 +1430,14 @@ If the hostname resolves to a private, loopback, or link-local address, establis
 Then follow the approved private-destination configuration.
 Refer to [Agent cannot reach a host-side HTTP service](../../reference/troubleshooting#agent-cannot-reach-a-host-side-http-service) for routing and private-destination diagnostics.
 
+</AgentOnly>
+
 ## Related Topics
 
 - [Apply Policy Presets](apply-policy-presets) explains preset persistence and reapplication.
+<AgentOnly variant="openclaw,hermes">
 - [Configure Raw TLS Passthrough](configure-raw-tls-passthrough) covers endpoints that cannot use L7 inspection.
+</AgentOnly>
 - [Network Policies](../../reference/network-policies) describes the policy schema.
 
 
@@ -1400,7 +1451,7 @@ Refer to [Agent cannot reach a host-side HTTP service](../../reference/troublesh
 title: "Customize the Sandbox Network Policy"
 sidebar-title: "Customize the Network Policy"
 description: "Choose the supported workflow for changing sandbox network access."
-description-agent: "Routes network policy changes to their canonical workflow. Use when choosing between baseline edits, policy presets, custom presets, raw TLS, live replacement, and agent policy context."
+description-agent: "Routes network policy changes to their canonical workflow. Use when choosing between baseline edits, policy presets, custom presets, live replacement, and operator approval."
 keywords: ["customize nemoclaw network policy", "sandbox egress policy configuration"]
 content:
   type: "how_to"
@@ -1415,9 +1466,13 @@ NemoClaw declares sandbox policy in YAML, and [NVIDIA OpenShell](https://github.
 | Change every future sandbox for an agent | [Change the Baseline Network Policy](configure-policies/change-baseline-network-policy) |
 | Add or remove a maintained preset for one sandbox | [Apply Policy Presets](configure-policies/apply-policy-presets) |
 | Add a reviewed endpoint that no maintained preset covers | [Create Custom Policy Presets](configure-policies/create-custom-policy-presets) |
+<AgentOnly variant="openclaw,hermes">
 | Allow direct TLS negotiation for an exact endpoint | [Configure Raw TLS Passthrough](configure-policies/configure-raw-tls-passthrough) |
+</AgentOnly>
 | Replace the complete live policy | [Replace the Live Network Policy](configure-policies/replace-live-network-policy) |
+<AgentOnly variant="openclaw,hermes">
 | Give the sandbox agent a redacted policy summary | [Explain Network Policy to Agents](explain-network-policy-to-agents) |
+</AgentOnly>
 | Approve or deny one blocked request | [Approve or Deny Network Requests](approve-network-requests) |
 
 <Note>
@@ -1437,13 +1492,25 @@ Use [`$$nemoclaw onboard --from`](../reference/commands#--from-dockerfile) inste
 
 ## Static Changes
 
+<a id="prerequisites"></a>
+<a id="edit-the-policy-file"></a>
+<a id="re-run-onboard"></a>
+<a id="verify-the-policy"></a>
+<AgentOnly variant="openclaw,hermes">
+<a id="add-blueprint-policy-additions"></a>
+</AgentOnly>
+
 Static changes modify the policy source that NemoClaw reads during sandbox creation.
-Follow [Change the Baseline Network Policy](configure-policies/change-baseline-network-policy) to edit agent policy files, add blueprint policy additions, rerun onboarding, and verify the result.
+Follow [Change the Baseline Network Policy](configure-policies/change-baseline-network-policy) to edit the agent policy file, rerun onboarding, and verify the result.
 
 ## Dynamic Changes
 
+<a id="scope-of-dynamic-changes"></a>
+<a id="add-a-preset-file-with-policy-add-recommended"></a>
+
 Dynamic changes update a running sandbox.
 Use [Apply Policy Presets](configure-policies/apply-policy-presets) for reviewed additions that NemoClaw records and replays.
+<a id="approve-requests-interactively"></a>
 Use [Approve or Deny Network Requests](approve-network-requests) for one-off access.
 Use [Replace the Live Network Policy](configure-policies/replace-live-network-policy) only when a preset cannot express the complete change.
 
@@ -1451,32 +1518,61 @@ Use [Replace the Live Network Policy](configure-policies/replace-live-network-po
 
 Maintained policy presets cover common integrations and package services.
 Follow [Apply Policy Presets](configure-policies/apply-policy-presets) to preview, apply, reapply, list, or remove them.
+<AgentOnly variant="openclaw,hermes">
 For guided service workflows, refer to [Common Integration Policy Examples](integration-policy-examples).
+</AgentOnly>
+<AgentOnly variant="deepagents">
+Review [Network Policies](../reference/network-policies#policy-tiers) for the maintained presets available to Deep Agents.
+</AgentOnly>
 
 ## Custom Preset Files
 
+<a id="authoring"></a>
+<a id="apply-a-single-file"></a>
+<a id="apply-every-file-in-a-directory"></a>
+<a id="remove-a-custom-preset"></a>
+<AgentOnly variant="openclaw,hermes">
+<a id="custom-recipe-url-based-mcp-server"></a>
+</AgentOnly>
+
 Custom preset files add reviewed endpoint access without changing the baseline.
 Follow [Create Custom Policy Presets](configure-policies/create-custom-policy-presets) to author, validate, apply, and remove a custom preset.
+<AgentOnly variant="openclaw,hermes">
 That page also contains the URL-based MCP server recipe formerly located in this guide.
+</AgentOnly>
+
+<AgentOnly variant="openclaw,hermes">
 
 ## Raw TLS Passthrough
+
+<a id="custom-recipe-for-raw-tls-passthrough-with-tls-skip"></a>
 
 Some endpoints require direct TLS negotiation and fail through inspected L7 proxying.
 Follow [Configure Raw TLS Passthrough](configure-policies/configure-raw-tls-passthrough) for the bounded `access: full` and `tls: skip` recipe.
 
+</AgentOnly>
+
 ## Live Policy Replacement
+
+<a id="export-edit-and-set-the-base-policy"></a>
 
 OpenShell `policy set` replaces the complete live policy.
 Follow [Replace the Live Network Policy](configure-policies/replace-live-network-policy) to export the round-trippable base, preserve existing entries, and apply a validated replacement.
+
+<AgentOnly variant="openclaw,hermes">
 
 ## Agent Policy Context
 
 Agents need a redacted view of active presets and policy verification state.
 Follow [Explain Network Policy to Agents](explain-network-policy-to-agents) to print or refresh that context and interpret failure classifications.
 
+</AgentOnly>
+
 ## Related Topics
 
+<AgentOnly variant="openclaw,hermes">
 - [Common Integration Policy Examples](integration-policy-examples) provides maintained service workflows.
+</AgentOnly>
 - [Network Policies](../reference/network-policies) is the canonical policy reference.
 - [OpenShell Policy Schema](https://docs.nvidia.com/openshell/latest/reference/policy-schema.html) provides the complete YAML schema.
 - [OpenShell Sandbox Policies](https://docs.nvidia.com/openshell/latest/sandboxes/policies.html) explains OpenShell-layer policy iteration.
@@ -2958,6 +3054,8 @@ Use `openshell sandbox upload` and `openshell sandbox download` for manual file 
 
 - [Commands](commands) for the full NemoDeepAgents command reference.
 - [Network Policies](network-policies) for baseline policy and approval behavior.
+- [Customize the Network Policy](../network-policy/customize-network-policy) for persistent network access changes.
+- [Approve or Deny Network Requests](../network-policy/approve-network-requests) for the OpenShell TUI approval flow.
 - [Understand Sandbox State](../manage-sandboxes/state-and-backups/understand-sandbox-state) for Deep Agents state and file transfer guidance.
 - [Create and Restore Snapshots](../manage-sandboxes/state-and-backups/create-and-restore-snapshots) for snapshot and restore workflows.
 - [Choose an Inference Provider](../inference/learn-and-choose/choose-inference-provider) for provider configuration details.
@@ -7509,11 +7607,7 @@ To monitor requests as the agent runs, open the TUI:
 openshell term
 ```
 
-<AgentOnly variant="openclaw,hermes">
-
 For step-by-step navigation and approval controls, refer to [Approve or Deny Agent Network Requests](../network-policy/approve-network-requests).
-
-</AgentOnly>
 
 ## Modifying the Policy
 
@@ -9322,7 +9416,7 @@ $$nemoclaw <name> logs --tail 50
 If the host should be reachable, allow it with a preset or a [custom preset](../network-policy/customize-network-policy#custom-preset-files):
 </AgentOnly>
 <AgentOnly variant="deepagents">
-If the host should be reachable, allow it with a built-in preset or apply a reviewed custom preset file from the host:
+If the host should be reachable, allow it with a built-in preset or apply a [reviewed custom preset file](../network-policy/configure-policies/create-custom-policy-presets) from the host:
 </AgentOnly>
 
 ```bash
@@ -9632,6 +9726,22 @@ If the sandbox still cannot start or reports that no baseline is available, rebu
 ```bash
 $$nemoclaw <name> rebuild
 ```
+
+</AgentOnly>
+
+<AgentOnly variant="openclaw,hermes,deepagents">
+
+### A Shields command reports corrupt persisted state
+
+If `shields up`, `shields down`, or `shields status` reports corrupt persisted state, NemoClaw refuses to infer or change the Shields posture.
+It preserves the Shields state file, timer marker, and transition record so an active recovery authority remains intact.
+
+While the state remains corrupt, do not use `shields up` or an ordinary rebuild to replace it.
+Inspect the reported state-file error and restore the state file from a trusted host backup before retrying.
+
+</AgentOnly>
+
+<AgentOnly variant="openclaw">
 
 ### `shields up` or `shields down` fails after `.config-hash` was removed
 
@@ -10056,7 +10166,7 @@ To permanently allow an endpoint, add it to the network policy.
 Refer to [Customize the Network Policy](../network-policy/customize-network-policy) for details.
 </AgentOnly>
 <AgentOnly variant="deepagents">
-For Deep Agents, use `nemo-deepagents <name> policy add <preset>` for built-in presets or `nemo-deepagents <name> policy add --from-file <preset.yaml>` for reviewed custom presets.
+For Deep Agents, follow [Customize the Network Policy](../network-policy/customize-network-policy) to choose between built-in presets, reviewed custom presets, baseline edits, and live-policy replacement.
 </AgentOnly>
 
 <AgentOnly variant="openclaw,hermes">
@@ -10590,22 +10700,6 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 
 The issues below are common problems you may encounter when running Hermes through `nemohermes`.
 For setup, refer to [Quickstart with Hermes](../../hermes/get-started/quickstart).
-
-### Managed Hermes local image build fails
-
-For a managed Hermes image on a local Docker-driver gateway, NemoClaw may first attempt the image build with host-side BuildKit.
-If that exact staged build starts and fails with a nonzero exit status or no exit status, NemoClaw preserves the BuildKit failure instead of retrying the managed Dockerfile with the incompatible gateway builder.
-The preceding BuildKit output contains the root cause.
-Fix the reported base-image, package, network, or Dockerfile error rather than treating it as a builder-selection failure.
-
-Then resume onboarding:
-
-```bash
-nemohermes onboard --resume
-```
-
-A disabled or unavailable local prebuild retains the existing gateway path.
-A custom Hermes Dockerfile supplied with `--from`, an OpenClaw image, or a build on a remote gateway also retains its existing builder behavior.
 
 ### Hermes dashboard config did not converge
 
@@ -11271,6 +11365,8 @@ Two exemption kinds keep runtime data writable.
 The lock inventory omits top-level Hermes runtime dirs (`sessions/`, `memories/`, `logs/`, `cache/`, `plans/`) and the image-build-regenerated `openclaw-weixin/`.
 The lock helper never touches those paths.
 Inside a locked tree, the helper keeps each `agents/<agent-id>/sessions/` root at `sandbox:sandbox 2770` so the OpenClaw TUI can create and write session metadata under an otherwise root-owned parent.
+After containment, when an agent directory has no `sessions` entry, lockdown creates that carve-out root.
+An agent booting for the first time under an active lock can then write sessions.
 It validates the carve-out root but deliberately does not traverse or rewrite live session descendants.
 Cross-device entries, detected traversal races, or failures to remove or replace an unsafe entry make lockdown fail closed with the exact path and reason.
 
@@ -11892,6 +11988,8 @@ The following patterns weaken security without providing meaningful benefit.
 <AgentOnly variant="deepagents">
 
 - [Network Policies](../reference/network-policies) for the full Deep Agents baseline policy reference.
+- [Customize the Network Policy](../network-policy/customize-network-policy) for static and dynamic policy changes.
+- [Approve or Deny Network Requests](../network-policy/approve-network-requests) for the operator approval flow.
 - [Credential Storage](credential-storage) for provider and managed MCP credential handling.
 - [Understand Sandbox State](../manage-sandboxes/state-and-backups/understand-sandbox-state) for Deep Agents state and credential-bearing file exclusions.
 - [About Managed MCP Servers](../manage-sandboxes/mcp-servers/about-managed-mcp-servers) for managed MCP credential replacement.
