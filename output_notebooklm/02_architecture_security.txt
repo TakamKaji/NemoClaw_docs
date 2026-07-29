@@ -4538,7 +4538,11 @@ For cloud-only providers, the output omits the NIM status line unless a NIM cont
 
 When the sandbox's recorded driver is `docker` and the host Docker daemon is not reachable, the command prints the `docker_unreachable` failure layer with the message `Docker daemon is not reachable.` as the first line of stdout, suppresses the host-side `Inference` probe (which otherwise hits the remote provider directly and is misleading when the local stack is down), and exits with a non-zero status.
 
-When the host Docker daemon is reachable but the per-sandbox container is stopped, the command prints the `sandbox_container_stopped` failure layer with the message `sandbox container exists but is not running.` as the first line of stdout, suppresses the host-side `Inference` probe, and exits with a non-zero status.
+When the host Docker daemon is reachable but the per-sandbox container is stopped, the initial preflight records the `sandbox_container_stopped` failure layer and suppresses the host-side `Inference` probe.
+If the owning OpenShell gateway is healthy but no longer lists the registered Docker-driver sandbox, status attempts post-reboot recovery from the labeled container.
+It waits for Docker readiness, restores the in-sandbox gateway and host forwards, and refreshes preflight before probing inference.
+A successful recovery clears the stale stopped-container failure.
+If Docker readiness or the agent delivery chain cannot be proven, status exits non-zero and reports the failed recovery layer.
 <AgentOnly variant="openclaw,hermes">
 If the sandbox's recorded dashboard port is also held by a foreign listener, the header escalates to the `sandbox_dashboard_port_conflict` failure layer with the message `sandbox container is stopped and the dashboard port is held by a foreign listener.` so the operator can recover the port before restarting the sandbox.
 </AgentOnly>
@@ -15050,7 +15054,7 @@ restart/rebuild, and cleanup without a conditional skip or expected failure.
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Sandbox base dependency review: Vim, jq, Expat, Perl modules, and bundled npm
+# Sandbox base dependency review for Vim, jq, Expat, Perl modules, and bundled npm
 
 Date: 2026-07-25
 
@@ -15173,7 +15177,7 @@ The core interpreter version check also remains the binding for core-language fi
 
 ## Concern ledger
 
-### DEP-1: affected trixie Vim package
+### DEP-1 affected trixie Vim package
 
 - Range: `2:9.1.1230-2..2:9.2.0782-1`
 - Surface: native package and runtime editor
@@ -15185,7 +15189,7 @@ The core interpreter version check also remains the binding for core-language fi
 - Verification: exact `RUN`-chain execution, checksum-rejection tests, dpkg identity checks, Vim runtime checks, and native image builds.
 - Remaining gate: multi-image, multi-architecture CI.
 
-### DEP-2: affected package inside npm's private tree
+### DEP-2 affected package inside npm's private tree
 
 - Range: `brace-expansion 5.0.7..5.0.8`
 - Surface: transitive bundled npm dependency
@@ -15197,7 +15201,7 @@ The core interpreter version check also remains the binding for core-language fi
 - Verification: pre-swap and post-swap rollback, idempotence, unsafe-tree, layout-drift, command-order, Dockerfile-order, and real-registry tests.
 - Remaining gate: multi-image CI.
 
-### DEP-3: Perl package identity does not expose dual-life module versions
+### DEP-3 Perl package identity does not expose dual-life module versions
 
 - Range: Perl `5.44.0` with bundled component versions
 - Surface: native package inventory and runtime modules
@@ -15209,7 +15213,7 @@ The core interpreter version check also remains the binding for core-language fi
 - Verification: native amd64 and arm64 image builds.
 - Remaining gate: multi-architecture base-image build.
 
-### DEP-4: managed jq, Oniguruma, and Expat identities differ
+### DEP-4 managed jq, Oniguruma, and Expat identities differ
 
 - Range: `libexpat1` distro-selected or `2.8.2-1` to `2.8.2-1`; `libjq1` and `jq` `1.7.1-6+deb13u2..1.8.2-1`; `libonig5 >= 6.9.7.1` to exact `6.9.9-1+b1`.
 - Surface: native packages and runtime libraries

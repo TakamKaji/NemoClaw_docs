@@ -207,8 +207,10 @@
 │       ├── docs-preview-pr.yaml
 │       ├── docs-publish-public.yaml
 │       ├── docs-publish-staging.yaml
+│       ├── docs-review-receipt.yaml
 │       ├── e2e-branch-validation.yaml
 │       ├── e2e.yaml
+│       ├── hosted-runner-recovery.yaml
 │       ├── installer-hash-check.yaml
 │       ├── label-merged-pr-release-target.yaml
 │       ├── macos-e2e.yaml
@@ -216,6 +218,7 @@
 │       ├── platform-vitest-main.yaml
 │       ├── pr-e2e-gate.yaml
 │       ├── pr-limit.yaml
+│       ├── pr-merge-conflict-fixer.yaml
 │       ├── pr-review-advisor.yaml
 │       ├── pr-self-hosted.yaml
 │       ├── pr.yaml
@@ -269,6 +272,8 @@
 │   │   │   └── tool-gateway-broker.ts
 │   │   ├── manifest.yaml
 │   │   ├── mcp-config-transaction.py
+│   │   ├── patch-gateway-runtime-metadata.py
+│   │   ├── patch-langfuse-credentials.mts
 │   │   ├── patch-session-list-preview.py
 │   │   ├── plugin
 │   │   │   ├── __init__.py
@@ -310,6 +315,9 @@
 │       ├── dependency-review.md
 │       ├── manifest.yaml
 │       ├── mcporter-runtime
+│       │   ├── package-lock.json
+│       │   └── package.json
+│       ├── openclaw-runtime
 │       │   ├── package-lock.json
 │       │   └── package.json
 │       ├── policy-permissive.yaml
@@ -557,10 +565,14 @@
 │   │   ├── blueprint
 │   │   │   ├── private-networks.test.ts
 │   │   │   ├── private-networks.ts
+│   │   │   ├── runner-identity.test.ts
+│   │   │   ├── runner-name-validation.test.ts
 │   │   │   ├── runner-openshell-072-policy.test.ts
 │   │   │   ├── runner-test-fixtures.ts
 │   │   │   ├── runner.test.ts
 │   │   │   ├── runner.ts
+│   │   │   ├── runtime-identity.test.ts
+│   │   │   ├── runtime-identity.ts
 │   │   │   ├── snapshot-command.test.ts
 │   │   │   ├── snapshot-command.ts
 │   │   │   ├── snapshot-delete-helper.ts
@@ -590,6 +602,7 @@
 │   │   ├── onboard
 │   │   │   ├── config.test.ts
 │   │   │   └── config.ts
+│   │   ├── plugin-config.ts
 │   │   ├── register.test.ts
 │   │   ├── runtime-context.test.ts
 │   │   ├── runtime-context.ts
@@ -602,7 +615,9 @@
 │   │       ├── object-record.test.ts
 │   │       ├── object-record.ts
 │   │       ├── openshell-policy-boundary.cts
-│   │       └── openshell-policy-boundary.test.ts
+│   │       ├── openshell-policy-boundary.test.ts
+│   │       ├── sandbox-name.cts
+│   │       └── sandbox-name.test.ts
 │   ├── tsconfig.json
 │   ├── tsconfig.shared.json
 │   ├── tsconfig.test.json
@@ -654,6 +669,7 @@
 │   ├── private-networks.yaml
 │   ├── provider-profiles
 │   │   ├── brave.yaml
+│   │   ├── okta-runtime-v1.yaml
 │   │   ├── tavily-hermes-v1.yaml
 │   │   └── tavily.yaml
 │   ├── router
@@ -663,8 +679,7 @@
 │   │   ├── ciao-network-guard.js
 │   │   ├── http-proxy-fix.js
 │   │   ├── nemotron-inference-fix.js
-│   │   ├── sandbox-safety-net.js
-│   │   └── seccomp-guard.js
+│   │   └── sandbox-safety-net.js
 │   └── tsconfig.json
 ├── output_notebooklm
 │   ├── 00_directory_structure.txt
@@ -676,13 +691,17 @@
 ├── package.json
 ├── schemas
 │   ├── blueprint.schema.json
+│   ├── network-policy.schema.json
 │   ├── onboard-config.schema.json
 │   ├── openclaw-plugin.schema.json
 │   ├── policy-preset.schema.json
 │   ├── router-pool-config.schema.json
-│   └── sandbox-policy.schema.json
+│   ├── sandbox-policy.schema.json
+│   └── system-readiness.schema.json
 ├── scripts
+│   ├── advisory-early-warning-scan.mts
 │   ├── audit-reviewed-npm-graph.mts
+│   ├── audit-test-runtime.mts
 │   ├── backup-workspace.sh
 │   ├── bedrock-runtime-adapter.mts
 │   ├── bench
@@ -719,8 +738,10 @@
 │   │   ├── no-coverage-ignore.mts
 │   │   ├── no-test-dist-imports.mts
 │   │   ├── no-unit-blocks-in-live-e2e.mts
+│   │   ├── node-tar-image-scan.mts
 │   │   ├── openshell-policy-mutation-read.mts
 │   │   ├── run.mts
+│   │   ├── source-architecture.mts
 │   │   ├── test-create-require-budget.mts
 │   │   ├── test-title-style.mts
 │   │   ├── verify-openshell-policy-boundary-dependencies.mts
@@ -730,9 +751,11 @@
 │   ├── debug.sh
 │   ├── dev-setup.sh
 │   ├── dev-tier-selector.mts
+│   ├── docs-review-receipt.mts
 │   ├── e2e
 │   │   └── sanitize-trace-timing.py
 │   ├── export_notebooklm_docs.py
+│   ├── extract-semver.sh
 │   ├── fern-preview-config.mts
 │   ├── find-source-shape-tests.mts
 │   ├── find-test-conditionals.mts
@@ -744,14 +767,21 @@
 │   ├── install-openshell.sh
 │   ├── install.sh
 │   ├── lib
+│   │   ├── advisory-early-warning.mts
 │   │   ├── clean_runtime_shell_env_shim.py
+│   │   ├── dgx-station-peer.mts
 │   │   ├── gateway-supervisor.sh
 │   │   ├── normalize_mutable_config_perms.py
+│   │   ├── nvd-reconciliation.mts
+│   │   ├── openclaw-npm-remediation.mts
 │   │   ├── openclaw_device_approval_policy.py
+│   │   ├── openshell-gateway.service.in
 │   │   ├── reviewed-npm-archive.mts
+│   │   ├── reviewed-npm-audit.mts
 │   │   ├── runtime.sh
 │   │   ├── sandbox-init.sh
-│   │   └── sandbox-rlimits.sh
+│   │   ├── sandbox-rlimits.sh
+│   │   └── station-vllm-conflict.sh
 │   ├── list-command-helper-uses.mts
 │   ├── local-credential-helper.mts
 │   ├── managed-gateway-control.py
@@ -759,12 +789,16 @@
 │   ├── npm-link-or-shim.sh
 │   ├── ollama-auth-proxy.mts
 │   ├── openclaw-config-guard.py
+│   ├── patch-bundled-npm-brace-expansion.mts
+│   ├── patch-bundled-npm-tar.mts
 │   ├── patch-openclaw-chat-send.mts
 │   ├── patch-openclaw-device-self-approval.mts
 │   ├── patch-openclaw-issue-4434-diagnostics.mts
 │   ├── patch-openclaw-mcp-npx.mts
+│   ├── patch-openclaw-shared-state-permissions.mts
 │   ├── patch-openclaw-tool-catalog.mts
 │   ├── prepare-dgx-station-host.sh
+│   ├── prepare-dual-dgx-station.mts
 │   ├── release-cut-tag.sh
 │   ├── release-latest-tag.sh
 │   ├── release-lkg-brev-image.sh
@@ -773,10 +807,17 @@
 │   ├── release-wait-latest.sh
 │   ├── retire-release-label.mts
 │   ├── scorecard
+│   │   ├── analyze-runtime-history.mts
 │   │   ├── analyze-trace-timing.mts
 │   │   ├── build-slack-blocks.mts
 │   │   ├── coordinate-scorecard.mts
+│   │   ├── read-artifact-zip.mts
 │   │   └── summarize-jobs.mts
+│   ├── security
+│   │   ├── build-native-security-packages.sh
+│   │   └── patches
+│   │       ├── libssh2-1.11.1-cve-2026.patch
+│   │       └── python3.13-htmlparser-cve-2026-15308.patch
 │   ├── setup-dns-proxy.sh
 │   ├── setup-jetson.sh
 │   ├── shellcheck-json1-to-sarif.mts
@@ -789,6 +830,7 @@
 │   ├── type-safety-hotspots.mts
 │   ├── update-docker-pin.sh
 │   ├── update-hermes-agent.sh
+│   ├── upgrade-bundled-npm.mts
 │   ├── validate-configs.mts
 │   ├── validate-openclaw-tool-search.mts
 │   ├── verify-wechat-runtime-lock.mts
@@ -823,6 +865,9 @@
 │   │   ├── deploy.ts
 │   │   ├── gc.ts
 │   │   ├── global-oclif-command-adapters.test.ts
+│   │   ├── host
+│   │   │   ├── probe.test.ts
+│   │   │   └── probe.ts
 │   │   ├── inference
 │   │   │   ├── get.ts
 │   │   │   └── set.ts
@@ -891,16 +936,19 @@
 │   │   │   │   └── set.ts
 │   │   │   ├── logs.test.ts
 │   │   │   ├── logs.ts
+│   │   │   ├── mcp.test.ts
 │   │   │   ├── mcp.ts
 │   │   │   ├── oclif-command-adapters.test.ts
 │   │   │   ├── policy
 │   │   │   │   ├── add.ts
+│   │   │   │   ├── exclude.ts
 │   │   │   │   ├── explain.ts
 │   │   │   │   ├── get.test.ts
 │   │   │   │   ├── get.ts
 │   │   │   │   ├── list.ts
 │   │   │   │   ├── mutate.test.ts
-│   │   │   │   └── remove.ts
+│   │   │   │   ├── remove.ts
+│   │   │   │   └── restore.ts
 │   │   │   ├── rebuild.ts
 │   │   │   ├── recover.ts
 │   │   │   ├── sessions
@@ -981,6 +1029,7 @@
 │   │   │   ├── inference-set-gateway-restart.ts
 │   │   │   ├── inference-set-gateway-route-containment.test.ts
 │   │   │   ├── inference-set-hermes-run.test.ts
+│   │   │   ├── inference-set-https-pin-runtime.test.ts
 │   │   │   ├── inference-set-local-provider.test.ts
 │   │   │   ├── inference-set-openclaw-gateway-restart.test.ts
 │   │   │   ├── inference-set-openclaw-run.test.ts
@@ -989,6 +1038,9 @@
 │   │   │   ├── inference-set-provider-alias.test.ts
 │   │   │   ├── inference-set-provider-diagnostics.test.ts
 │   │   │   ├── inference-set-provider-diagnostics.ts
+│   │   │   ├── inference-set-provider.test.ts
+│   │   │   ├── inference-set-provider.ts
+│   │   │   ├── inference-set-reasoning-effort.test.ts
 │   │   │   ├── inference-set-reply-budget.ts
 │   │   │   ├── inference-set-route-containment.ts
 │   │   │   ├── inference-set-shields.test.ts
@@ -1023,6 +1075,7 @@
 │   │   │   │   ├── auto-pair-approval.ts
 │   │   │   │   ├── auto-pair-warmup.test.ts
 │   │   │   │   ├── auto-pair-warmup.ts
+│   │   │   │   ├── backup-shields-window.ts
 │   │   │   │   ├── channel-status-config-channels.test.ts
 │   │   │   │   ├── channel-status-config-core.test.ts
 │   │   │   │   ├── channel-status-config-values.test.ts
@@ -1044,6 +1097,7 @@
 │   │   │   │   ├── connect-inference-gateway.ts
 │   │   │   │   ├── connect-inference-route-probe.test.ts
 │   │   │   │   ├── connect-inference-route-probe.ts
+│   │   │   │   ├── connect-probe-observe.test.ts
 │   │   │   │   ├── connect-route-containment.test.ts
 │   │   │   │   ├── connect-route-lifecycle.test.ts
 │   │   │   │   ├── connect-route-repair-inconclusive.test.ts
@@ -1052,6 +1106,7 @@
 │   │   │   │   ├── connect.ts
 │   │   │   │   ├── dcode-activity-probe.test.ts
 │   │   │   │   ├── dcode-activity-probe.ts
+│   │   │   │   ├── dcode-probe-test-fixture.ts
 │   │   │   │   ├── destroy-confirmation.ts
 │   │   │   │   ├── destroy-execution.ts
 │   │   │   │   ├── destroy-flow.test.ts
@@ -1060,6 +1115,7 @@
 │   │   │   │   ├── destroy-gateway-runtime-evidence.test.ts
 │   │   │   │   ├── destroy-gateway.test.ts
 │   │   │   │   ├── destroy-gateway.ts
+│   │   │   │   ├── destroy-https-pin-route.test.ts
 │   │   │   │   ├── destroy-preflight.ts
 │   │   │   │   ├── destroy-presence.ts
 │   │   │   │   ├── destroy.ts
@@ -1073,6 +1129,8 @@
 │   │   │   │   ├── doctor-host-command.ts
 │   │   │   │   ├── doctor-inference.test.ts
 │   │   │   │   ├── doctor-inference.ts
+│   │   │   │   ├── doctor-lifecycle-registration.test.ts
+│   │   │   │   ├── doctor-lifecycle-registration.ts
 │   │   │   │   ├── doctor-messaging.ts
 │   │   │   │   ├── doctor-report.test.ts
 │   │   │   │   ├── doctor-report.ts
@@ -1102,6 +1160,7 @@
 │   │   │   │   ├── exec.ts
 │   │   │   │   ├── forward-health.ts
 │   │   │   │   ├── forward-recovery.ts
+│   │   │   │   ├── gateway-failure-classifier.test.ts
 │   │   │   │   ├── gateway-failure-classifier.ts
 │   │   │   │   ├── gateway-restart-hermes-drift.test.ts
 │   │   │   │   ├── gateway-restart-mcp.test.ts
@@ -1111,6 +1170,7 @@
 │   │   │   │   ├── gateway-select.ts
 │   │   │   │   ├── gateway-state-drift.test.ts
 │   │   │   │   ├── gateway-state-hints.test.ts
+│   │   │   │   ├── gateway-state-observe-mode.test.ts
 │   │   │   │   ├── gateway-state-owning-gateway.test.ts
 │   │   │   │   ├── gateway-state.ts
 │   │   │   │   ├── gateway-target.ts
@@ -1172,6 +1232,7 @@
 │   │   │   │   ├── mcp-bridge-provider-readiness.ts
 │   │   │   │   ├── mcp-bridge-provider.test.ts
 │   │   │   │   ├── mcp-bridge-provider.ts
+│   │   │   │   ├── mcp-bridge-rebuild-exec-unavailable.ts
 │   │   │   │   ├── mcp-bridge-rebuild.ts
 │   │   │   │   ├── mcp-bridge-recovery.test.ts
 │   │   │   │   ├── mcp-bridge-recovery.ts
@@ -1183,6 +1244,7 @@
 │   │   │   │   ├── mcp-bridge-resolution-readiness.ts
 │   │   │   │   ├── mcp-bridge-restart.ts
 │   │   │   │   ├── mcp-bridge-runtime-capabilities.ts
+│   │   │   │   ├── mcp-bridge-runtime-command.ts
 │   │   │   │   ├── mcp-bridge-runtime-validation.test.ts
 │   │   │   │   ├── mcp-bridge-state.ts
 │   │   │   │   ├── mcp-bridge-status-boundaries.test.ts
@@ -1190,13 +1252,18 @@
 │   │   │   │   ├── mcp-bridge-status-resolution.test.ts
 │   │   │   │   ├── mcp-bridge-status-state.test.ts
 │   │   │   │   ├── mcp-bridge-status.ts
+│   │   │   │   ├── mcp-bridge-tool-discovery.test.ts
+│   │   │   │   ├── mcp-bridge-tool-discovery.ts
 │   │   │   │   ├── mcp-bridge-url-validation.ts
 │   │   │   │   ├── mcp-bridge-validation.ts
 │   │   │   │   ├── mcp-bridge.ts
+│   │   │   │   ├── mcp-tool-discovery-runtime.test.ts
 │   │   │   │   ├── messaging-host-forward-lifecycle.ts
 │   │   │   │   ├── openshell-child-visible-credentials.v0.0.72.json
 │   │   │   │   ├── openshell-child-visible-credentials.v0.0.85.json
+│   │   │   │   ├── policy-channel-add-drift.test.ts
 │   │   │   │   ├── policy-channel-agent-gate.test.ts
+│   │   │   │   ├── policy-channel-baseline.test.ts
 │   │   │   │   ├── policy-channel-cleanup.test.ts
 │   │   │   │   ├── policy-channel-conflict.test.ts
 │   │   │   │   ├── policy-channel-dependencies.ts
@@ -1205,6 +1272,7 @@
 │   │   │   │   ├── policy-channel-policy.test.ts
 │   │   │   │   ├── policy-channel-refresh.test.ts
 │   │   │   │   ├── policy-channel-remove-flow.test.ts
+│   │   │   │   ├── policy-channel-scope-disclosure.test.ts
 │   │   │   │   ├── policy-channel.ts
 │   │   │   │   ├── policy-context-refresh.test.ts
 │   │   │   │   ├── policy-context-refresh.ts
@@ -1221,6 +1289,7 @@
 │   │   │   │   ├── rebuild-backup-phase.test.ts
 │   │   │   │   ├── rebuild-backup-phase.ts
 │   │   │   │   ├── rebuild-base-image-resolution-flow.test.ts
+│   │   │   │   ├── rebuild-baseline-transition-preflight.test.ts
 │   │   │   │   ├── rebuild-config-hash-command.ts
 │   │   │   │   ├── rebuild-config-hash.test.ts
 │   │   │   │   ├── rebuild-config-hash.ts
@@ -1228,6 +1297,7 @@
 │   │   │   │   ├── rebuild-custom-image-preflight.test.ts
 │   │   │   │   ├── rebuild-custom-image-preflight.ts
 │   │   │   │   ├── rebuild-dcode-artifact-drift.test.ts
+│   │   │   │   ├── rebuild-dcode-base-image-lease.test.ts
 │   │   │   │   ├── rebuild-dcode-mutation-edge.test.ts
 │   │   │   │   ├── rebuild-dcode-orchestrator.test.ts
 │   │   │   │   ├── rebuild-dcode-orchestrator.ts
@@ -1315,6 +1385,8 @@
 │   │   │   │   ├── rebuild.ts
 │   │   │   │   ├── reconcile-session-models.test.ts
 │   │   │   │   ├── reconcile-session-models.ts
+│   │   │   │   ├── restore-gateway-pairing.test.ts
+│   │   │   │   ├── restore-gateway-pairing.ts
 │   │   │   │   ├── runtime-env.test.ts
 │   │   │   │   ├── runtime-env.ts
 │   │   │   │   ├── sandbox-container-owner.ts
@@ -1325,6 +1397,8 @@
 │   │   │   │   ├── sessions
 │   │   │   │   │   ├── delete.test.ts
 │   │   │   │   │   ├── delete.ts
+│   │   │   │   │   ├── download-verify.test.ts
+│   │   │   │   │   ├── download-verify.ts
 │   │   │   │   │   ├── export.test.ts
 │   │   │   │   │   ├── export.ts
 │   │   │   │   │   ├── gateway-rpc-call.test.ts
@@ -1342,7 +1416,13 @@
 │   │   │   │   ├── skill-install.test.ts
 │   │   │   │   ├── skill-install.ts
 │   │   │   │   ├── snapshot-auto-create-failure.test.ts
+│   │   │   │   ├── snapshot-baseline-exclusion-output.test.ts
+│   │   │   │   ├── snapshot-baseline-exclusion-summary.test.ts
+│   │   │   │   ├── snapshot-baseline-exclusion-summary.ts
 │   │   │   │   ├── snapshot-create-stream-test-types.ts
+│   │   │   │   ├── snapshot-hermes-gateway-hint.test.ts
+│   │   │   │   ├── snapshot-hermes-gateway-hint.ts
+│   │   │   │   ├── snapshot-restore-baseline-exclusions.test.ts
 │   │   │   │   ├── snapshot-restore-clone-ports.test.ts
 │   │   │   │   ├── snapshot-restore-lifecycle.test.ts
 │   │   │   │   ├── snapshot-restore-observability-policy.test.ts
@@ -1352,11 +1432,15 @@
 │   │   │   │   ├── snapshot.ts
 │   │   │   │   ├── start.test.ts
 │   │   │   │   ├── start.ts
+│   │   │   │   ├── status
+│   │   │   │   │   └── process-recovery.ts
 │   │   │   │   ├── status-flow.test.ts
 │   │   │   │   ├── status-inference.test.ts
+│   │   │   │   ├── status-lookup-rendering.test.ts
 │   │   │   │   ├── status-lookup-rendering.ts
 │   │   │   │   ├── status-preflight.ts
 │   │   │   │   ├── status-snapshot-inference-health.test.ts
+│   │   │   │   ├── status-snapshot-recovery.test.ts
 │   │   │   │   ├── status-snapshot-route-drift.test.ts
 │   │   │   │   ├── status-snapshot.ts
 │   │   │   │   ├── status-text.ts
@@ -1381,11 +1465,16 @@
 │   │   │   │   ├── warmup-session.ts
 │   │   │   │   └── wipe-state.ts
 │   │   │   ├── uninstall
+│   │   │   │   ├── hermes-forward-watcher-cleanup.ts
+│   │   │   │   ├── hermes-forward-watcher-installer.test.ts
 │   │   │   │   ├── openrouter-runtime-adapter-cleanup.test.ts
 │   │   │   │   ├── openrouter-runtime-adapter-cleanup.ts
 │   │   │   │   ├── plan.test.ts
 │   │   │   │   ├── plan.ts
+│   │   │   │   ├── run-plan-dual-station.test.ts
 │   │   │   │   ├── run-plan-gateway-segregation.test.ts
+│   │   │   │   ├── run-plan-gateway-service.test.ts
+│   │   │   │   ├── run-plan-hermes-forward-watcher.test.ts
 │   │   │   │   ├── run-plan-preserved-registry.test.ts
 │   │   │   │   ├── run-plan.test.ts
 │   │   │   │   └── run-plan.ts
@@ -1416,7 +1505,9 @@
 │   │   │   │   └── volume.ts
 │   │   │   ├── fs
 │   │   │   │   ├── build-context-fingerprint.test.ts
-│   │   │   │   └── build-context-fingerprint.ts
+│   │   │   │   ├── build-context-fingerprint.ts
+│   │   │   │   ├── regular-file.test.ts
+│   │   │   │   └── regular-file.ts
 │   │   │   ├── http
 │   │   │   │   ├── README.md
 │   │   │   │   ├── auth-config-test-helpers.test.ts
@@ -1429,18 +1520,34 @@
 │   │   │   │   ├── probe.ts
 │   │   │   │   ├── validation-session.test.ts
 │   │   │   │   └── validation-session.ts
-│   │   │   └── openshell
-│   │   │       ├── client.test.ts
-│   │   │       ├── client.ts
-│   │   │       ├── gateway-drift.test.ts
-│   │   │       ├── gateway-drift.ts
-│   │   │       ├── resolve.test.ts
-│   │   │       ├── resolve.ts
-│   │   │       ├── runtime-capabilities.ts
-│   │   │       ├── runtime.ts
-│   │   │       ├── timeouts.test.ts
-│   │   │       └── timeouts.ts
+│   │   │   ├── openshell
+│   │   │   │   ├── client.test.ts
+│   │   │   │   ├── client.ts
+│   │   │   │   ├── gateway-drift.test.ts
+│   │   │   │   ├── gateway-drift.ts
+│   │   │   │   ├── hermes-forward-watcher.ts
+│   │   │   │   ├── resolve.test.ts
+│   │   │   │   ├── resolve.ts
+│   │   │   │   ├── restore-gateway-pairing.test.ts
+│   │   │   │   ├── restore-gateway-pairing.ts
+│   │   │   │   ├── runtime-capabilities.ts
+│   │   │   │   ├── runtime.ts
+│   │   │   │   ├── timeouts.test.ts
+│   │   │   │   └── timeouts.ts
+│   │   │   └── stdio.ts
 │   │   ├── advisories
+│   │   │   ├── checks
+│   │   │   │   └── host
+│   │   │   │       ├── cdi.ts
+│   │   │   │       ├── common.ts
+│   │   │   │       ├── docker.test.ts
+│   │   │   │       ├── docker.ts
+│   │   │   │       ├── index.test.ts
+│   │   │   │       ├── index.ts
+│   │   │   │       ├── runtime.test.ts
+│   │   │   │       ├── runtime.ts
+│   │   │   │       ├── toolchain.test.ts
+│   │   │   │       └── toolchain.ts
 │   │   │   ├── presenter.test.ts
 │   │   │   ├── presenter.ts
 │   │   │   ├── registry.test.ts
@@ -1450,6 +1557,7 @@
 │   │   │   └── types.ts
 │   │   ├── agent
 │   │   │   ├── aliases.ts
+│   │   │   ├── base-image-handoff.test.ts
 │   │   │   ├── base-image-hermes-resolution.test.ts
 │   │   │   ├── base-image-hermes.test.ts
 │   │   │   ├── base-image.test.ts
@@ -1461,6 +1569,8 @@
 │   │   │   ├── definition-types.ts
 │   │   │   ├── defs.test.ts
 │   │   │   ├── defs.ts
+│   │   │   ├── gateway-readiness.test.ts
+│   │   │   ├── gateway-readiness.ts
 │   │   │   ├── gateway-restart-markers.ts
 │   │   │   ├── gateway-restart-scripts.ts
 │   │   │   ├── gateway-script-shared.ts
@@ -1537,10 +1647,13 @@
 │   │   │   ├── errno.ts
 │   │   │   ├── gateway-address.test.ts
 │   │   │   ├── gateway-address.ts
+│   │   │   ├── gateway-capabilities.ts
 │   │   │   ├── json-types.test.ts
 │   │   │   ├── json-types.ts
 │   │   │   ├── non-interactive.test.ts
 │   │   │   ├── non-interactive.ts
+│   │   │   ├── phase-activity.test.ts
+│   │   │   ├── phase-activity.ts
 │   │   │   ├── ports.test.ts
 │   │   │   ├── ports.ts
 │   │   │   ├── process-exit.test.ts
@@ -1605,6 +1718,7 @@
 │   │   │   ├── lifecycle
 │   │   │   │   ├── options.test.ts
 │   │   │   │   └── options.ts
+│   │   │   ├── lifecycle-registration.ts
 │   │   │   ├── maintenance
 │   │   │   │   ├── images.test.ts
 │   │   │   │   ├── images.ts
@@ -1625,6 +1739,7 @@
 │   │   │   │   ├── logs.test.ts
 │   │   │   │   └── logs.ts
 │   │   │   └── uninstall
+│   │   │       ├── hermes-forward-watcher.ts
 │   │   │       ├── messaging.test.ts
 │   │   │       ├── messaging.ts
 │   │   │       ├── paths.test.ts
@@ -1657,6 +1772,7 @@
 │   │   │   ├── config.ts
 │   │   │   ├── context-window.test.ts
 │   │   │   ├── context-window.ts
+│   │   │   ├── dgx-station-identity.ts
 │   │   │   ├── endpoint-ssrf-preflight.test.ts
 │   │   │   ├── endpoint-ssrf-preflight.ts
 │   │   │   ├── gateway-route-compatibility.test.ts
@@ -1667,10 +1783,17 @@
 │   │   │   ├── gpu-trust.ts
 │   │   │   ├── health.test.ts
 │   │   │   ├── health.ts
+│   │   │   ├── https-pin-runtime-adapter-forward.test.ts
+│   │   │   ├── https-pin-runtime-adapter-forward.ts
+│   │   │   ├── https-pin-runtime-adapter.test.ts
+│   │   │   ├── https-pin-runtime-adapter.ts
+│   │   │   ├── https-pin-runtime.test.ts
+│   │   │   ├── https-pin-runtime.ts
 │   │   │   ├── live.test.ts
 │   │   │   ├── live.ts
 │   │   │   ├── local-adapter-lifecycle.test.ts
 │   │   │   ├── local-adapter-lifecycle.ts
+│   │   │   ├── local-vllm-auth.test.ts
 │   │   │   ├── local.test.ts
 │   │   │   ├── local.ts
 │   │   │   ├── max-tokens-field.test.ts
@@ -1731,14 +1854,35 @@
 │   │   │   ├── provider-models.ts
 │   │   │   ├── selection.test.ts
 │   │   │   ├── selection.ts
+│   │   │   ├── vllm-api-key.test.ts
+│   │   │   ├── vllm-api-key.ts
+│   │   │   ├── vllm-contracts.test.ts
 │   │   │   ├── vllm-docker-env.test.ts
 │   │   │   ├── vllm-docker-env.ts
+│   │   │   ├── vllm-dual-station.test.ts
 │   │   │   ├── vllm-install-storage.test.ts
 │   │   │   ├── vllm-models.test.ts
 │   │   │   ├── vllm-models.ts
+│   │   │   ├── vllm-ownership.test.ts
 │   │   │   ├── vllm-prompt.ts
 │   │   │   ├── vllm-runtime-context.test.ts
 │   │   │   ├── vllm-runtime-context.ts
+│   │   │   ├── vllm-station-cluster-lifecycle.test.ts
+│   │   │   ├── vllm-station-cluster-lifecycle.ts
+│   │   │   ├── vllm-station-cluster.test.ts
+│   │   │   ├── vllm-station-cluster.ts
+│   │   │   ├── vllm-station-fixture.test-support.ts
+│   │   │   ├── vllm-station-lifecycle-lock.test.ts
+│   │   │   ├── vllm-station-lifecycle-lock.ts
+│   │   │   ├── vllm-station-model-staging.test.ts
+│   │   │   ├── vllm-station-model-staging.ts
+│   │   │   ├── vllm-station-runtime-cleanup-entry.ts
+│   │   │   ├── vllm-station-runtime-receipt-path.ts
+│   │   │   ├── vllm-station-runtime-receipt.test.ts
+│   │   │   ├── vllm-station-runtime-receipt.ts
+│   │   │   ├── vllm-station-ssh-binding.test-support.ts
+│   │   │   ├── vllm-station-ssh-binding.test.ts
+│   │   │   ├── vllm-station-ssh-binding.ts
 │   │   │   ├── vllm-storage.test.ts
 │   │   │   ├── vllm-storage.ts
 │   │   │   ├── vllm.test.ts
@@ -1886,6 +2030,12 @@
 │   │   │   │   │   │   └── wechat-diagnostics.ts
 │   │   │   │   │   └── template-resolver.ts
 │   │   │   │   └── whatsapp
+│   │   │   │       ├── hooks
+│   │   │   │       │   ├── index.ts
+│   │   │   │       │   ├── status-health-eval.test.ts
+│   │   │   │       │   ├── status-health-eval.ts
+│   │   │   │       │   ├── status-health.test.ts
+│   │   │   │       │   └── status-health.ts
 │   │   │   │       ├── manifest.ts
 │   │   │   │       ├── policy
 │   │   │   │       │   ├── hermes.yaml
@@ -1934,6 +2084,7 @@
 │   │   │   │   ├── status-runner.ts
 │   │   │   │   └── types.ts
 │   │   │   ├── host-forward.ts
+│   │   │   ├── hydration.ts
 │   │   │   ├── index.ts
 │   │   │   ├── manifest
 │   │   │   │   ├── index.ts
@@ -1981,6 +2132,7 @@
 │   │   │   ├── base-image-resolution-flow.test.ts
 │   │   │   ├── base-image-resolution-flow.ts
 │   │   │   ├── base-image-resolution-metadata.test.ts
+│   │   │   ├── base-image.test.ts
 │   │   │   ├── base-image.ts
 │   │   │   ├── bedrock-runtime.test.ts
 │   │   │   ├── bedrock-runtime.ts
@@ -2013,6 +2165,8 @@
 │   │   │   ├── compatible-endpoint-smoke.ts
 │   │   │   ├── config-sync.test.ts
 │   │   │   ├── config-sync.ts
+│   │   │   ├── container-runtime-resources.ts
+│   │   │   ├── container-toolkit-bootstrap.ts
 │   │   │   ├── corporate-ca-env.test.ts
 │   │   │   ├── corporate-ca-env.ts
 │   │   │   ├── corporate-ca-host-anchors.test.ts
@@ -2080,6 +2234,8 @@
 │   │   │   ├── docker-driver-gateway-prelaunch.ts
 │   │   │   ├── docker-driver-gateway-process-identity.test.ts
 │   │   │   ├── docker-driver-gateway-process-identity.ts
+│   │   │   ├── docker-driver-gateway-readiness.test.ts
+│   │   │   ├── docker-driver-gateway-readiness.ts
 │   │   │   ├── docker-driver-gateway-runtime-marker.test.ts
 │   │   │   ├── docker-driver-gateway-runtime-marker.ts
 │   │   │   ├── docker-driver-gateway-runtime.test.ts
@@ -2138,6 +2294,7 @@
 │   │   │   ├── docker-startup-command-patch.ts
 │   │   │   ├── docker-startup-command-sandbox-create.test.ts
 │   │   │   ├── docker-startup-command-sandbox-create.ts
+│   │   │   ├── dockerfile-node-runtime-refresh.test.ts
 │   │   │   ├── dockerfile-patch-build-id.test.ts
 │   │   │   ├── dockerfile-patch-corporate-ca.test.ts
 │   │   │   ├── dockerfile-patch-dcode-auto-approval.test.ts
@@ -2164,6 +2321,7 @@
 │   │   │   ├── extra-provider-reconciliation.test-fixtures.ts
 │   │   │   ├── extra-provider-reconciliation.test.ts
 │   │   │   ├── extra-provider-reconciliation.ts
+│   │   │   ├── fatal-runtime-preflight.test.ts
 │   │   │   ├── fatal-runtime-preflight.ts
 │   │   │   ├── finalization-deps.test.ts
 │   │   │   ├── finalization-deps.ts
@@ -2171,6 +2329,8 @@
 │   │   │   ├── forward-cleanup.ts
 │   │   │   ├── forward-start.test.ts
 │   │   │   ├── forward-start.ts
+│   │   │   ├── gateway-authority-checkpoint.test.ts
+│   │   │   ├── gateway-authority-checkpoint.ts
 │   │   │   ├── gateway-binding.test.ts
 │   │   │   ├── gateway-binding.ts
 │   │   │   ├── gateway-bootstrap.test.ts
@@ -2185,9 +2345,16 @@
 │   │   │   ├── gateway-gpu-passthrough.ts
 │   │   │   ├── gateway-health-wait.test.ts
 │   │   │   ├── gateway-health-wait.ts
+│   │   │   ├── gateway-host-runtime-https.test.ts
+│   │   │   ├── gateway-host-runtime.test.ts
+│   │   │   ├── gateway-host-runtime.ts
 │   │   │   ├── gateway-http-readiness.test.ts
 │   │   │   ├── gateway-http-readiness.ts
 │   │   │   ├── gateway-lifecycle.ts
+│   │   │   ├── gateway-management.test.ts
+│   │   │   ├── gateway-management.ts
+│   │   │   ├── gateway-ownership.test.ts
+│   │   │   ├── gateway-ownership.ts
 │   │   │   ├── gateway-port-conflict.test.ts
 │   │   │   ├── gateway-port-conflict.ts
 │   │   │   ├── gateway-process-identity.ts
@@ -2208,6 +2375,8 @@
 │   │   │   ├── gateway-start-failure.ts
 │   │   │   ├── gateway-tcp-readiness.test.ts
 │   │   │   ├── gateway-tcp-readiness.ts
+│   │   │   ├── gateway-teardown-authority.test.ts
+│   │   │   ├── gateway-teardown-authority.ts
 │   │   │   ├── gateway.ts
 │   │   │   ├── gpu-recovery.test.ts
 │   │   │   ├── gpu-recovery.ts
@@ -2241,11 +2410,13 @@
 │   │   │   │   ├── remote.ts
 │   │   │   │   ├── routed.ts
 │   │   │   │   ├── types.ts
+│   │   │   │   ├── vllm-local.test.ts
 │   │   │   │   └── vllm-local.ts
 │   │   │   ├── inference-route.test.ts
 │   │   │   ├── inference-route.ts
 │   │   │   ├── inference-selection-validation.test.ts
 │   │   │   ├── inference-selection-validation.ts
+│   │   │   ├── initial-policy-baseline-exclusion.test.ts
 │   │   │   ├── initial-policy-real-policy.test.ts
 │   │   │   ├── initial-policy.test.ts
 │   │   │   ├── initial-policy.ts
@@ -2302,6 +2473,8 @@
 │   │   │   │   │   ├── provider-inference-authoritative-recovery.test.ts
 │   │   │   │   │   ├── provider-inference-context-window.test.ts
 │   │   │   │   │   ├── provider-inference-ollama-context.test.ts
+│   │   │   │   │   ├── provider-inference-reasoning-effort-resume.test.ts
+│   │   │   │   │   ├── provider-inference-reasoning-resume.test.ts
 │   │   │   │   │   ├── provider-inference-recovery-gating.test.ts
 │   │   │   │   │   ├── provider-inference-recovery.ts
 │   │   │   │   │   ├── provider-inference-route-containment.test.ts
@@ -2310,12 +2483,16 @@
 │   │   │   │   │   ├── provider-inference.test-support.ts
 │   │   │   │   │   ├── provider-inference.test.ts
 │   │   │   │   │   ├── provider-inference.ts
+│   │   │   │   │   ├── sandbox-baseline-exclusion-lock.test.ts
+│   │   │   │   │   ├── sandbox-baseline-exclusions.test.ts
 │   │   │   │   │   ├── sandbox-checkpoint-crash-recovery.test.ts
 │   │   │   │   │   ├── sandbox-create-intent-boundary.test.ts
 │   │   │   │   │   ├── sandbox-dcode-resume.ts
 │   │   │   │   │   ├── sandbox-dcode-selection.test.ts
+│   │   │   │   │   ├── sandbox-destructive-resume-rollback.test.ts
 │   │   │   │   │   ├── sandbox-messaging.test.ts
 │   │   │   │   │   ├── sandbox-messaging.ts
+│   │   │   │   │   ├── sandbox-recreate-journal.test.ts
 │   │   │   │   │   ├── sandbox-recreate-resume.test.ts
 │   │   │   │   │   ├── sandbox-resume.test.ts
 │   │   │   │   │   ├── sandbox-resume.ts
@@ -2328,6 +2505,8 @@
 │   │   │   │   ├── hooks.ts
 │   │   │   │   ├── initial-flow-phases.test.ts
 │   │   │   │   ├── initial-flow-phases.ts
+│   │   │   │   ├── jsonl-events.test.ts
+│   │   │   │   ├── jsonl-events.ts
 │   │   │   │   ├── live-flow-slice.test.ts
 │   │   │   │   ├── live-flow-slice.ts
 │   │   │   │   ├── phase-progress.test.ts
@@ -2445,12 +2624,18 @@
 │   │   │   ├── port-conflict-report.ts
 │   │   │   ├── port-state-writer-symlink.test.ts
 │   │   │   ├── preflight-cdi.test.ts
+│   │   │   ├── preflight-dns-resolver-override.test.ts
 │   │   │   ├── preflight-gateway-cleanup-decision.test.ts
 │   │   │   ├── preflight-gateway-cleanup-decision.ts
 │   │   │   ├── preflight-gateway-reuse.test.ts
 │   │   │   ├── preflight-gateway-reuse.ts
+│   │   │   ├── preflight-gateway-sequence.test.ts
+│   │   │   ├── preflight-gateway-sequence.ts
 │   │   │   ├── preflight-messages.test.ts
 │   │   │   ├── preflight-messages.ts
+│   │   │   ├── preflight-orphan-gateway-cleanup.test.ts
+│   │   │   ├── preflight-orphan-gateway-cleanup.ts
+│   │   │   ├── preflight-podman-compat.test.ts
 │   │   │   ├── preflight-ports.ts
 │   │   │   ├── preflight-runtime-resources.test.ts
 │   │   │   ├── preflight-ubuntu-2604.test.ts
@@ -2479,6 +2664,9 @@
 │   │   │   ├── provider-selection.ts
 │   │   │   ├── providers.test.ts
 │   │   │   ├── providers.ts
+│   │   │   ├── readiness-wait.test.ts
+│   │   │   ├── readiness-wait.ts
+│   │   │   ├── reasoning-effort.test.ts
 │   │   │   ├── reasoning-mode.test.ts
 │   │   │   ├── reasoning-mode.ts
 │   │   │   ├── rebuild-route-handoff.test.ts
@@ -2496,6 +2684,7 @@
 │   │   │   ├── resume-machine-repair.ts
 │   │   │   ├── resume-provider-recovery.test.ts
 │   │   │   ├── resume-provider-recovery.ts
+│   │   │   ├── resume-provider-shim.test.ts
 │   │   │   ├── resume-provider-shim.ts
 │   │   │   ├── resume-repair-policy.ts
 │   │   │   ├── routed-inference.test.ts
@@ -2556,6 +2745,8 @@
 │   │   │   ├── sandbox-readiness-tracing.ts
 │   │   │   ├── sandbox-recreate-protection.test.ts
 │   │   │   ├── sandbox-recreate-protection.ts
+│   │   │   ├── sandbox-recreate-transaction.test.ts
+│   │   │   ├── sandbox-recreate-transaction.ts
 │   │   │   ├── sandbox-registration.test.ts
 │   │   │   ├── sandbox-registration.ts
 │   │   │   ├── sandbox-registry-metadata.test.ts
@@ -2602,6 +2793,7 @@
 │   │   │   ├── tracing.ts
 │   │   │   ├── types.ts
 │   │   │   ├── ufw-auto-apply.ts
+│   │   │   ├── usage-notice.test.ts
 │   │   │   ├── usage-notice.ts
 │   │   │   ├── validation-recovery-prompt.ts
 │   │   │   ├── verify-channel-runtime.test.ts
@@ -2632,7 +2824,14 @@
 │   │   ├── platform.ts
 │   │   ├── policy
 │   │   │   ├── README.md
+│   │   │   ├── baseline-exclusion-journal-integration.test.ts
+│   │   │   ├── baseline-exclusion-persistence.test.ts
+│   │   │   ├── baseline-exclusion-support-impact.test.ts
+│   │   │   ├── baseline-exclusion.test.ts
+│   │   │   ├── baseline-exclusion.ts
+│   │   │   ├── baseline-policy-resolution.test.ts
 │   │   │   ├── commands.ts
+│   │   │   ├── context-builder.ts
 │   │   │   ├── context.test.ts
 │   │   │   ├── context.ts
 │   │   │   ├── custom-preset-ownership.test.ts
@@ -2652,10 +2851,27 @@
 │   │   │   ├── preset-parsing.ts
 │   │   │   ├── preset-provenance.test.ts
 │   │   │   ├── preset-provenance.ts
+│   │   │   ├── preset-scope-render.test.ts
+│   │   │   ├── preset-scope-render.ts
 │   │   │   ├── remove-preset-fail-closed.test.ts
+│   │   │   ├── sandbox-policy-validation.ts
 │   │   │   ├── semantic-validation.ts
 │   │   │   └── tiers.ts
 │   │   ├── private-networks.ts
+│   │   ├── readiness
+│   │   │   ├── compatibility.ts
+│   │   │   ├── contract.test.ts
+│   │   │   ├── effects.test.ts
+│   │   │   ├── host.test.ts
+│   │   │   ├── host.ts
+│   │   │   ├── index.ts
+│   │   │   ├── platform-qualification.test.ts
+│   │   │   ├── platform-qualification.ts
+│   │   │   ├── presentation.test.ts
+│   │   │   ├── presentation.ts
+│   │   │   ├── references.ts
+│   │   │   ├── station-qualification.ts
+│   │   │   └── types.ts
 │   │   ├── registry-recovery-action.test.ts
 │   │   ├── registry-recovery-action.ts
 │   │   ├── registry-recovery-seeded-paths.test.ts
@@ -2697,19 +2913,20 @@
 │   │   │   ├── version-scheme.test.ts
 │   │   │   ├── version-scheme.ts
 │   │   │   ├── version.test.ts
-│   │   │   ├── version.ts
-│   │   │   ├── whatsapp-diagnostics.test.ts
-│   │   │   └── whatsapp-diagnostics.ts
+│   │   │   └── version.ts
 │   │   ├── sandbox-base-image
 │   │   │   ├── image-compatibility.test.ts
 │   │   │   ├── image-compatibility.ts
 │   │   │   ├── label-codec.test.ts
 │   │   │   ├── label-codec.ts
+│   │   │   ├── local-build-heartbeat.test.ts
+│   │   │   ├── local-build-heartbeat.ts
 │   │   │   ├── resolution-key.test.ts
 │   │   │   ├── resolution-key.ts
 │   │   │   ├── resolution-metadata.test.ts
 │   │   │   ├── resolution-metadata.ts
 │   │   │   ├── resolution-validation.test.ts
+│   │   │   ├── security-inventory.ts
 │   │   │   ├── source-identity.test.ts
 │   │   │   ├── source-identity.ts
 │   │   │   └── types.ts
@@ -2742,6 +2959,7 @@
 │   │   │   ├── audit-format.test.ts
 │   │   │   ├── audit-reader.test.ts
 │   │   │   ├── audit.ts
+│   │   │   ├── deferred-exit.ts
 │   │   │   ├── flow.test.ts
 │   │   │   ├── index.test.ts
 │   │   │   ├── index.ts
@@ -2785,6 +3003,7 @@
 │   │   │   ├── gateway-registry.test.ts
 │   │   │   ├── gateway-registry.ts
 │   │   │   ├── gateway.ts
+│   │   │   ├── hermes-forward-watcher.ts
 │   │   │   ├── key-allowlist-merge
 │   │   │   │   ├── python-config.ts
 │   │   │   │   ├── python-entrypoint.ts
@@ -2805,6 +3024,8 @@
 │   │   │   ├── onboard-checkpoint.test.ts
 │   │   │   ├── onboard-checkpoint.ts
 │   │   │   ├── onboard-session-cross-process-lock.test.ts
+│   │   │   ├── onboard-session-gateway-authority.test.ts
+│   │   │   ├── onboard-session-reasoning-effort.test.ts
 │   │   │   ├── onboard-session-redaction.test.ts
 │   │   │   ├── onboard-session-sandbox-prompts.test.ts
 │   │   │   ├── onboard-session-station-express.test.ts
@@ -2826,6 +3047,10 @@
 │   │   │   ├── openclaw-plugin-restore.ts
 │   │   │   ├── paths.test.ts
 │   │   │   ├── paths.ts
+│   │   │   ├── registry
+│   │   │   │   ├── lock.ts
+│   │   │   │   ├── persistence.ts
+│   │   │   │   └── types.ts
 │   │   │   ├── registry-entry-view.ts
 │   │   │   ├── registry-lock.test.ts
 │   │   │   ├── registry-mcp.ts
@@ -2915,8 +3140,10 @@
 │   │   ├── e2e-text.mts
 │   │   ├── git.mts
 │   │   ├── github.mts
+│   │   ├── http-dispatcher.mts
 │   │   ├── io.mts
 │   │   ├── json.mts
+│   │   ├── provider-constants.mts
 │   │   ├── repo-read-only-tools.mts
 │   │   ├── risk-plan.mts
 │   │   ├── session.mts
@@ -2925,29 +3152,52 @@
 │   ├── e2e
 │   │   ├── assert-mcp-agent-matrix-artifacts.mts
 │   │   ├── assert-mcp-artifact-secrets-absent.mts
+│   │   ├── base-image-publication.mts
+│   │   ├── brev-launchable-e2e.sh
 │   │   ├── brev-remote-vitest.mts
+│   │   ├── check-semantic-phases.mts
 │   │   ├── credential-free-tests.mts
 │   │   ├── hermes-dashboard-workflow-boundary.mts
 │   │   ├── hermes-gpu-docker-runtime-fixture.sh
 │   │   ├── hermes-gpu-startup-workflow-boundary.mts
+│   │   ├── hermes-timeout-contract.mts
+│   │   ├── hosted-runner-loss-github.mts
+│   │   ├── hosted-runner-loss.mts
+│   │   ├── hosted-runner-recovery.mts
 │   │   ├── inference-switch-workflow-boundary.mts
+│   │   ├── live-test-outcome.mts
 │   │   ├── live-vitest-invocation.mts
 │   │   ├── mcp-bridge-runtime-compatibility.mts
 │   │   ├── mcp-workflow-boundary.mts
 │   │   ├── module-tags.mts
 │   │   ├── openclaw-plugin-runtime-exdev-workflow-boundary.mts
+│   │   ├── openshell-gateway-auth-artifact-safety.mts
 │   │   ├── openshell-gateway-auth-contract-workflow-boundary.mts
 │   │   ├── openshell-gateway-upgrade-workflow-boundary.mts
 │   │   ├── operations-workflow-boundary.mts
+│   │   ├── pr-e2e-dispatch-reconciliation.mts
 │   │   ├── pr-e2e-gate.mts
 │   │   ├── pr-e2e-required.mts
+│   │   ├── pr-e2e-retry-receipt.mts
 │   │   ├── prepare-e2e-workflow-boundary.mts
-│   │   ├── private-file.ts
+│   │   ├── private-file.mts
 │   │   ├── report-e2e-results.mts
+│   │   ├── retired-selector-compatibility.mts
 │   │   ├── risk-signal.ts
+│   │   ├── runner-comparison-collection.mts
+│   │   ├── runner-comparison-core.mts
+│   │   ├── runner-comparison-schema.mts
+│   │   ├── runner-comparison-summary.mts
+│   │   ├── runner-comparison-workflow-boundary.mts
+│   │   ├── runner-comparison.mts
+│   │   ├── runner-pressure-core.mts
+│   │   ├── runner-pressure-workflow-boundary.mts
+│   │   ├── runner-pressure.mts
 │   │   ├── sandbox-images-workflow-boundary.mts
 │   │   ├── sandbox-operations-workflow-boundary.mts
 │   │   ├── security-posture-workflow-boundary.mts
+│   │   ├── selector-aliases.mts
+│   │   ├── trusted-hermes-swap-workflow-boundary.mts
 │   │   ├── upload-e2e-artifacts-workflow-boundary.mts
 │   │   ├── workflow-boundary.mts
 │   │   └── workflow-plan.mts
@@ -2956,20 +3206,43 @@
 │   │   ├── test-conditionals.mts
 │   │   ├── test-size-budget.mts
 │   │   └── workflow-boundary.mts
-│   └── pr-review-advisor
-│       ├── README.md
-│       ├── analyze.mts
-│       ├── comment.mts
-│       ├── prepare-target-pr.mts
-│       ├── review-ledger.mts
-│       ├── run-analysis.mts
-│       ├── schema.json
-│       ├── validate-artifacts.mts
-│       └── workflow-boundary.mts
+│   ├── mcp-tool-discovery-runtime
+│   │   ├── build-runtime.ts
+│   │   ├── dependency-review.md
+│   │   ├── install-reviewed-runtime.sh
+│   │   ├── mcp-tool-discovery.ts
+│   │   ├── package-lock.json
+│   │   ├── package.json
+│   │   ├── streamable-http-client.test.ts
+│   │   ├── tool-discovery-core.ts
+│   │   └── tsconfig.json
+│   ├── openshell-agent
+│   │   └── runtime.mts
+│   ├── pr-merge-conflict-fixer
+│   │   ├── discover.mts
+│   │   ├── merge.mts
+│   │   ├── policy.yaml
+│   │   ├── publish.mts
+│   │   └── resolve.mts
+│   ├── pr-review-advisor
+│   │   ├── README.md
+│   │   ├── analyze.mts
+│   │   ├── comment.mts
+│   │   ├── github-context.mts
+│   │   ├── openshell-policy.yaml
+│   │   ├── openshell.mts
+│   │   ├── prepare-target-pr.mts
+│   │   ├── review-ledger.mts
+│   │   ├── run-analysis.mts
+│   │   ├── schema.json
+│   │   ├── validate-artifacts.mts
+│   │   └── workflow-boundary.mts
+│   └── wsl
+│       └── ci-helper.ps1
 ├── tsconfig.cli.json
 ├── tsconfig.runtime-preloads.json
 ├── tsconfig.src.json
 ├── uninstall.sh
 └── vitest.config.ts
 
-246 directories, 2727 files
+260 directories, 2986 files
