@@ -24,6 +24,19 @@ import {
   type Host,
 } from "./provider-inference.test-support";
 
+function setupOptions(
+  session: { sessionId: string },
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    gatewayName: "nemoclaw",
+    allowToolsIncompatible: false,
+    endpointSource: null,
+    reservationSessionId: session.sessionId,
+    ...overrides,
+  };
+}
+
 describe("handleProviderInferenceState", () => {
   it("runs provider selection and inference setup on a fresh flow", async () => {
     const { deps, calls } = createDeps();
@@ -43,6 +56,11 @@ describe("handleProviderInferenceState", () => {
       expect.any(Function),
       session.sessionId,
     );
+    const selectionUpdates = (
+      calls.complete.mock.calls as unknown as Array<[string, Record<string, unknown>]>
+    ).find(([stepName]) => stepName === "provider_selection")?.[1];
+    expect(selectionUpdates).not.toHaveProperty("endpointSource");
+    expect(selectionUpdates).not.toHaveProperty("onboardEndpointUrl");
     expect(calls.promptName).toHaveBeenCalledWith(null);
     expect(calls.log).toHaveBeenCalledWith("summary:nvidia-prod/nvidia/test/my-assistant");
     expect(calls.startStep).toHaveBeenNthCalledWith(2, "inference", {
@@ -57,12 +75,9 @@ describe("handleProviderInferenceState", () => {
       "NVIDIA_INFERENCE_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
+      setupOptions(session, {
         preferredInferenceApi: "openai-responses",
-        reservationSessionId: session.sessionId,
-      },
+      }),
     );
     expect(calls.deleteEnv).toHaveBeenCalledWith("NVIDIA_INFERENCE_API_KEY");
     expect(result).toMatchObject({
@@ -71,6 +86,7 @@ describe("handleProviderInferenceState", () => {
       provider: "nvidia-prod",
       preferredInferenceApi: "openai-responses",
       compatibleEndpointReasoning: null,
+      compatibleEndpointReasoningEffort: null,
     });
     expect(result.stateResult).toEqual({
       type: "transition",
@@ -128,12 +144,9 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_ANTHROPIC_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
+      setupOptions(session, {
         preferredInferenceApi: "openai-completions",
-        reservationSessionId: session.sessionId,
-      },
+      }),
     );
     expect(result.preferredInferenceApi).toBe("openai-completions");
   });
@@ -172,12 +185,9 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_ANTHROPIC_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
+      setupOptions(session, {
         preferredInferenceApi: "openai-completions",
-        reservationSessionId: session.sessionId,
-      },
+      }),
     );
     expect(calls.complete).toHaveBeenCalledWith(
       "inference",
@@ -230,12 +240,10 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_ANTHROPIC_API_KEY",
       null,
       [],
-      {
+      setupOptions(session, {
         gatewayName: "nemoclaw-9090",
-        allowToolsIncompatible: false,
         preferredInferenceApi: "openai-completions",
-        reservationSessionId: session.sessionId,
-      },
+      }),
     );
   });
 
@@ -244,6 +252,7 @@ describe("handleProviderInferenceState", () => {
       const setupNim = vi.fn(async () => ({
         ...baseSelection,
         compatibleEndpointReasoning: "true",
+        compatibleEndpointReasoningEffort: null,
         provider: "compatible-endpoint",
         credentialEnv: "COMPATIBLE_API_KEY",
       }));
@@ -256,6 +265,7 @@ describe("handleProviderInferenceState", () => {
 
       expect(result).toMatchObject({
         compatibleEndpointReasoning: "true",
+        compatibleEndpointReasoningEffort: null,
         provider: "compatible-endpoint",
       });
     });
@@ -269,6 +279,7 @@ describe("handleProviderInferenceState", () => {
         provider: "nvidia-prod",
         model: "nvidia/test",
         compatibleEndpointReasoning: "true",
+        compatibleEndpointReasoningEffort: null,
       });
       session.steps.provider_selection.status = "complete";
       const setupInference = vi.fn(async () => {
@@ -375,6 +386,7 @@ describe("handleProviderInferenceState", () => {
       provider: "compatible-endpoint",
       model: "mock/mcp-bridge",
       endpointUrl: "https://compatible.example.test/v1",
+      endpointSource: null,
       credentialEnv: "COMPATIBLE_API_KEY",
       preferredInferenceApi: "openai-completions",
       gatewayName: "nemoclaw",
@@ -660,8 +672,10 @@ describe("handleProviderInferenceState", () => {
     const { deps, calls } = createDeps({ isInferenceRouteReady: vi.fn(() => true) });
     calls.promptName.mockResolvedValueOnce("tm");
 
+    const options = baseOptions(deps, session);
+    options.initial.endpointSource = "inference-set";
     const result = await handleProviderInferenceState({
-      ...baseOptions(deps, session),
+      ...options,
       resume: true,
       sandboxName: null,
     });
@@ -673,6 +687,7 @@ describe("handleProviderInferenceState", () => {
       provider: "nvidia-prod",
       model: "nvidia/nemotron-test",
       endpointUrl: "https://integrate.api.nvidia.com/v1",
+      endpointSource: "inference-set",
       credentialEnv: "NVIDIA_INFERENCE_API_KEY",
       preferredInferenceApi: "openai-responses",
       gatewayName: "nemoclaw",
@@ -727,6 +742,7 @@ describe("handleProviderInferenceState", () => {
       provider: "nvidia-prod",
       model: "nvidia/test",
       endpointUrl: "https://integrate.api.nvidia.com/v1",
+      endpointSource: null,
       credentialEnv: "NVIDIA_INFERENCE_API_KEY",
       preferredInferenceApi: "openai-responses",
       gatewayName: "nemoclaw",
@@ -916,11 +932,7 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
-        reservationSessionId: session.sessionId,
-      },
+      setupOptions(session),
     );
   });
 
@@ -957,11 +969,7 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
-        reservationSessionId: session.sessionId,
-      },
+      setupOptions(session),
     );
   });
 
@@ -999,11 +1007,7 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
-        reservationSessionId: session.sessionId,
-      },
+      setupOptions(session),
     );
     expect(calls.log).toHaveBeenCalledWith(
       "  [resume] Refreshing compatible-endpoint inference route for messaging.",
@@ -1106,15 +1110,12 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
+      setupOptions(session, {
         skipHostInferenceSmoke: true,
         reuseGatewayCredentialWithoutLocalKey: true,
         preferredInferenceApi: "openai-completions",
-        reservationSessionId: session.sessionId,
         isRecordedProviderRecoveryAuthorized: expect.any(Function),
-      },
+      }),
     );
     expect(recoveryAuthorization?.()).toBe(true);
   });
@@ -1202,11 +1203,7 @@ describe("handleProviderInferenceState", () => {
       "COMPATIBLE_API_KEY",
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
-        allowToolsIncompatible: false,
-        reservationSessionId: session.sessionId,
-      },
+      setupOptions(session),
     );
     expect(calls.log).toHaveBeenCalledWith(
       "  [resume] Refreshing compatible-endpoint inference route for messaging.",
@@ -1229,6 +1226,7 @@ describe("handleProviderInferenceState", () => {
       provider: "nvidia-router",
       model: "router/model",
       endpointUrl: "http://host.openshell.internal:4000/v1",
+      endpointSource: null,
       credentialEnv: null,
       preferredInferenceApi: null,
       gatewayName: "nemoclaw",
@@ -1349,6 +1347,7 @@ describe("handleProviderInferenceState", () => {
       provider: "nvidia-router",
       model: "router/model",
       endpointUrl: "http://host.openshell.internal:4000/v1",
+      endpointSource: null,
       credentialEnv: "NVIDIA_INFERENCE_API_KEY",
       preferredInferenceApi: null,
       gatewayName: "nemoclaw",
@@ -1489,12 +1488,10 @@ describe("handleProviderInferenceState", () => {
       null,
       null,
       [],
-      {
-        gatewayName: "nemoclaw",
+      setupOptions(session, {
         allowToolsIncompatible: true,
         preferredInferenceApi: "openai-responses",
-        reservationSessionId: session.sessionId,
-      },
+      }),
     );
   });
 });

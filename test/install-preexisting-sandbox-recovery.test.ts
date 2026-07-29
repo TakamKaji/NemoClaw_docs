@@ -29,6 +29,7 @@ function runRecoveryBeforeOnboard(
   options: {
     registryJson?: string;
     singleSession?: boolean;
+    stationExpressSelected?: boolean;
     stationResumeLoaded?: boolean;
     prepareState?: (tmp: string) => void;
   } = {},
@@ -41,8 +42,15 @@ function runRecoveryBeforeOnboard(
     ? recoveryExitCode
     : [recoveryExitCode, recoveryExitCode];
   const payloadDir = path.join(tmp, "payload");
+  const payloadLibDir = path.join(payloadDir, "lib");
   fs.mkdirSync(payloadDir);
+  fs.mkdirSync(payloadLibDir);
+  fs.copyFileSync(
+    path.join(path.dirname(INSTALLER_PAYLOAD), "lib", "station-vllm-conflict.sh"),
+    path.join(payloadLibDir, "station-vllm-conflict.sh"),
+  );
   fs.mkdirSync(path.join(tmp, ".nemoclaw"));
+  fs.chmodSync(path.join(tmp, ".nemoclaw"), 0o700);
   fs.writeFileSync(
     path.join(tmp, ".nemoclaw", "sandboxes.json"),
     options.registryJson ?? '{"sandboxes":{}}',
@@ -91,7 +99,9 @@ exit 0
     preflight_usage_notice_prompt() { :; }
     ensure_docker() { :; }
     ensure_openshell_build_deps() { :; }
-    maybe_offer_express_install() { :; }
+    maybe_offer_express_install() {
+      ${options.stationExpressSelected ? '_SELECTED_EXPRESS_PLATFORM="DGX Station"' : ":"}
+    }
     sleep() { printf 'sleep=%s\n' "$*" >> "${callLog}"; }
     step() { :; }
     install_nodejs() { :; }
@@ -104,6 +114,8 @@ exit 0
     install_nemoclaw() { :; }
     verify_nemoclaw() { _CLI_PATH="${cli}"; }
     run_installer_host_preflight() { return 0; }
+    ensure_station_express_host() { :; }
+    ensure_station_express_pair() { :; }
     run_onboard() { "${cli}" onboard; }
     restore_onboard_forward_after_post_checks() { return 0; }
     print_done() { printf 'PRINT_DONE\n'; }
@@ -142,6 +154,7 @@ describe("install.sh pre-existing sandbox recovery ordering (#6114)", () => {
   });
 
   it.each([
+    ["a selected Station Express attempt", { stationExpressSelected: true }],
     ["a loaded Station receipt", { stationResumeLoaded: true }],
     [
       "a pending Station receipt retirement",

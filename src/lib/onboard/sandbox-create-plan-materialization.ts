@@ -121,6 +121,7 @@ export function materializeSandboxCreatePlan({
   runProviderPreDeleteCleanup,
   upsertMessagingProviders,
   getHermesToolGatewayProviderName,
+  discloseInitialSandboxPolicy,
   prepareInitialSandboxCreatePolicy = getInitialSandboxCreatePolicy,
 }: MaterializeSandboxCreatePlanInput): SandboxCreatePlan {
   const enabledMessagingTokenDefs = validateSandboxCreateIntentBindings(intent, messagingTokenDefs);
@@ -129,13 +130,23 @@ export function materializeSandboxCreatePlan({
     [...intent.policy.activeMessagingChannels],
     {
       directGpu: intent.policy.options.directGpu,
+      hostGpuAvailable: intent.policy.options.hostGpuAvailable,
       additionalPresets: [...intent.policy.options.additionalPresets],
       agentName: intent.policy.options.agentName,
       policyTier: intent.policy.options.policyTier,
+      baselineExclusions: intent.policy.options.baselineExclusions.map((exclusion) => ({
+        ...exclusion,
+      })),
     },
     intent.gpuRoutePlan,
     prepareInitialSandboxCreatePolicy,
   );
+  try {
+    discloseInitialSandboxPolicy?.(initialSandboxPolicy);
+  } catch (error) {
+    initialSandboxPolicy.cleanup?.();
+    throw error;
+  }
   const createArgs = [
     "--from",
     `${buildCtx}/Dockerfile`,
@@ -159,14 +170,14 @@ export function materializeSandboxCreatePlan({
     providerChannels,
     new Set(intent.disabledChannelNames),
   );
-  for (const provider of messagingProviders) {
-    createArgs.push("--provider", provider);
-  }
+  const createProviders = new Set<string>();
+  if (intent.inferenceProvider) createProviders.add(intent.inferenceProvider);
+  for (const provider of messagingProviders) createProviders.add(provider);
   if (intent.hermesToolGateways.length > 0) {
-    createArgs.push("--provider", getHermesToolGatewayProviderName(intent.sandboxName));
+    createProviders.add(getHermesToolGatewayProviderName(intent.sandboxName));
   }
-  for (const provider of intent.extraProviders) {
-    if (messagingProviders.includes(provider)) continue;
+  for (const provider of intent.extraProviders) createProviders.add(provider);
+  for (const provider of createProviders) {
     createArgs.push("--provider", provider);
   }
 

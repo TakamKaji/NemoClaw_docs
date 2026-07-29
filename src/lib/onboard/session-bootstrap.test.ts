@@ -382,8 +382,10 @@ describe("prepareOnboardSession", () => {
       webSearch: decisionUnset(),
       messaging: decisionUnset(),
       resourceProfile: decisionUnset(),
+      gatewayAuthority: decisionUnset(),
       effectGroups: {},
       bindings: { credentialEnvs: [], registeredProviders: [] },
+      sandboxRecreate: null,
     };
     session.checkpoint = checkpoint;
     const { deps } = createDeps(session, {
@@ -432,8 +434,10 @@ describe("prepareOnboardSession", () => {
       webSearch: decisionUnset(),
       messaging: decisionUnset(),
       resourceProfile: decisionUnset(),
+      gatewayAuthority: decisionUnset(),
       effectGroups: {},
       bindings: { credentialEnvs: [], registeredProviders: [] },
+      sandboxRecreate: null,
     };
     const { deps } = createDeps(session);
 

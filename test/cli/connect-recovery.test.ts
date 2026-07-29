@@ -175,6 +175,7 @@ describe("CLI connect recovery process contracts", () => {
           `marker_file=${JSON.stringify(markerFile)}`,
           `state_file=${JSON.stringify(stateFile)}`,
           'printf \'%s\\n\' "$*" >> "$marker_file"',
+          'if [ "$1" = "sandbox" ] && [ "$2" = "list" ]; then echo "alpha  Ready"; exit 0; fi',
           'if [ "$1" = "sandbox" ] && [ "$2" = "get" ] && { [ "$3" = "alpha" ] || [ "$5" = "alpha" ]; }; then',
           "  echo 'Sandbox:'",
           "  echo",
@@ -248,6 +249,7 @@ describe("CLI connect recovery process contracts", () => {
           `calls=${JSON.stringify(openshellCalls)}`,
           `state_file=${JSON.stringify(stateFile)}`,
           'printf \'%s\\n\' "$*" >> "$calls"',
+          'if [ "$1" = "sandbox" ] && [ "$2" = "list" ]; then echo "alpha  Ready"; exit 0; fi',
           'if [ "$1" = "sandbox" ] && [ "$2" = "get" ] && { [ "$3" = "alpha" ] || [ "$5" = "alpha" ]; }; then',
           "  echo 'Sandbox:'",
           "  echo",
@@ -317,6 +319,7 @@ describe("CLI connect recovery process contracts", () => {
         `calls=${JSON.stringify(openshellCalls)}`,
         `state_file=${JSON.stringify(stateFile)}`,
         'printf \'%s\\n\' "$*" >> "$calls"',
+        'if [ "$1" = "sandbox" ] && [ "$2" = "list" ]; then echo "alpha  Ready"; exit 0; fi',
         'if [ "$1" = "sandbox" ] && [ "$2" = "get" ] && { [ "$3" = "alpha" ] || [ "$5" = "alpha" ]; }; then',
         "  echo 'Sandbox:'",
         "  echo",
@@ -476,7 +479,7 @@ describe("CLI connect recovery process contracts", () => {
     expect(result.code).toBe(0);
     const calls = fs.readFileSync(markerFile, "utf8");
     expect(calls).toContain("sandbox list");
-    expect(calls).toContain("sandbox get alpha");
+    expect(calls).toContain("sandbox get -g nemoclaw alpha");
     expect(calls).toContain("sandbox connect alpha");
     const recoveredRegistry = JSON.parse(
       fs.readFileSync(path.join(nemoclawDir, "sandboxes.json"), "utf8"),

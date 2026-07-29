@@ -87,8 +87,10 @@ describe("resolveCheckpointForResume", () => {
     webSearch: decisionUnset(),
     messaging: decisionUnset(),
     resourceProfile: decisionUnset(),
+    gatewayAuthority: decisionUnset(),
     effectGroups: {},
     bindings: { credentialEnvs: [], registeredProviders: [] },
+    sandboxRecreate: null,
   };
 
   it("returns loaded when the embedded checkpoint is valid", () => {

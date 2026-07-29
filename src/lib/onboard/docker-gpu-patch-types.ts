@@ -18,6 +18,9 @@ type DockerRenameFn = (
   opts?: DockerRunOptions,
 ) => DockerRunResult;
 type DockerLogsFn = (containerName: string, opts?: { tail?: number; timeout?: number }) => string;
+type ContainerDnsProbeFn = (
+  opts?: import("./preflight").ProbeContainerDnsOpts,
+) => import("./preflight").DnsProbeResult;
 
 export type DockerGpuPatchDeps = {
   dockerCapture?: DockerCaptureFn;
@@ -34,12 +37,14 @@ export type DockerGpuPatchDeps = {
   homedir?: () => string;
   now?: () => Date;
   detectSandboxFallbackDns?: () => string | null;
+  /** Probe the exact fallback resolver before destructive recreation. */
+  probeContainerDns?: ContainerDnsProbeFn;
   /**
    * Resolve the host group ID(s) that own the Jetson/Tegra GPU device nodes
-   * (`/dev/nvmap`, `/dev/nvhost-*`). Used by the Jetson recreate to grant the
-   * sandbox user matching `--group-add` membership so CUDA can open them
-   * (#4231). Injectable so the Jetson permission path is testable without
-   * Tegra hardware.
+   * (`/dev/nvmap`, `/dev/nvhost-*`, and `/dev/dri/renderD*`). Used by the
+   * Jetson recreate to grant the sandbox user matching `--group-add`
+   * membership so CUDA can open them (#4231, #7610). Injectable so the Jetson
+   * permission path is testable without Tegra hardware.
    */
   detectTegraDeviceGroupGids?: () => string[];
   /** Injectable directory lister for unit testing CDI spec discovery. */
@@ -110,9 +115,9 @@ export type DockerGpuCloneRunOptions = {
   /**
    * Extra supplementary group IDs to add to the recreated container via
    * `--group-add`. On Jetson these are the host group(s) owning the Tegra GPU
-   * device nodes (`/dev/nvmap`, `/dev/nvhost-*`); granting the sandbox user
-   * membership lets CUDA's nvmap init open them instead of failing with
-   * `NvRmMemInitNvmap ... Permission denied` (#4231).
+   * device nodes; granting the sandbox user membership lets CUDA's nvmap init
+   * open them instead of failing with `NvRmMemInitNvmap ... Permission
+   * denied` (#4231, #7610).
    */
   extraGroupGids?: readonly string[] | null;
 };

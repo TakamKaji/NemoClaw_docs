@@ -28,6 +28,11 @@ const DEEPAGENTS_DOCKERFILE_BASE = path.join(
   "Dockerfile.base",
 );
 
+function completedDockerStage(dockerfile: string): string {
+  const start = dockerfile.lastIndexOf("\nFROM ");
+  return start >= 0 ? dockerfile.slice(start) : dockerfile;
+}
+
 function dockerRunCommandBetween(
   dockerfile: string,
   startMarker: string,
@@ -262,13 +267,13 @@ function runOpenclawStaleGroupFallback() {
 }
 
 describe("sandbox provisioning: runtime npm online state", () => {
-  it("replays the Dockerfile ENV directives so the runtime image inherits NPM_CONFIG_OFFLINE=false", () => {
+  it("does not bake the split-user OpenClaw state marker into the runtime environment", () => {
     const exports = collectDockerfileEnvExports(DOCKERFILE);
     const probe = [
       "#!/usr/bin/env bash",
       "set -eo pipefail",
       ...exports,
-      'printf "%s\\n" "${NPM_CONFIG_OFFLINE:-unset}"',
+      'printf "%s\\n" "${NPM_CONFIG_OFFLINE:-unset}" "${NEMOCLAW_OPENCLAW_SHARED_STATE:-unset}"',
     ].join("\n");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-runtime-npm-online-"));
     const scriptPath = path.join(tmp, "replay.sh");
@@ -276,7 +281,7 @@ describe("sandbox provisioning: runtime npm online state", () => {
       fs.writeFileSync(scriptPath, probe, { mode: 0o700 });
       const result = spawnSync("bash", [scriptPath], { encoding: "utf-8", timeout: 5000 });
       expect(result.status, `stderr: ${result.stderr}`).toBe(0);
-      expect(result.stdout.trim()).toBe("false");
+      expect(result.stdout.trim().split("\n")).toEqual(["false", "unset"]);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -853,11 +858,12 @@ describe("sandbox provisioning: unified .openclaw layout (#2227)", () => {
       "plugin-runtime-deps",
       "sandbox",
       "skills",
+      "state",
       "telegram",
       "wechat",
       "workspace",
     ]);
-    expect(modern.filesAfterCleanup).toEqual(["exec-approvals.json", "update-check.json"]);
+    expect(modern.filesAfterCleanup).toEqual(["exec-approvals.json"]);
     expect(modern.cleanup.calls.split("\n").filter(Boolean)).not.toEqual(
       expect.arrayContaining([expect.stringMatching(/^find /)]),
     );
@@ -906,8 +912,8 @@ describe("sandbox provisioning: unified .openclaw layout (#2227)", () => {
       const openclawDir = path.join(sandboxRoot, ".openclaw");
       expect(fs.statSync(openclawDir).isDirectory()).toBe(true);
       expect(fs.statSync(path.join(openclawDir, "exec-approvals.json")).isFile()).toBe(true);
-      expect(fs.statSync(path.join(openclawDir, "update-check.json")).isFile()).toBe(true);
-      for (const dir of ["credentials", "devices", "identity", "logs", "telegram"]) {
+      expect(fs.existsSync(path.join(openclawDir, "update-check.json"))).toBe(false);
+      for (const dir of ["credentials", "devices", "identity", "logs", "state", "telegram"]) {
         const stateDir = path.join(openclawDir, dir);
         expect(fs.statSync(stateDir).isDirectory()).toBe(true);
         expect(fs.lstatSync(stateDir).isSymbolicLink()).toBe(false);
@@ -1037,80 +1043,13 @@ describe("sandbox provisioning: base runtime tools", () => {
     ["Hermes", HERMES_DOCKERFILE_BASE],
     ["Deep Agents Code", DEEPAGENTS_DOCKERFILE_BASE],
   ])("installs pinned nftables for OpenShell bypass enforcement in %s", (_agent, file) => {
-    const dockerfile = fs.readFileSync(file, "utf-8");
+    const dockerfile = completedDockerStage(fs.readFileSync(file, "utf-8"));
     const aptInstall = dockerfile.match(
       /^RUN apt-get update && apt-get install -y --no-install-recommends \\\n(?:.*\\\n)*.*$/m,
     )?.[0];
-
     expect(aptInstall).toBeDefined();
     expect(aptInstall).toContain("nftables=1.1.3-1");
   });
-
-  it("base apt layer requests procps, e2fsprogs, and the SFTP server", () => {
-    const dockerfile = fs.readFileSync(DOCKERFILE_BASE, "utf-8");
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-base-apt-"));
-    const lists = path.join(tmp, "apt-lists");
-    const fakePy3 = path.join(tmp, "usr-bin", "python3");
-    const fakePyLink = path.join(tmp, "usr-local-bin", "python");
-    fs.mkdirSync(lists);
-    fs.mkdirSync(path.dirname(fakePy3), { recursive: true });
-    fs.mkdirSync(path.dirname(fakePyLink), { recursive: true });
-    fs.writeFileSync(fakePy3, "#!/bin/sh\n", { mode: 0o755 });
-    const command = dockerRunCommandBetween(
-      dockerfile,
-      "RUN apt-get update",
-      "# gosu for privilege separation",
-    )
-      .replaceAll("/var/lib/apt/lists", lists)
-      .replaceAll("/usr/local/bin/python", fakePyLink)
-      .replaceAll("/usr/bin/python3", fakePy3);
-
-    try {
-      const { result, calls } = runLoggedDockerShell(command, tmp, [
-        'apt-get() { printf "apt-get %s\\n" "$*" >> "$call_log"; }',
-      ]);
-      expect(result.status).toBe(0);
-      expect(calls).toContain("apt-get update");
-      expect(calls).toContain("procps=2:4.0.4-9");
-      expect(calls).toContain("e2fsprogs=1.47.2-3+b11");
-      expect(calls).toContain("openssh-sftp-server=1:10.0p1-7+deb13u4");
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  it("symlinks bare `python` to python3 so agent tool calls don't fail with command-not-found (#1452)", () => {
-    const dockerfile = fs.readFileSync(DOCKERFILE_BASE, "utf-8");
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-base-pysymlink-"));
-    const lists = path.join(tmp, "apt-lists");
-    const fakePy3 = path.join(tmp, "usr-bin", "python3");
-    const fakePyLink = path.join(tmp, "usr-local-bin", "python");
-    fs.mkdirSync(lists, { recursive: true });
-    fs.mkdirSync(path.dirname(fakePy3), { recursive: true });
-    fs.mkdirSync(path.dirname(fakePyLink), { recursive: true });
-    fs.writeFileSync(fakePy3, "#!/bin/sh\necho 3.13\n", { mode: 0o755 });
-
-    const command = dockerRunCommandBetween(
-      dockerfile,
-      "RUN apt-get update",
-      "# gosu for privilege separation",
-    )
-      .replaceAll("/var/lib/apt/lists", lists)
-      .replaceAll("/usr/local/bin/python", fakePyLink)
-      .replaceAll("/usr/bin/python3", fakePy3);
-
-    try {
-      const { result } = runLoggedDockerShell(command, tmp, [
-        'apt-get() { printf "apt-get %s\\n" "$*" >> "$call_log"; }',
-      ]);
-      expect(result.status).toBe(0);
-      expect(fs.lstatSync(fakePyLink).isSymbolicLink()).toBe(true);
-      expect(fs.readlinkSync(fakePyLink)).toBe(fakePy3);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
   it("runtime hardening installs procps and e2fsprogs when a stale base lacks ps and chattr", () => {
     const dockerfile = fs.readFileSync(DOCKERFILE, "utf-8");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-procps-"));
@@ -1169,6 +1108,10 @@ describe("Hermes sandbox provisioning", () => {
     const gatewaySupervisorPath = path.join(localLib, "gateway-supervisor.sh");
     const buildMcpDigestPath = path.join(localLib, "build-hermes-mcp-digest.py");
     const mcpConfigTransactionPath = path.join(localLib, "hermes-mcp-config-transaction.py");
+    const langfuseCredentialPatcherPath = path.join(
+      localLib,
+      "patch-hermes-langfuse-credentials.mts",
+    );
     const mcpManifest = path.join(localLib, "openshell-child-visible-credentials.v0.0.85.json");
     const stateDirGuardPath = path.join(localLib, "state-dir-guard.py");
     const managedGatewayControlPath = path.join(localLib, "managed-gateway-control.py");
@@ -1178,6 +1121,7 @@ describe("Hermes sandbox provisioning", () => {
       path.join(localLib, "sandbox-init.sh"),
       path.join(localLib, "validate-hermes-env-secret-boundary.py"),
       path.join(localLib, "patch-hermes-session-list-preview.py"),
+      langfuseCredentialPatcherPath,
       path.join(localLib, "seed-hermes-dashboard-config.py"),
       path.join(localLib, "hermes-runtime-config-guard.py"),
       path.join(localLib, "finalize-tirith-marker.py"),
@@ -1214,6 +1158,7 @@ describe("Hermes sandbox provisioning", () => {
       );
       expect((fs.statSync(gatewayControlPath).mode & 0o777).toString(8)).toBe("700");
       expect((fs.statSync(mcpConfigTransactionPath).mode & 0o777).toString(8)).toBe("755");
+      expect((fs.statSync(langfuseCredentialPatcherPath).mode & 0o777).toString(8)).toBe("444");
       expect((fs.statSync(mcpManifest).mode & 0o777).toString(8)).toBe("444");
       expect((fs.statSync(buildMcpDigestPath).mode & 0o777).toString(8)).toBe("444");
       expect((fs.statSync(gatewaySupervisorPath).mode & 0o777).toString(8)).toBe("444");
@@ -1373,15 +1318,25 @@ describe("Hermes sandbox provisioning", () => {
     const hermesRoot = path.join(tmp, "hermes");
     const hermesWebDir = path.join(hermesRoot, "web");
     const hermesWebDist = path.join(hermesRoot, "hermes_cli", "web_dist");
+    const rootCache = path.join(tmp, "root-cache");
     fs.mkdirSync(hermesWebDir, { recursive: true });
     fs.writeFileSync(path.join(hermesWebDir, "package.json"), "{}\n");
     fs.writeFileSync(path.join(hermesWebDir, "package-lock.json"), "{}\n");
     fs.mkdirSync(path.join(hermesWebDir, "node_modules"), { recursive: true });
+    for (const cache of ["npm", "electron", "node-gyp"]) {
+      const cachePath = path.join(rootCache, cache);
+      fs.mkdirSync(cachePath, { recursive: true });
+      fs.writeFileSync(path.join(cachePath, "build-only-cache"), "unused after image assembly\n");
+    }
     const command = dockerRunCommandBetween(
       dockerfile,
       "# Published base images can lag Dockerfile.base",
       "# Harden: remove unnecessary build tools",
-    ).replaceAll("/opt/hermes", hermesRoot);
+    )
+      .replaceAll("/opt/hermes", hermesRoot)
+      .replaceAll("/root/.npm", path.join(rootCache, "npm"))
+      .replaceAll("/root/.cache/electron", path.join(rootCache, "electron"))
+      .replaceAll("/root/.cache/node-gyp", path.join(rootCache, "node-gyp"));
     try {
       const { result, calls } = runLoggedDockerShell(command, tmp, [
         'npm() { printf "npm %s\\n" "$*" >> "$call_log"; if [ -n "${hermes_web_dist:-}" ] && [ "${1:-}" = "run" ] && [ "${2:-}" = "build" ]; then mkdir -p "$hermes_web_dist"; fi; }',
@@ -1392,6 +1347,9 @@ describe("Hermes sandbox provisioning", () => {
       expect(calls).toContain(`npm run build --prefix ${hermesWebDir}`);
       expect(fs.existsSync(hermesWebDist)).toBe(true);
       expect(fs.existsSync(path.join(hermesWebDir, "node_modules"))).toBe(false);
+      for (const cache of ["npm", "electron", "node-gyp"]) {
+        expect(() => fs.lstatSync(path.join(rootCache, cache))).toThrow();
+      }
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

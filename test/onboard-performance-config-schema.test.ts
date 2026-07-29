@@ -21,10 +21,12 @@ const PHASE_NAMES = [
 type PhaseName = (typeof PHASE_NAMES)[number];
 type PhaseBudgets = Record<PhaseName, number>;
 interface ColdPathBudget {
+  authoritativeLocalBaseBuildAllowanceMs: number;
   rootStartToFirstTurnCompletionBudgetMs: number;
   rootEndToFirstTurnCompletionBudgetMs: number;
   phaseBudgetsMs: PhaseBudgets;
 }
+type CalibratedColdPathBudget = Omit<ColdPathBudget, "authoritativeLocalBaseBuildAllowanceMs">;
 interface CalibrationSample {
   runId: number;
   runUrl: string;
@@ -83,7 +85,39 @@ interface Calibration {
       sandboxPhaseBudgetMs: number;
     };
   };
-  derivedBudgetsMs: ColdPathBudget;
+  authoritativeLocalBaseBuildAdjustment: {
+    validatedAt: string;
+    triggerOutput: string;
+    adjustedMetrics: string[];
+    derivation: {
+      statistic: string;
+      minimumHeadroomMs: number;
+      relativeHeadroomPercent: number;
+      roundUpMs: number;
+    };
+    runs: Array<{
+      runId: number;
+      runUrl: string;
+      headSha: string;
+      triggerEvidence: {
+        artifact: string;
+        path: string;
+        output: string;
+      };
+      nativeSecurityInputPaths: string[];
+      rootStartToFirstTurnCompletionMs: number;
+      sandboxPhaseMs: number;
+    }>;
+    retirement: {
+      trigger: string;
+      minimumSampleCount: number;
+      allSamplesSameHead: boolean;
+      nativeSecurityInputsMustBeUnchanged: boolean;
+      action: string;
+    };
+    derivedAllowanceMs: number;
+  };
+  derivedBudgetsMs: CalibratedColdPathBudget;
 }
 
 const checkedInConfig = JSON.parse(
@@ -104,6 +138,7 @@ const validConfig = {
   regressionWarning: { minDeltaMs: 0, minPercent: 0 },
   phaseRegressionWarning: { minDeltaMs: 0, minPercent: 0 },
   fullE2eColdPath: {
+    authoritativeLocalBaseBuildAllowanceMs: 500,
     rootStartToFirstTurnCompletionBudgetMs: 5_000,
     rootEndToFirstTurnCompletionBudgetMs: 1_000,
     phaseBudgetsMs,
@@ -118,6 +153,17 @@ describe("onboard performance config schema", () => {
   it("requires the cold-path config at the root", () => {
     const { fullE2eColdPath: _, ...withoutColdPath } = validConfig;
     expect(validate(withoutColdPath)).toBe(false);
+  });
+
+  it("requires the authoritative local-build allowance", () => {
+    const { authoritativeLocalBaseBuildAllowanceMs: _, ...withoutLocalBuildAllowance } =
+      validConfig.fullE2eColdPath;
+    expect(
+      validate({
+        ...validConfig,
+        fullE2eColdPath: withoutLocalBuildAllowance,
+      }),
+    ).toBe(false);
   });
 
   it("enforces the root-end budget against the root-start budget", () => {
@@ -182,7 +228,7 @@ function derivedThreshold(values: number[], derivation: Calibration["derivation"
   return Math.ceil((percentileValue + headroom) / derivation.roundUpMs) * derivation.roundUpMs;
 }
 
-function deriveBudgets(input: Calibration): ColdPathBudget {
+function deriveBudgets(input: Calibration): CalibratedColdPathBudget {
   const threshold = (values: number[]) => derivedThreshold(values, input.derivation);
   const phaseBudgets = {} as PhaseBudgets;
   for (const phaseName of PHASE_NAMES) {
@@ -217,6 +263,8 @@ function effectiveBudgets(input: Calibration): ColdPathBudget {
   const baseline = input.derivedBudgetsMs;
   const adjustment = input.validationAdjustment?.derivedCapsMs;
   return {
+    authoritativeLocalBaseBuildAllowanceMs:
+      input.authoritativeLocalBaseBuildAdjustment.derivedAllowanceMs,
     ...baseline,
     rootStartToFirstTurnCompletionBudgetMs: Math.max(
       baseline.rootStartToFirstTurnCompletionBudgetMs,
@@ -301,7 +349,7 @@ function validationProvenanceViolations(
 }
 
 describe("full-E2E cold-path calibration", () => {
-  // source-shape-contract: compatibility -- Exact-head provenance is durable evidence for the hosted-run budget calibration
+  // source-shape-contract: compatibility -- SHA provenance is durable evidence for the hosted-run budget calibration
   it("records five independent successful samples for current main", () => {
     expect(calibration.schemaVersion).toBe(1);
     expect(calibration.baselineMainSha).toMatch(/^[0-9a-f]{40}$/u);
@@ -405,7 +453,7 @@ describe("full-E2E cold-path calibration", () => {
     ]);
     expect(validation.derivation.statistic).toBe("maximum");
     expect(validation.retirement).toEqual({
-      trigger: "successful-exact-head-calibration",
+      trigger: "successful-single-sha-calibration",
       minimumSampleCount: 5,
       allSamplesSameHead: true,
       imageChangeMustBeAncestor: true,
@@ -450,8 +498,84 @@ describe("full-E2E cold-path calibration", () => {
       ),
     });
     expect(checkedInConfig.fullE2eColdPath).toEqual(effectiveBudgets(calibration));
-    expect(effectiveBudgets({ ...calibration, validationAdjustment: undefined })).toEqual(
-      calibration.derivedBudgetsMs,
+    expect(effectiveBudgets({ ...calibration, validationAdjustment: undefined })).toEqual({
+      authoritativeLocalBaseBuildAllowanceMs:
+        calibration.authoritativeLocalBaseBuildAdjustment.derivedAllowanceMs,
+      ...calibration.derivedBudgetsMs,
+    });
+  });
+
+  // source-shape-contract: compatibility -- Exact PR run evidence keeps the local-build allowance bounded and reproducible
+  it("keeps the authoritative local-build allowance tied to exact PR evidence", () => {
+    const adjustment = calibration.authoritativeLocalBaseBuildAdjustment;
+    expect(adjustment.validatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+    expect(adjustment.triggerOutput).toContain("Building OpenClaw sandbox base image locally");
+    expect(adjustment.adjustedMetrics).toEqual([
+      "rootStartToFirstTurnCompletion",
+      "nemoclaw.onboard.phase.sandbox",
+    ]);
+    expect(adjustment.derivation.statistic).toBe("maximum-budget-excess");
+    expect(adjustment.runs.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(adjustment.runs.map((run) => run.runId)).size).toBe(adjustment.runs.length);
+    for (const run of adjustment.runs) {
+      expect(run.runUrl).toBe(`https://github.com/NVIDIA/NemoClaw/actions/runs/${run.runId}`);
+      expect(run.headSha).toMatch(/^[0-9a-f]{40}$/u);
+      expect(run.triggerEvidence).toEqual({
+        artifact: "e2e-full-e2e",
+        path: "full-e2e-install-onboard-inference-cli-operations-and-cleanup/shell/phase-1-install-sh.stderr.txt",
+        output: adjustment.triggerOutput,
+      });
+      expect(new Set(run.nativeSecurityInputPaths).size).toBe(run.nativeSecurityInputPaths.length);
+    }
+    expect(
+      adjustment.runs.map((run) => ({
+        headSha: run.headSha,
+        nativeSecurityInputPaths: run.nativeSecurityInputPaths,
+      })),
+    ).toEqual([
+      {
+        headSha: "188d9a75b3e5efdafeb38e885138bb196197574f",
+        nativeSecurityInputPaths: [],
+      },
+      {
+        headSha: "188d9a75b3e5efdafeb38e885138bb196197574f",
+        nativeSecurityInputPaths: [],
+      },
+      {
+        headSha: "5f190e4948a11f8b05655e085c11803ce0a9a0a8",
+        nativeSecurityInputPaths: [
+          "Dockerfile.base",
+          "scripts/security/build-native-security-packages.sh",
+          "scripts/security/patches/libssh2-1.11.1-cve-2026.patch",
+          "scripts/security/patches/python3.13-htmlparser-cve-2026-15308.patch",
+        ],
+      },
+    ]);
+    expect(adjustment.retirement).toEqual({
+      trigger: "successful-single-sha-calibration",
+      minimumSampleCount: 5,
+      allSamplesSameHead: true,
+      nativeSecurityInputsMustBeUnchanged: true,
+      action: "replace-baseline-and-remove-adjustment",
+    });
+    const maximumExcessMs = Math.max(
+      ...adjustment.runs.flatMap((run) => [
+        run.rootStartToFirstTurnCompletionMs -
+          checkedInConfig.fullE2eColdPath.rootStartToFirstTurnCompletionBudgetMs,
+        run.sandboxPhaseMs -
+          checkedInConfig.fullE2eColdPath.phaseBudgetsMs["nemoclaw.onboard.phase.sandbox"],
+      ]),
+    );
+    const headroomMs = Math.max(
+      adjustment.derivation.minimumHeadroomMs,
+      maximumExcessMs * (adjustment.derivation.relativeHeadroomPercent / 100),
+    );
+    expect(adjustment.derivedAllowanceMs).toBe(
+      Math.ceil((maximumExcessMs + headroomMs) / adjustment.derivation.roundUpMs) *
+        adjustment.derivation.roundUpMs,
+    );
+    expect(checkedInConfig.fullE2eColdPath.authoritativeLocalBaseBuildAllowanceMs).toBe(
+      adjustment.derivedAllowanceMs,
     );
   });
 });

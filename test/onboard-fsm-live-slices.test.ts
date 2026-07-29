@@ -18,6 +18,7 @@ type ProbeMode =
   | "resume-initial"
   | "resume-core-gateway"
   | "resume-incomplete-core-gateway"
+  | "resume-core-gateway-provenance-resolver"
   | "authoritative-core-gateway"
   | "authoritative-core-gateway-policy-tier"
   | "ordinary-policy-tier"
@@ -206,10 +207,22 @@ const registry = require(${registryPath});
 const called = [];
 const sentinel = new Error("slice-called");
 
-if (scenario.mode.endsWith("policy-tier")) {
-  coreFlowPhases.createCoreOnboardFlowPhases = (options) => {
-    const tier = options.sandbox.authoritativePolicyTier;
-    called.push("authoritative-policy-tier:" + (tier === undefined ? "undefined" : String(tier)));
+if (scenario.mode.endsWith("policy-tier") || scenario.mode.endsWith("provenance-resolver")) {
+  const readsProvenance = scenario.mode.endsWith("provenance-resolver");
+  const factoryName = readsProvenance
+    ? "createProviderInferenceOnboardFlowPhase"
+    : "createSandboxOnboardFlowPhase";
+  coreFlowPhases[factoryName] = (options) => {
+    const detail = readsProvenance
+      ? (() => {
+          const entry = options.endpointProvenance.getSandboxRegistryEntry("fsm-sandbox");
+          return ["registry-provenance", entry?.provider, entry?.endpointUrl, entry?.endpointSource].join(":");
+        })()
+      : "authoritative-policy-tier:" +
+        (options.authoritativePolicyTier === undefined
+          ? "undefined"
+          : String(options.authoritativePolicyTier));
+    called.push(detail);
     throw sentinel;
   };
 }
@@ -273,11 +286,7 @@ preflightHandlers.handlePreflightState = async (options) => {
       stateResult: advanceTo("gateway", { metadata: { state: "preflight" } }),
     };
   }
-  if (scenario.mode !== "resume-initial") {
-    throw new Error("unexpected preflight compatibility handler");
-  }
-  called.push("preflight-compat");
-  throw sentinel;
+  throw new Error("unexpected preflight compatibility handler");
 };
 
 gatewayHandlers.handleGatewayState = async (options) => {
@@ -303,12 +312,9 @@ providerHandlers.handleProviderInferenceState = async (options) => {
 };
 
 flowSlices.runInitialOnboardFlowSequence = async ({ context, runtime }) => {
-  called.push("initial");
-  if (scenario.mode === "resume-initial") {
-    throw new Error("strict initial runner should not run on resume");
-  }
-  if (scenario.slice === "initial") throw sentinel;
   const initialSession = await runtime.session();
+  called.push("initial:" + initialSession.machine.state);
+  if (scenario.slice === "initial") throw sentinel;
   if (initialSession.machine?.state === "init") {
     await runtime.applyResult(advanceTo("preflight"));
   }
@@ -346,11 +352,17 @@ if (scenario.mode === "resume-initial") {
 if (scenario.mode.includes("core-gateway")) {
   seedResumeSession("inference", scenario.mode !== "resume-incomplete-core-gateway");
 }
-if (scenario.mode === "resume-core-gateway" || scenario.mode === "resume-incomplete-core-gateway") {
+if (
+  scenario.mode === "resume-core-gateway" ||
+  scenario.mode === "resume-incomplete-core-gateway" ||
+  scenario.mode === "resume-core-gateway-provenance-resolver"
+) {
   registry.registerSandbox({
     name: "fsm-sandbox",
     provider: "openai-api",
     model: "gpt-test",
+    endpointUrl: "https://persisted.example.test/v1",
+    endpointSource: "onboard",
     gatewayName: "nemoclaw-9090",
     gatewayPort: 9090,
   });
@@ -439,7 +451,7 @@ describe("live onboard FSM slice boundaries", () => {
   });
 
   it("enters the initial slice on fresh onboard runs", () => {
-    assert.deepEqual(runSliceProbe({ slice: "initial" }), ["initial"]);
+    assert.deepEqual(runSliceProbe({ slice: "initial" }), ["initial:init"]);
   });
 
   it("rejects an ambient gateway endpoint before entering the initial slice", () => {
@@ -447,22 +459,22 @@ describe("live onboard FSM slice boundaries", () => {
   });
 
   it("enters the core slice after the initial slice reaches provider selection", () => {
-    assert.deepEqual(runSliceProbe({ slice: "core" }), ["initial", "core"]);
+    assert.deepEqual(runSliceProbe({ slice: "core" }), ["initial:init", "core"]);
   });
 
   it("enters the final slice after the core slice reaches the branch state", () => {
-    assert.deepEqual(runSliceProbe({ slice: "final" }), ["initial", "core", "final"]);
+    assert.deepEqual(runSliceProbe({ slice: "final" }), ["initial:init", "core", "final"]);
   });
 
-  it("bypasses the strict initial runner on resume and reaches compatibility phases", () => {
+  it("enters the strict initial runner at preflight on an exact-state resume", () => {
     assert.deepEqual(runSliceProbe({ slice: "initial", mode: "resume-initial" }), [
-      "preflight-compat",
+      "initial:preflight",
     ]);
   });
 
   it("bypasses the strict core runner when fresh state is already past the core entry", () => {
     assert.deepEqual(runSliceProbe({ slice: "core", mode: "ahead-core" }), [
-      "initial",
+      "initial:init",
       "provider-compat",
     ]);
   });
@@ -481,6 +493,16 @@ describe("live onboard FSM slice boundaries", () => {
     ]);
   });
 
+  it("wires the live sandbox registry resolver into core provenance", () => {
+    assert.deepEqual(
+      runSliceProbe({ slice: "core", mode: "resume-core-gateway-provenance-resolver" }),
+      [
+        "gateway:nemoclaw-9090:nemoclaw-9090",
+        "registry-provenance:openai-api:https://persisted.example.test/v1:onboard",
+      ],
+    );
+  });
+
   it("keeps an authoritative rebuild gateway after the registry row is removed", () => {
     assert.deepEqual(runSliceProbe({ slice: "core", mode: "authoritative-core-gateway" }), [
       "gateway:nemoclaw-9090:nemoclaw-9090",
@@ -491,7 +513,7 @@ describe("live onboard FSM slice boundaries", () => {
   it("leaves ordinary policy tiers non-authoritative in the runOnboard machine", () => {
     for (const policyTier of ["balanced", "restricted"] as const) {
       assert.deepEqual(runSliceProbe({ slice: "core", mode: "ordinary-policy-tier", policyTier }), [
-        "initial",
+        "initial:init",
         "authoritative-policy-tier:undefined",
       ]);
     }

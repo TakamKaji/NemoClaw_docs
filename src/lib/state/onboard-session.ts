@@ -19,6 +19,7 @@ import type { SandboxMessagingPlan } from "../messaging/manifest";
 import { compactSandboxMessagingPlanForPersistence } from "../messaging/persistence";
 import { parseSandboxMessagingPlan } from "../messaging/plan-validation";
 import { NAME_MAX_LENGTH, NAME_VALID_PATTERN } from "../name-validation";
+import { describeGatewayOwner, type GatewayOwnerDescription } from "../onboard/gateway-ownership";
 import {
   createOnboardMachineEvent,
   emitOnboardMachineEvent,
@@ -30,6 +31,7 @@ import {
   isTerminalOnboardMachineState,
 } from "../onboard/machine/transitions";
 import type { OnboardMachineState, OnboardNonTerminalMachineState } from "../onboard/machine/types";
+import { normalizeReasoningEffort, type ReasoningEffort } from "../onboard/reasoning-mode";
 import {
   assertStationExpressInstallerResumeMatches,
   bindStationExpressProviderSelection,
@@ -172,6 +174,7 @@ export interface Session {
   hermesAuthMethod: HermesAuthMethod | null;
   preferredInferenceApi: string | null;
   compatibleEndpointReasoning: string | null;
+  compatibleEndpointReasoningEffort: ReasoningEffort | null;
   nimContainer: string | null;
   routerPid: number | null;
   routerCredentialHash: string | null;
@@ -255,6 +258,7 @@ export interface SessionUpdates {
   hermesAuthMethod?: HermesAuthMethod | null;
   preferredInferenceApi?: string | null;
   compatibleEndpointReasoning?: string | null;
+  compatibleEndpointReasoningEffort?: ReasoningEffort | null;
   nimContainer?: string | null;
   routerPid?: number;
   routerCredentialHash?: string;
@@ -289,6 +293,7 @@ export interface DebugSessionSummary {
   hermesAuthMethod: HermesAuthMethod | null;
   preferredInferenceApi: string | null;
   compatibleEndpointReasoning: string | null;
+  compatibleEndpointReasoningEffort: ReasoningEffort | null;
   nimContainer: string | null;
   toolDisclosure: ToolDisclosure;
   observabilityEnabled: boolean;
@@ -299,6 +304,7 @@ export interface DebugSessionSummary {
   lastStepStarted: string | null;
   lastCompletedStep: string | null;
   failure: SessionFailure | null;
+  gatewayAuthority: GatewayOwnerDescription | null;
   machine: OnboardMachineSnapshot;
   steps: Record<string, StepState>;
 }
@@ -664,6 +670,9 @@ export function createSession(overrides: Partial<Session> = {}): Session {
     hermesAuthMethod: overrides.hermesAuthMethod ?? null,
     preferredInferenceApi: overrides.preferredInferenceApi ?? null,
     compatibleEndpointReasoning: overrides.compatibleEndpointReasoning ?? null,
+    compatibleEndpointReasoningEffort: normalizeReasoningEffort(
+      overrides.compatibleEndpointReasoningEffort,
+    ),
     nimContainer: overrides.nimContainer ?? null,
     routerPid: readPositiveInteger(overrides.routerPid),
     routerCredentialHash: overrides.routerCredentialHash ?? null,
@@ -702,6 +711,16 @@ export function createSession(overrides: Partial<Session> = {}): Session {
 
 export function normalizeSession(data: Session | SessionJsonValue | undefined): Session | null {
   if (!isObject(data) || data.version !== SESSION_VERSION) return null;
+  const compatibleEndpointReasoningEffort = normalizeReasoningEffort(
+    data.compatibleEndpointReasoningEffort,
+  );
+  if (
+    hasOwn(data, "compatibleEndpointReasoningEffort") &&
+    data.compatibleEndpointReasoningEffort !== null &&
+    !compatibleEndpointReasoningEffort
+  ) {
+    return null;
+  }
   const stationExpressIntent = parseStationExpressResumeIntent(data.stationExpressIntent);
   if (
     hasOwn(data, "stationExpressIntent") &&
@@ -738,6 +757,7 @@ export function normalizeSession(data: Session | SessionJsonValue | undefined): 
     hermesAuthMethod: readHermesAuthMethod(data.hermesAuthMethod),
     preferredInferenceApi: readString(data.preferredInferenceApi),
     compatibleEndpointReasoning: readString(data.compatibleEndpointReasoning),
+    compatibleEndpointReasoningEffort,
     nimContainer: readString(data.nimContainer),
     routerPid: readPositiveInteger(data.routerPid),
     routerCredentialHash: readString(data.routerCredentialHash),
@@ -790,16 +810,17 @@ export function normalizeSession(data: Session | SessionJsonValue | undefined): 
   }
 
   if (normalized.stationExpressIntent) {
+    const intent = normalized.stationExpressIntent;
     const providerComplete = normalized.steps.provider_selection?.status === "complete";
     const providerBound = Boolean(
-      normalized.stationExpressIntent.servedModel &&
-        normalized.stationExpressIntent.checkpointModel,
+      intent.kind !== "spark" && intent.servedModel && intent.checkpointModel,
     );
     if (
       providerComplete !== providerBound ||
       (providerComplete &&
-        (normalized.provider !== "vllm-local" ||
-          normalized.model !== normalized.stationExpressIntent.servedModel)) ||
+        (intent.kind === "spark" ||
+          normalized.provider !== "vllm-local" ||
+          normalized.model !== intent.servedModel)) ||
       (!providerComplete && (normalized.provider !== null || normalized.model !== null))
     ) {
       return null;
@@ -1262,6 +1283,16 @@ export function filterSafeUpdates(updates: SessionUpdates): Partial<Session> {
   }
   assignNullableString(safe, "preferredInferenceApi", updates.preferredInferenceApi);
   assignNullableString(safe, "compatibleEndpointReasoning", updates.compatibleEndpointReasoning);
+  if (updates.compatibleEndpointReasoningEffort === null) {
+    safe.compatibleEndpointReasoningEffort = null;
+  } else {
+    const compatibleEndpointReasoningEffort = normalizeReasoningEffort(
+      updates.compatibleEndpointReasoningEffort,
+    );
+    if (compatibleEndpointReasoningEffort) {
+      safe.compatibleEndpointReasoningEffort = compatibleEndpointReasoningEffort;
+    }
+  }
   assignNullableString(safe, "nimContainer", updates.nimContainer);
   if (
     typeof updates.routerPid === "number" &&
@@ -1384,8 +1415,13 @@ function markStepCompleteWithOptions(
   const updatedSession = updateSession((session) => {
     const step = session.steps[stepName];
     if (!step) return session;
+    // Spark managed-vLLM Express intents (#7231) carry no receipt/served state
+    // and exist only to re-arm the install on resume, so clear them once
+    // provider selection completes instead of binding a Station selection.
+    const sparkExpressComplete =
+      stepName === "provider_selection" && session.stationExpressIntent?.kind === "spark";
     const stationExpressIntent =
-      stepName === "provider_selection" && session.stationExpressIntent
+      stepName === "provider_selection" && session.stationExpressIntent && !sparkExpressComplete
         ? bindStationExpressProviderSelection(
             session.stationExpressIntent,
             safeUpdates.provider,
@@ -1401,6 +1437,7 @@ function markStepCompleteWithOptions(
     session.failure = null;
     Object.assign(session, safeUpdates);
     if (stationExpressIntent) session.stationExpressIntent = stationExpressIntent;
+    else if (sparkExpressComplete) session.stationExpressIntent = null;
     const nextState = nextMachineStateAfterCompletedStep(stepName, session);
     shouldEmit = Boolean(nextState && shouldUpdateMachine(options));
     if (nextState && shouldEmit) transitionMachineSnapshot(session, nextState, now);
@@ -1602,7 +1639,10 @@ export function completeSession(
   let wasComplete = false;
   let receiptGeneration: string | null = null;
   let updatedSession = updateSession((session) => {
-    const intentReceiptGeneration = session.stationExpressIntent?.receiptGeneration ?? null;
+    const intentReceiptGeneration =
+      session.stationExpressIntent?.kind === "spark"
+        ? null
+        : (session.stationExpressIntent?.receiptGeneration ?? null);
     receiptGeneration = session.stationExpressReceiptRetirement ?? intentReceiptGeneration;
     if (intentReceiptGeneration) {
       assertStationExpressInstallerResumeMatches(intentReceiptGeneration);
@@ -1689,6 +1729,10 @@ export function summarizeForDebug(
   session: Session | null = loadSession(),
 ): DebugSessionSummary | null {
   if (!session) return null;
+  const gatewayAuthority =
+    session.checkpoint?.gatewayAuthority.kind === "selected"
+      ? describeGatewayOwner(session.checkpoint.gatewayAuthority.value)
+      : null;
   return {
     version: session.version,
     sessionId: session.sessionId,
@@ -1705,6 +1749,7 @@ export function summarizeForDebug(
     hermesAuthMethod: session.hermesAuthMethod,
     preferredInferenceApi: session.preferredInferenceApi,
     compatibleEndpointReasoning: session.compatibleEndpointReasoning,
+    compatibleEndpointReasoningEffort: session.compatibleEndpointReasoningEffort,
     nimContainer: session.nimContainer,
     toolDisclosure: session.toolDisclosure,
     observabilityEnabled: session.observabilityEnabled,
@@ -1715,6 +1760,7 @@ export function summarizeForDebug(
     lastStepStarted: session.lastStepStarted,
     lastCompletedStep: session.lastCompletedStep,
     failure: sanitizeFailure(session.failure),
+    gatewayAuthority,
     machine: session.machine,
     steps: Object.fromEntries(
       Object.entries(session.steps).map(([name, step]) => [

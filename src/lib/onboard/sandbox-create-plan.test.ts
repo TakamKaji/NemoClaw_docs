@@ -14,6 +14,7 @@ import type { SandboxGpuCreateConfig } from "./sandbox-gpu-create";
 const sandboxGpuConfig: SandboxGpuCreateConfig = {
   sandboxGpuEnabled: true,
   sandboxGpuDevice: "nvidia.com/gpu=0",
+  hostGpuDetected: true,
 };
 
 afterEach(() => {
@@ -169,6 +170,16 @@ describe("resolveSandboxCreateIntent", () => {
       extraPlaceholderKeys: ["TELEGRAM_BOT_TOKEN_AGENT_A"],
       agentName: "hermes",
       policyTier: "balanced",
+      baselineExclusions: [
+        {
+          version: 1 as const,
+          agent: "hermes",
+          key: "nous_research",
+          digest: "abc",
+          acknowledgedAt: "2026-07-19T00:00:00.000Z",
+          appliedAgentVersion: null,
+        },
+      ],
     };
 
     const first = resolveSandboxCreateIntent(input);
@@ -190,9 +201,20 @@ describe("resolveSandboxCreateIntent", () => {
       activeMessagingChannels: ["telegram", "discord", "whatsapp"],
       options: {
         directGpu: true,
+        hostGpuAvailable: true,
         additionalPresets: ["github"],
         agentName: "hermes",
         policyTier: "balanced",
+        baselineExclusions: [
+          {
+            version: 1,
+            agent: "hermes",
+            key: "nous_research",
+            digest: "abc",
+            acknowledgedAt: "2026-07-19T00:00:00.000Z",
+            appliedAgentVersion: null,
+          },
+        ],
       },
     });
     expect(JSON.parse(JSON.stringify(first))).toEqual(first);
@@ -241,6 +263,10 @@ describe("resolveSandboxCreateIntent", () => {
         events.push("policy");
         return { policyPath: "/tmp/policy.yaml", appliedPresets: ["telegram"] };
       }),
+      discloseInitialSandboxPolicy: (policy) => {
+        events.push("disclose");
+        expect(policy.appliedPresets).toEqual(["telegram"]);
+      },
       runProviderPreDeleteCleanup: () => events.push("cleanup"),
       upsertMessagingProviders: vi.fn((receivedTokenDefs) => {
         events.push("upsert");
@@ -253,7 +279,7 @@ describe("resolveSandboxCreateIntent", () => {
       },
     });
 
-    expect(events).toEqual(["policy", "cleanup", "upsert", "hermes"]);
+    expect(events).toEqual(["policy", "disclose", "cleanup", "upsert", "hermes"]);
     expect(result.createArgs).toEqual([
       "--from",
       "/tmp/nemoclaw-build-1/Dockerfile",
@@ -275,6 +301,51 @@ describe("resolveSandboxCreateIntent", () => {
     ]);
     expect(serializedIntent).not.toContain("telegram-super-secret");
     expect(JSON.stringify(intent)).toBe(serializedIntent);
+  });
+
+  it("cleans up the prepared policy when disclosure fails before provider effects (#7179)", () => {
+    const intent = resolveSandboxCreateIntent({
+      basePolicyPath: "/repo/policy.yaml",
+      sandboxName: "sandbox",
+      channels,
+      enabledChannels: [],
+      disabledChannelNames: new Set(),
+      messagingProviderRequests: [],
+      primaryMessagingCredentialEnvKeys: [],
+      reusableMessagingChannels: [],
+      reusableMessagingProviders: [],
+      hermesToolGateways: [],
+      sandboxGpuConfig,
+      gpuCreateArgs: [],
+      gpuRoutePlan: "native-only",
+      sandboxGpuLogMessage: null,
+      policyTier: null,
+    });
+    const cleanupPolicy = vi.fn(() => true);
+    const cleanupProviders = vi.fn();
+    const upsertProviders = vi.fn(() => []);
+
+    expect(() =>
+      materializeSandboxCreatePlan({
+        intent,
+        buildCtx: "/tmp/nemoclaw-build-1",
+        messagingTokenDefs: [],
+        prepareInitialSandboxCreatePolicy: vi.fn(() => ({
+          policyPath: "/tmp/policy.yaml",
+          appliedPresets: [],
+          cleanup: cleanupPolicy,
+        })),
+        discloseInitialSandboxPolicy: () => {
+          throw new Error("disclosure failed");
+        },
+        runProviderPreDeleteCleanup: cleanupProviders,
+        upsertMessagingProviders: upsertProviders,
+        getHermesToolGatewayProviderName: vi.fn(),
+      }),
+    ).toThrow("disclosure failed");
+    expect(cleanupPolicy).toHaveBeenCalledOnce();
+    expect(cleanupProviders).not.toHaveBeenCalled();
+    expect(upsertProviders).not.toHaveBeenCalled();
   });
 
   it("rejects changed credential availability before running effects", () => {
@@ -405,9 +476,11 @@ describe("prepareSandboxCreatePlan", () => {
       {
         directGpu: true,
         dockerGpuPatch: false,
+        hostGpuAvailable: true,
         additionalPresets: ["github"],
         agentName: "langchain-deepagents-code",
         policyTier: "restricted",
+        baselineExclusions: [],
       },
     );
     expect(result.policyTier).toBe("restricted");
@@ -637,5 +710,124 @@ describe("prepareSandboxCreatePlan", () => {
       .map((arg, index) => (arg === "--provider" ? result.createArgs[index + 1] : null))
       .filter((value): value is string => value !== null);
     expect(providerArgs).toEqual(["sandbox-telegram-bridge", "tavily-search"]);
+  });
+});
+
+describe("selected inference provider attachment (#7171)", () => {
+  function resolveWithInferenceProvider(inferenceProvider: string | null) {
+    return resolveSandboxCreateIntent({
+      basePolicyPath: "/repo/policy.yaml",
+      sandboxName: "sandbox",
+      inferenceProvider,
+      channels,
+      enabledChannels: [],
+      disabledChannelNames: new Set(),
+      messagingProviderRequests: [],
+      primaryMessagingCredentialEnvKeys: [],
+      reusableMessagingChannels: [],
+      reusableMessagingProviders: [],
+      hermesToolGateways: [],
+      sandboxGpuConfig,
+      gpuCreateArgs: [],
+      gpuRoutePlan: "native-only",
+      sandboxGpuLogMessage: null,
+      policyTier: null,
+    });
+  }
+
+  function planWithInferenceProvider(overrides: {
+    inferenceProvider?: string | null;
+    messagingTokenDefs?: MessagingTokenDef[];
+    reusableMessagingProviders?: string[];
+    extraProviders?: string[];
+    hermesToolGateways?: string[];
+    upsertMessagingProviders?: () => string[];
+  }) {
+    return prepareSandboxCreatePlan({
+      basePolicyPath: "/repo/policy.yaml",
+      buildCtx: "/tmp/nemoclaw-build-1",
+      sandboxName: "sandbox",
+      inferenceProvider: overrides.inferenceProvider,
+      channels,
+      enabledChannels: [],
+      disabledChannelNames: new Set(),
+      messagingTokenDefs: overrides.messagingTokenDefs ?? [],
+      reusableMessagingChannels: [],
+      reusableMessagingProviders: overrides.reusableMessagingProviders ?? [],
+      extraProviders: overrides.extraProviders ?? [],
+      hermesToolGateways: overrides.hermesToolGateways ?? [],
+      sandboxGpuConfig,
+      gpuRoutePlan: "native-only",
+      sandboxGpuLogMessage: null,
+      appendResourceFlags: vi.fn(),
+      runProviderPreDeleteCleanup: vi.fn(),
+      upsertMessagingProviders: vi.fn(overrides.upsertMessagingProviders ?? (() => [])),
+      getMessagingChannelForEnvKey: (envKey) =>
+        envKey === "TELEGRAM_BOT_TOKEN" ? "telegram" : null,
+      getHermesToolGatewayProviderName: (sandboxName) => `${sandboxName}-hermes-tools`,
+      deps: {
+        prepareInitialSandboxCreatePolicy: vi.fn(() => ({
+          policyPath: "/tmp/policy.yaml",
+          appliedPresets: [],
+        })),
+        buildSandboxGpuCreateArgs: vi.fn(() => []),
+      },
+    });
+  }
+
+  function providerArgsOf(createArgs: readonly string[]): string[] {
+    return createArgs
+      .map((arg, index) => (arg === "--provider" ? createArgs[index + 1] : null))
+      .filter((value): value is string => value !== null);
+  }
+
+  it("serializes the selected provider into the intent without a credential value", () => {
+    const intent = resolveWithInferenceProvider("  nvidia-router  ");
+    expect(intent.inferenceProvider).toBe("nvidia-router");
+    expect(JSON.parse(JSON.stringify(intent)).inferenceProvider).toBe("nvidia-router");
+  });
+
+  it("treats a blank selected provider as absent", () => {
+    expect(resolveWithInferenceProvider("   ").inferenceProvider).toBeNull();
+    expect(resolveWithInferenceProvider(null).inferenceProvider).toBeNull();
+  });
+
+  it.each([
+    "nvidia-router",
+    "openai-compatible",
+    "vllm-local",
+  ])("attaches the selected provider %s first on create", (provider) => {
+    const result = planWithInferenceProvider({
+      inferenceProvider: provider,
+      extraProviders: ["tavily-search"],
+    });
+    expect(providerArgsOf(result.createArgs)).toEqual([provider, "tavily-search"]);
+  });
+
+  it("emits the selected provider exactly once when it also appears as an extra provider", () => {
+    const result = planWithInferenceProvider({
+      inferenceProvider: "vllm-local",
+      extraProviders: ["vllm-local", "tavily-search"],
+    });
+    expect(providerArgsOf(result.createArgs)).toEqual(["vllm-local", "tavily-search"]);
+  });
+
+  it("emits the selected provider exactly once when it also backs a messaging channel", () => {
+    const result = planWithInferenceProvider({
+      inferenceProvider: "sandbox-telegram-bridge",
+      messagingTokenDefs: [
+        { name: "sandbox-telegram-bridge", envKey: "TELEGRAM_BOT_TOKEN", token: "telegram" },
+      ],
+      upsertMessagingProviders: () => ["sandbox-telegram-bridge"],
+    });
+    expect(providerArgsOf(result.createArgs)).toEqual(["sandbox-telegram-bridge"]);
+  });
+
+  it("omits an inference --provider when no provider is selected", () => {
+    const result = planWithInferenceProvider({
+      inferenceProvider: null,
+      extraProviders: ["tavily-search"],
+    });
+    expect(providerArgsOf(result.createArgs)).toEqual(["tavily-search"]);
   });
 });

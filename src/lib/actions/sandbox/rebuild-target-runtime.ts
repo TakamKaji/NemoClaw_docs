@@ -208,10 +208,12 @@ export async function preflightRebuildTargetRuntime(
       provider: target.resumeConfig.provider,
       preferredInferenceApi: target.resumeConfig.preferredInferenceApi,
       compatibleEndpointReasoning: target.resumeConfig.compatibleEndpointReasoning,
+      compatibleEndpointReasoningEffort: target.resumeConfig.compatibleEndpointReasoningEffort,
       webSearchConfig: target.durableConfig.webSearchConfig,
       toolDisclosure: target.durableConfig.toolDisclosure,
       hermesToolGateways: target.hermesToolGateways,
       sandboxGpuConfig,
+      preResolvedBaseImageMetadata: recreateOptions.preResolvedBaseImageMetadata ?? null,
       gatewayPort: recreateOptions.targetGatewayPort,
       chatUiUrl: managesDashboard
         ? `http://127.0.0.1:${String(recreateOptions.controlUiPort)}`

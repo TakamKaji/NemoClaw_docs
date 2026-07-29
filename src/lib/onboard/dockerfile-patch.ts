@@ -30,6 +30,7 @@ import {
   isDcodeAutoApprovalMode,
 } from "./dcode-auto-approval";
 import * as remoteDashboardBindContract from "./dockerfile-remote-dashboard-bind-contract";
+import { normalizeReasoningEffort, REASONING_EFFORT_ENV } from "./reasoning-mode";
 import {
   dockerfileInstructions,
   readDockerfilePatchSnapshot,
@@ -40,6 +41,8 @@ import {
 export { assertToolDisclosureDockerfileContract } from "./dockerfile-tool-disclosure-contract";
 
 const SANDBOX_BASE_IMAGE = "ghcr.io/nvidia/nemoclaw/sandbox-base";
+const NODE_RUNTIME_REFRESH_INSTRUCTION =
+  "COPY --from=builder /usr/local/bin/node /usr/local/bin/node";
 const PROXY_HOST_RE = /^[A-Za-z0-9._-]+$/;
 const POSITIVE_INT_RE = /^[1-9][0-9]*$/;
 
@@ -185,9 +188,38 @@ export function patchStagedDockerfile(
       },
     );
   }
+  // A source=local resolution is built from this checkout's Dockerfile.base,
+  // whose Node image pin is kept identical to the managed Dockerfile builder.
+  // Copying that same 125 MB binary into the final image creates a redundant
+  // export layer. Keep the checked-in COPY as the safe default for published
+  // and legacy bases, and elide it only for this trusted, authoritative local
+  // base path. Custom Dockerfiles never receive trusted resolution metadata.
+  if (
+    options.trustedManagedDockerfile === true &&
+    options.baseImageResolutionMetadata?.imageName === SANDBOX_BASE_IMAGE &&
+    options.baseImageResolutionMetadata.source === "local" &&
+    sanitizedBaseImageRef === options.baseImageResolutionMetadata.ref
+  ) {
+    const instructionCount = dockerfile
+      .split(/\r?\n/)
+      .filter((line) => line.trim() === NODE_RUNTIME_REFRESH_INSTRUCTION).length;
+    if (instructionCount !== 1) {
+      throw new Error(
+        `Managed OpenClaw Dockerfile must contain exactly one ${NODE_RUNTIME_REFRESH_INSTRUCTION} instruction; found ${instructionCount}.`,
+      );
+    }
+    dockerfile = dockerfile.replace(
+      NODE_RUNTIME_REFRESH_INSTRUCTION,
+      "# Node runtime refresh omitted: authoritative local base already uses the builder pin.",
+    );
+  }
   dockerfile = dockerfile.replace(
     /^ARG NEMOCLAW_MODEL=.*$/m,
     `ARG NEMOCLAW_MODEL=${sanitizedModel}`,
+  );
+  dockerfile = dockerfile.replace(
+    /^ARG NEMOCLAW_INFERENCE_PROVIDER_ID=.*$/m,
+    `ARG NEMOCLAW_INFERENCE_PROVIDER_ID=${sanitizeDockerArg(providerKey)}`,
   );
   dockerfile = dockerfile.replace(
     /^ARG NEMOCLAW_PROVIDER_KEY=.*$/m,
@@ -297,6 +329,13 @@ export function patchStagedDockerfile(
       `ARG NEMOCLAW_REASONING=${sanitizeDockerArg(reasoning)}`,
     );
   }
+  const reasoningEffort = normalizeReasoningEffort(process.env[REASONING_EFFORT_ENV]);
+  if (reasoningEffort) {
+    dockerfile = dockerfile.replace(
+      /^ARG NEMOCLAW_REASONING_EFFORT=.*$/m,
+      `ARG NEMOCLAW_REASONING_EFFORT=${sanitizeDockerArg(reasoningEffort)}`,
+    );
+  }
   // Honor NEMOCLAW_INFERENCE_INPUTS for vision-capable models. OpenClaw's
   // model schema currently accepts "text" and "image" only, so validate
   // strictly against that vocabulary. Adding modalities to OpenClaw later
@@ -384,7 +423,7 @@ export function patchStagedDockerfile(
     }
     dockerfile = dockerfile.replace(
       messagingPlanArgPattern,
-      `ARG NEMOCLAW_MESSAGING_PLAN_B64=${sanitizeDockerArg(MessagingSetupApplier.encodePlan(hydratedMessagingPlan))}`,
+      `ARG NEMOCLAW_MESSAGING_PLAN_B64=${sanitizeDockerArg(MessagingSetupApplier.encodePlanForImageBuild(hydratedMessagingPlan))}`,
     );
   }
   if (hermesToolGateways.length > 0) {

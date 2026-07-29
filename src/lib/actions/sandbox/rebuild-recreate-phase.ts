@@ -149,6 +149,7 @@ export async function runRebuildRecreatePhase(input: RebuildRecreatePhaseInput):
     s.credentialEnv = rebuildCredentialEnv;
     s.preferredInferenceApi = resumeConfig.preferredInferenceApi;
     s.compatibleEndpointReasoning = resumeConfig.compatibleEndpointReasoning;
+    s.compatibleEndpointReasoningEffort = resumeConfig.compatibleEndpointReasoningEffort;
     s.endpointUrl = resumeConfig.endpointUrl;
     s.toolDisclosure = rebuildDurableConfig.toolDisclosure;
     s.observabilityEnabled = recreateOptions.observabilityEnabled;
@@ -181,7 +182,14 @@ export async function runRebuildRecreatePhase(input: RebuildRecreatePhaseInput):
 
   const restoreAmbientRecreateEnv = isolateAmbientRecreateEnv();
   const previousSandboxName = process.env.NEMOCLAW_SANDBOX_NAME;
+  const previousRecreateWithoutBackup = process.env.NEMOCLAW_RECREATE_WITHOUT_BACKUP;
   process.env.NEMOCLAW_SANDBOX_NAME = sandboxName;
+  // The outer rebuild already made its sole backup before the destroy phase deleted
+  // the sandbox without tearing down the gateway/session needed by onboard --resume.
+  // That retained state can send inner onboard through generic recreate protection,
+  // where a second backup is impossible after deletion. Keep the bypass scoped to
+  // this call; remove it when onboard accepts an explicit outer-backup handoff.
+  process.env.NEMOCLAW_RECREATE_WITHOUT_BACKUP = "1";
   if (recreateOptions.policyTier) {
     process.env.NEMOCLAW_POLICY_TIER = recreateOptions.policyTier;
   }
@@ -201,6 +209,11 @@ export async function runRebuildRecreatePhase(input: RebuildRecreatePhaseInput):
     restoreAmbientRecreateEnv();
     if (previousSandboxName === undefined) delete process.env.NEMOCLAW_SANDBOX_NAME;
     else process.env.NEMOCLAW_SANDBOX_NAME = previousSandboxName;
+    if (previousRecreateWithoutBackup === undefined) {
+      delete process.env.NEMOCLAW_RECREATE_WITHOUT_BACKUP;
+    } else {
+      process.env.NEMOCLAW_RECREATE_WITHOUT_BACKUP = previousRecreateWithoutBackup;
+    }
   }
 
   if (!onboardFailed) onCreated();

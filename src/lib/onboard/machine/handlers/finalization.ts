@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Session } from "../../../state/onboard-session";
 import { type DashboardRuntimeAgent, shouldManageDashboardForAgent } from "../../dashboard-runtime";
 import {
+  advanceTo,
   completeOnboardMachine,
   type OnboardStateCompleteResult,
   type OnboardStatePauseResult,
+  type OnboardStateTransitionResult,
   pauseOnboardMachine,
 } from "../result";
 
@@ -22,14 +23,13 @@ export interface FinalizationStateOptions<Agent, VerifyChain, VerificationResult
   migratedLegacyKeys: ReadonlySet<string>;
   webSearchEnabled: boolean;
   deps: {
-    ensureAgentDashboardForward(sandboxName: string, agent: NonNullable<Agent>): number;
+    ensureAgentDashboardForward(sandboxName: string, agent: Agent): number;
     /**
      * Mark this sandbox as the default. Called here (not at sandbox creation) so
      * a cancel at the policy-preset step never leaves an unconfigured sandbox
      * registered as default (#4614).
      */
     setDefaultSandbox(sandboxName: string): void;
-    recordPostVerifyStarted(): Promise<Session>;
     toSessionUpdates(
       updates: Record<string, unknown>,
     ): NonNullable<OnboardStateCompleteResult["updates"]>;
@@ -83,8 +83,12 @@ export interface FinalizationStateOptions<Agent, VerifyChain, VerificationResult
 }
 
 export interface FinalizationStateResult {
-  stateResult: OnboardStateCompleteResult | OnboardStatePauseResult;
+  stateResult: OnboardStateTransitionResult;
   unmigratedLegacyKeys: string[];
+}
+
+export interface PostVerifyStateResult {
+  stateResult: OnboardStateCompleteResult | OnboardStatePauseResult;
   verificationDiagnostics: string[];
   deploymentHealthy: boolean;
 }
@@ -122,12 +126,7 @@ function logTerminalReadyBlock(
 
 export async function handleFinalizationState<Agent, VerifyChain, VerificationResult>({
   sandboxName,
-  model,
-  provider,
-  nimContainer,
   agent,
-  hermesAuthMethod,
-  hermesToolGateways,
   stagedLegacyKeys,
   migratedLegacyKeys,
   webSearchEnabled,
@@ -142,10 +141,6 @@ export async function handleFinalizationState<Agent, VerifyChain, VerificationRe
   // Reaching finalization means the policy-preset step was confirmed, so it is
   // now safe to register this sandbox as the default (#4614).
   deps.setDefaultSandbox(sandboxName);
-
-  if (agent && manageDashboard) {
-    deps.ensureAgentDashboardForward(sandboxName, agent as NonNullable<Agent>);
-  }
 
   const allStagedMigrated =
     stagedLegacyKeys.length > 0 && stagedLegacyKeys.every((key) => migratedLegacyKeys.has(key));
@@ -184,7 +179,36 @@ export async function handleFinalizationState<Agent, VerifyChain, VerificationRe
     deps.verifyWebSearchInsideSandbox(sandboxName, agent);
   }
 
-  await deps.recordPostVerifyStarted();
+  if (manageDashboard) {
+    // Scope warm-up can outlive a forward that was healthy after policy recovery.
+    // Recheck the gateway and forward before verification, restarting only when needed.
+    deps.checkAndRecoverSandboxProcesses(sandboxName, { quiet: true });
+    // Reconcile after the final recovery because any restart above can
+    // invalidate the forward created earlier in onboarding.
+    deps.ensureAgentDashboardForward(sandboxName, agent);
+  }
+
+  return {
+    stateResult: advanceTo("post_verify", { metadata: { state: "finalizing" } }),
+    unmigratedLegacyKeys,
+  };
+}
+
+export async function handlePostVerifyState<Agent, VerifyChain, VerificationResult>({
+  sandboxName,
+  model,
+  provider,
+  nimContainer,
+  agent,
+  hermesAuthMethod,
+  hermesToolGateways,
+  deps,
+}: FinalizationStateOptions<
+  Agent,
+  VerifyChain,
+  VerificationResult
+>): Promise<PostVerifyStateResult> {
+  const manageDashboard = shouldManageDashboardForAgent(agent as DashboardRuntimeAgent);
 
   let verificationDiagnostics: string[] = [];
   let deploymentHealthy = true;
@@ -209,11 +233,11 @@ export async function handleFinalizationState<Agent, VerifyChain, VerificationRe
     hermesToolGateways,
   });
   const stateResult = deploymentHealthy
-    ? completeOnboardMachine(sessionUpdates, { state: "finalizing" })
+    ? completeOnboardMachine(sessionUpdates, { state: "post_verify" })
     : pauseOnboardMachine(sessionUpdates, {
-        state: "finalizing",
+        state: "post_verify",
         reason: "deployment_not_ready",
       });
 
-  return { stateResult, unmigratedLegacyKeys, verificationDiagnostics, deploymentHealthy };
+  return { stateResult, verificationDiagnostics, deploymentHealthy };
 }

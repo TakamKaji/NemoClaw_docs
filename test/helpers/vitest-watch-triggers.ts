@@ -18,6 +18,7 @@ const E2E_WORKFLOW_CONTRACTS = [
   "test/e2e/support/gateway-guard-workflow-boundary.test.ts",
   "test/e2e/support/hermes-dashboard-workflow-boundary.test.ts",
   "test/e2e/support/hermes-workflow-boundary.test.ts",
+  "test/hosted-runner-recovery-workflow.test.ts",
   "test/e2e/support/inference-switch-workflow-boundary.test.ts",
   "test/e2e/support/jetson-workflow-boundary.test.ts",
   "test/e2e/support/mcp-workflow-boundary.test.ts",
@@ -28,11 +29,13 @@ const E2E_WORKFLOW_CONTRACTS = [
   "test/e2e/support/openshell-gateway-auth-contract-workflow-boundary.test.ts",
   "test/e2e/support/openshell-gateway-upgrade-workflow-boundary.test.ts",
   "test/e2e/support/prepare-e2e-workflow-boundary.test.ts",
+  "test/e2e/support/runner-pressure-workflow-boundary.test.ts",
   "test/e2e/support/sandbox-images-workflow-boundary.test.ts",
   "test/e2e/support/sandbox-operations-workflow-boundary.test.ts",
   "test/e2e/support/security-posture-workflow-boundary.test.ts",
   "test/e2e/support/shared-e2e-workflow-boundary.test.ts",
   "test/e2e/support/spark-install-workflow-boundary.test.ts",
+  "test/e2e/support/trusted-hermes-swap-workflow-boundary.test.ts",
   "test/e2e/support/tunnel-lifecycle-workflow-boundary.test.ts",
   "test/e2e/support/upload-e2e-artifacts-workflow-boundary.test.ts",
   "test/e2e/support/workflow-plan.test.ts",
@@ -61,12 +64,20 @@ export const vitestWatchTriggerPatterns: VitestWatchTriggerPattern[] = [
     ),
   },
   {
+    pattern: /(?:^|\/)nemoclaw-blueprint\/policies\/presets\/claude-code\.yaml$/,
+    testsToRun: runTests("test/effective-policy-contracts.test.ts"),
+  },
+  {
     pattern: /(?:^|\/)agents\/hermes\/(?:mcp-config-transaction|runtime-config-guard)\.py$/,
     testsToRun: runTests("src/lib/actions/sandbox/gateway-restart-hermes-drift.test.ts"),
   },
   {
     pattern: /(?:^|\/)test\/e2e\/lib\/ci-compatible-inference\.sh$/,
     testsToRun: runTests("test/e2e/support/hosted-inference.test.ts"),
+  },
+  {
+    pattern: /(?:^|\/)scripts\/setup-jetson\.sh$/,
+    testsToRun: runTests("test/setup-jetson.test.ts"),
   },
   {
     pattern: /(?:^|\/)scripts\/e2e\/sanitize-trace-timing\.py$/,
@@ -96,12 +107,38 @@ export const vitestWatchTriggerPatterns: VitestWatchTriggerPattern[] = [
     testsToRun: runTests("test/pr-e2e-gate-workflow.test.ts", "test/pr-e2e-required.test.ts"),
   },
   {
+    pattern: /(?:^|\/)\.github\/workflows\/pr-merge-conflict-fixer\.yaml$/,
+    testsToRun: runTests("test/pr-merge-conflict-fixer-workflow-boundary.test.ts"),
+  },
+  {
+    pattern: /(?:^|\/)\.github\/workflows\/pr-review-advisor\.yaml$/,
+    testsToRun: runTests(
+      "test/pr-review-advisor-workflow-boundary.test.ts",
+      "test/pr-review-advisor-openshell-workflow-boundary.test.ts",
+    ),
+  },
+  {
+    pattern: /(?:^|\/)tools\/pr-review-advisor\/openshell-policy\.yaml$/,
+    testsToRun: runTests("test/pr-review-advisor-openshell-workflow-boundary.test.ts"),
+  },
+  {
     pattern:
-      /(?:^|\/)(?:\.github\/workflows\/platform-vitest-main\.yaml|ci\/platform-vitest-macos-requirements\.lock)$/,
+      /(?:^|\/)\.github\/workflows\/(?:hosted-runner-recovery|wsl-e2e|macos-e2e|platform-vitest-main)\.yaml$/,
+    testsToRun: runTests("test/hosted-runner-recovery-workflow.test.ts"),
+  },
+  {
+    pattern:
+      /(?:^|\/)(?:\.github\/workflows\/(?:platform-vitest-main|wsl-e2e)\.yaml|tools\/wsl\/ci-helper\.ps1)$/,
+    testsToRun: runTests(
+      "test/platform-vitest-main-workflow.test.ts",
+      "test/wsl-ci-helper.test.ts",
+    ),
+  },
+  {
+    pattern: /(?:^|\/)ci\/platform-vitest-macos-requirements\.lock$/,
     testsToRun: runTests("test/platform-vitest-main-workflow.test.ts"),
   },
 ];
-
 export function resolveVitestWatchTests(file: string): string[] {
   const normalized = file.replaceAll("\\", "/");
   const tests = new Set<string>();

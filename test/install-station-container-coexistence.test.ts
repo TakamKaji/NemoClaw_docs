@@ -58,6 +58,54 @@ capture_docker_container_baseline
     expect(output).toContain("docker_container_baseline_total=0 running=0");
   });
 
+  it("uses noninteractive sudo only for read-only peer checks before Docker group access", () => {
+    const { result, output } = runStationPreparation(
+      `
+MODE='--check'
+ps() { printf '%s %s bash bash prepare-dgx-station-host.sh --check\n' "$$" "$PPID"; }
+ss() { :; }
+docker() { return 1; }
+sudo() {
+  if [[ "$1" == "-n" ]]; then shift; fi
+  case "$*" in
+    'docker ps -aq --no-trunc'|'docker ps -q --no-trunc') return 0 ;;
+    *) return 1 ;;
+  esac
+}
+systemctl() { return 0; }
+capture_docker_container_baseline
+`,
+      {
+        NEMOCLAW_STATION_PREP_SUDO_NONINTERACTIVE: "1",
+        PATH: `${path.dirname(process.execPath)}:${TEST_SYSTEM_PATH}`,
+      },
+    );
+
+    expect(result.status, output).toBe(0);
+    expect(output).toContain("docker_access=sudo_for_noninteractive_read_only_check");
+    expect(output).toContain("docker_container_baseline_total=0 running=0");
+  });
+
+  it("does not hide missing Docker group access during verify", () => {
+    const { result, output } = runStationPreparation(
+      `
+MODE='--verify'
+docker() { return 1; }
+sudo() { return 0; }
+systemctl() { return 0; }
+capture_docker_container_baseline
+`,
+      {
+        NEMOCLAW_STATION_PREP_SUDO_NONINTERACTIVE: "1",
+        PATH: `${path.dirname(process.execPath)}:${TEST_SYSTEM_PATH}`,
+      },
+    );
+
+    expect(result.status, output).not.toBe(0);
+    expect(output).toContain("Docker is active but inaccessible to this login");
+    expect(output).not.toContain("docker_access=sudo_");
+  });
+
   it("fails closed when Docker is installed but its container state cannot be queried", () => {
     const { result, output } = runStationPreparation(
       `
@@ -107,10 +155,13 @@ check_kernel_headers() { :; }
 check_capacity() { :; }
 check_network() { :; }
 check_package_managers_idle() { :; }
+check_dpkg_database_health() { :; }
 check_failed_units() { :; }
+check_vllm_container_conflicts() { :; }
 check_agent_and_inference_conflicts() { :; }
+verify_dual_station_controller_uid_binding() { :; }
 driver_loaded_exact() { return 0; }
-package_is_exact() { return 0; }
+package_is_ready() { return 0; }
 verify_gpu() { :; }
 systemctl() {
   case "$*" in
@@ -185,7 +236,7 @@ require_docker_mutation_quiescence "refreshing NVIDIA CDI configuration"
       name: "pending prerequisite",
       setup: `
 reboot_required() { return 0; }
-all_packages_exact() { return 0; }
+all_packages_ready() { return 0; }
 driver_loaded_exact() { return 1; }
 `,
       expectedGate: "REBOOT_HANDOFF_BLOCKED check=1",
@@ -194,7 +245,7 @@ driver_loaded_exact() { return 1; }
       name: "post-install",
       setup: `
 reboot_required() { return 1; }
-all_packages_exact() { return 1; }
+all_packages_ready() { return 1; }
 require_docker_restart_quiescence() {
   local checks
   checks="$(cat "$HOME/reboot-gate-checks" 2>/dev/null || printf '0')"
@@ -211,7 +262,7 @@ require_docker_restart_quiescence() {
       name: "same-boot marker",
       setup: `
 reboot_required() { return 1; }
-all_packages_exact() { return 0; }
+all_packages_ready() { return 0; }
 install_boot_marker_matches_current_boot() { return 0; }
 `,
       expectedGate: "REBOOT_HANDOFF_BLOCKED check=1",
@@ -220,7 +271,7 @@ install_boot_marker_matches_current_boot() { return 0; }
       name: "unloaded driver",
       setup: `
 reboot_required() { return 1; }
-all_packages_exact() { return 0; }
+all_packages_ready() { return 0; }
 install_boot_marker_matches_current_boot() { return 1; }
 driver_loaded_exact() { return 1; }
 `,
@@ -230,7 +281,7 @@ driver_loaded_exact() { return 1; }
       name: "Docker group",
       setup: `
 reboot_required() { return 1; }
-all_packages_exact() { return 0; }
+all_packages_ready() { return 0; }
 install_boot_marker_matches_current_boot() { return 1; }
 driver_loaded_exact() { return 0; }
 finish_runtime() { DOCKER_GROUP_ADDED=1; }
