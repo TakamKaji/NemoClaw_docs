@@ -398,6 +398,7 @@
 │   │   ├── 2026-07-23.mdx
 │   │   ├── 2026-07-24.mdx
 │   │   ├── 2026-07-25.mdx
+│   │   ├── 2026-07-28.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -499,6 +500,7 @@
 │   │   ├── host-files-and-state.mdx
 │   │   ├── network-policies.mdx
 │   │   ├── platform-support.mdx
+│   │   ├── system-readiness.mdx
 │   │   ├── troubleshoot-mcp-servers.mdx
 │   │   └── troubleshooting.mdx
 │   ├── resources
@@ -527,6 +529,7 @@
 │       ├── openshell-0.0.72-compatibility-review.mdx
 │       ├── openshell-0.0.85-migration-review.md
 │       ├── sandbox-base-2026-07-25-dependency-review.md
+│       ├── sandbox-base-2026-07-27-native-package-review.md
 │       ├── sandbox-base-libexpat-jq-2026-07-24-dependency-review.md
 │       └── tcb-boundary.mdx
 ├── fern
@@ -2969,4 +2972,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-246 directories, 2724 files
+246 directories, 2727 files
