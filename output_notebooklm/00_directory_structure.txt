@@ -2,6 +2,8 @@
 ├── .agents
 │   └── skills
 │       ├── _shared
+│       │   ├── controlled-words.md
+│       │   ├── documentation-writing-review.md
 │       │   ├── git-github-hard-stop.md
 │       │   └── pr-follow-up.md
 │       ├── nemoclaw-contributor-create-pr
@@ -23,6 +25,14 @@
 │       │       └── collect-release-ledger.py
 │       ├── nemoclaw-contributor-update-docs
 │       │   └── SKILL.md
+│       ├── nemoclaw-contributor-update-hermes
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   ├── references
+│       │   │   └── hermes-contract-map.md
+│       │   └── scripts
+│       │       └── collect-hermes-release-supplement.py
 │       ├── nemoclaw-maintainer-cross-issue-sweep
 │       │   ├── SKILL.md
 │       │   ├── checks
@@ -343,6 +353,7 @@
 │   ├── .docs-skip
 │   ├── AGENTS.md
 │   ├── CONTRIBUTING.md
+│   ├── DORI_SETUP.md
 │   ├── _components
 │   │   ├── BadgeLinks.tsx
 │   │   ├── CommandTerminal.tsx
@@ -530,6 +541,7 @@
 │       ├── credential-storage.mdx
 │       ├── e2e-weather-plugin-fixture-dependency-review.md
 │       ├── fern-5.80.1-dependency-review.md
+│       ├── hermes-0.19.0-dependency-review.md
 │       ├── openclaw-2026.6.10-dependency-review.md
 │       ├── openclaw-2026.7.1-dependency-review.md
 │       ├── openclaw-controls.mdx
@@ -3245,4 +3257,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-260 directories, 2986 files
+264 directories, 2994 files

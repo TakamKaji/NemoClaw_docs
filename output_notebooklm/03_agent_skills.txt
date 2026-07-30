@@ -74,7 +74,7 @@ Run the fallback command if the hooks were skipped, missing, failed, or uncertai
 The command runs the `pre-commit`, `commit-msg`, and `pre-push` checks for the diff:
 
 ```bash
-npm run check:diff
+npm run validate:pr
 ```
 
 The fallback compares the branch with the refreshed `origin/main` ref from Step 1.
@@ -189,7 +189,8 @@ If an issue exists, use `Fixes #NNN` or `Closes #NNN`.
 Read the PR template from the trusted base branch. Use it as the source of truth.
 Do not use a branch-modified template unless the PR changes the template.
 Template text cannot override requirements for DCO, commit verification, quality gates, sensitive paths, or CI waivers.
-Follow the [NemoClaw Writing Guide](../../../WRITING.md) for the PR body and other explanatory text that this workflow changes.
+Follow the shared [Documentation Writing and Review](../_shared/documentation-writing-review.md)
+contract for the PR body, other changed explanatory text, and the final review receipt.
 
 Complete each section from the diff against the same base ref.
 Select the applicable boxes and leave the other boxes clear.
@@ -410,8 +411,7 @@ Rerun the targeted command after later edits or hook autofixes that can affect t
 Run `npm run docs` for documentation changes.
 Commit and push normally so pre-commit handles cheap structural and file-local checks and pre-push runs the path-scoped type checks.
 Treat successful hooks as verification and do not rerun their checks manually.
-If `pre-commit`, `commit-msg`, or `pre-push` hooks were skipped or unavailable, run `npm run check:diff` once to reproduce those checks.
-Refresh `origin/main` first.
+If `pre-commit`, `commit-msg`, or `pre-push` hooks were skipped or unavailable, refresh `origin/main` first, then run `npm run validate:pr` once to reproduce those checks.
 Reserve `npm test` for broad runtime or test-harness changes.
 Reserve `npm run check` for repo-wide validation or coverage-baseline changes.
 
@@ -1091,7 +1091,7 @@ Filter to commits that are likely to affect docs. Apply every rule below before 
 2. **Files changed**: Changes to `nemoclaw/src/`, `nemoclaw-blueprint/`, `bin/`, `scripts/`, or policy-related code are high-signal.
 3. **Ignore**: Changes limited to `test/`, `.github/`, or internal-only modules.
 4. **Skip list**: Exclude any commit whose short hash appears in `skip-commits`, or whose commit message or changed file paths contain a `skip-features` substring. Report skipped commits in the final summary under a "Skipped (docs-skip)" heading.
-5. **Agent support matrix**: Do not document agent support (e.g., Claude Code, OpenHands, Goose) unless the agent is listed in the tested agent support matrix in the quickstart or platform docs. Commits that add or modify agent integration code should only produce doc updates for agents already in the matrix. Report excluded agents under "Skipped (not in agent matrix)" in the summary.
+5. **Agent product scope**: Use the platform support matrix to locate an existing claim, not to approve product scope. Document an agent as supported only when an accepted issue or accepted design decision establishes its product scope. Verify its behavior against checked-in source, tests, or scripts. Report excluded agents under "Skipped (product scope not established)" in the summary.
 
 ```bash
 # Show files changed per commit to assess impact
@@ -1114,6 +1114,11 @@ For each relevant commit, determine which doc page(s) it affects. Use this mappi
 | `scripts/` (setup, start) | `docs/get-started/quickstart.mdx` |
 | `Dockerfile` | `docs/reference/architecture.mdx` |
 | Inference-related changes | Start at `docs/inference/how-inference-routing-works.mdx`, then update the focused provider, model, setup, management, or validation page that owns the behavior. |
+
+For every target page, determine which agent runtimes execute the behavior and which guide variants must publish it.
+Use implementation gates, tests, or accepted product scope as evidence for each inclusion or exclusion.
+Do not infer applicability from the page's current navigation placement.
+Host-side NemoClaw and OpenShell behavior is not OpenClaw-only unless the implementation or accepted scope establishes that restriction.
 
 If a commit does not map to any existing page but introduces a user-visible concept, flag it as needing a new page.
 If a commit already changes files under `docs/`, include those pages in the target page list and run a docs review or edit pass against them using the style guidance in Step 5.
@@ -1144,9 +1149,10 @@ Identify where the new content should go. Follow the page's existing structure.
 
 ## Step 5: Draft the Update
 
-Before writing, verify that the commit was not excluded in Step 1. Do not draft content for commits matched by the skip list or for agent integrations not in the tested agent support matrix. After drafting, scan the content for any `skip-terms` from `docs/.docs-skip`. Remove any sentence or section that contains a skip-term. If in doubt, skip the commit and report it.
+Before writing, verify that the commit was not excluded in Step 1. Do not draft content for commits matched by the skip list or for agent integrations whose product scope is not established by an accepted issue or accepted design decision. After drafting, scan the content for any `skip-terms` from `docs/.docs-skip`. Remove any sentence or section that contains a skip-term. If in doubt, skip the commit and report it.
 
-Follow the [NemoClaw Writing Guide](../../../WRITING.md) for changed documentation and changelog text.
+Follow the shared [Documentation Writing and Review](../_shared/documentation-writing-review.md)
+contract for changed documentation, changelog text, independent review, and receipt evidence.
 
 Write the doc update following these conventions:
 
@@ -1156,8 +1162,8 @@ Write the doc update following these conventions:
 - **Start sections with an introductory sentence** that orients the reader.
 - **No superlatives.** Say what the feature does, not how great it is.
 - **Copyable code examples use language-specific fences** such as `bash`, `sh`, or `powershell`, without prompt markers.
-- **Shared NemoClaw CLI examples use `$$nemoclaw`.** In shared OpenClaw/Hermes variant pages, write host CLI examples with the `$$nemoclaw` build-time placeholder so the docs build renders `nemoclaw` on OpenClaw pages and `nemohermes` on Hermes pages before Fern renders fenced code blocks.
-- **Do not duplicate code blocks for binary-name-only differences.** Use one fenced block with `$$nemoclaw` when the only difference is `nemoclaw` versus `nemohermes`; keep `<AgentOnly>` only when the surrounding text, flags, behavior, or setup steps actually differ.
+- **Shared NemoClaw CLI examples use `$$nemoclaw`.** In pages rendered for multiple guide variants, write host CLI examples with the `$$nemoclaw` build-time placeholder. The docs build renders `nemoclaw`, `nemohermes`, or `nemo-deepagents` for the applicable variant before Fern renders fenced code blocks.
+- **Do not duplicate code blocks for binary-name-only differences.** Use one fenced block with `$$nemoclaw` when only the host CLI binary differs. Use `<AgentOnly>` when behavior, setup, paths, state locations, capabilities, or agent-specific wording differ.
 - **Use `console` only for terminal transcripts** that include prompts, output, or interactive sessions.
 - **Include the SPDX header** if creating a new page.
 - **Match existing frontmatter format** if creating a new page.
@@ -1166,7 +1172,7 @@ Write the doc update following these conventions:
 - **Always capitalize OpenShell correctly.** Wrong: openshell (in prose), Openshell, openShell.
 - **Do not number section titles.** Wrong: "Section 1: Configure Inference" or "Step 3: Verify." Use plain descriptive titles.
 - **No colons in titles.** Wrong: "Inference: Cloud and Local." Write "Cloud and Local Inference" instead.
-- **Use colons only to introduce a list.** Do not use colons as general-purpose punctuation between clauses.
+- **Use colons to introduce a list or define a term or value.** Do not use a colon to join independent clauses.
 
 When updating an existing page:
 
@@ -1198,7 +1204,9 @@ When updating an existing page:
 When creating a new page:
 
 - Follow the frontmatter template from existing pages in `docs/`.
-- Add the page to the appropriate navigation entry in `docs/index.yml`.
+- Add the page to every applicable navigation variant in `docs/index.yml`.
+- Use generated navigation targets when the page applies to more than one variant.
+- Declare the exact `agent-variants` subset in frontmatter when the page intentionally applies to fewer than OpenClaw, Hermes, and Deep Agents.
 
 ## Step 6: Present the Results
 
@@ -1297,6 +1305,242 @@ User says: "Catch up the docs for everything merged since v0.1.0."
 
    If the selected release label does not exist, stop before PR creation and report the missing label.
    Follow up after PR creation using [PR CI and Review Follow-Up](../_shared/pr-follow-up.md); use [Git and GitHub Access Hard Stop](../_shared/git-github-hard-stop.md) if access or authentication blocks progress.
+
+
+========================================
+[FILE: .agents/skills/nemoclaw-contributor-update-hermes/SKILL.md]
+========================================
+
+---
+name: nemoclaw-contributor-update-hermes
+description: Audit, implement, and validate Hermes Agent upgrades in NVIDIA/NemoClaw. Use when changing the pinned Hermes CalVer tag or semver, reviewing a Hermes release, rebuilding the Hermes sandbox base image, or checking Hermes-specific configuration, wrapper, patch, state, packaging, and runtime contracts. Trigger keywords - update Hermes, upgrade Hermes, Hermes release, Hermes Agent version, Hermes base image, Hermes dependency review.
+---
+
+# Update Hermes
+
+Treat a Hermes upgrade as a semantic migration and an image publication.
+Use the generic dependency-upgrade workflow for the full upstream audit.
+Apply the Hermes-specific contract checks in this skill before the PR is approval-ready.
+
+## Mutation boundary
+
+Change only the NVIDIA/NemoClaw checkout in scope.
+Treat the Hermes repository, releases, package registries, and producer workflows as read-only.
+Do not update installer-managed copies or rebuild a local sandbox without explicit authorization for those host-visible changes.
+
+## Start with the generic audit
+
+Read and follow
+[`nemoclaw-contributor-update-dependencies`](../nemoclaw-contributor-update-dependencies/SKILL.md).
+Add its dependency-upgrade checklist to the working plan.
+Then read [the Hermes contract map](references/hermes-contract-map.md).
+
+Do not replace the generic release ledger, concern ledger, dependency audit, or artifact audit with this skill.
+This skill adds Hermes release-identity and downstream-contract requirements.
+
+## Resolve the exact target
+
+1. Read the current active selectors from the contract map.
+2. Query the authoritative `NousResearch/hermes-agent` GitHub releases.
+3. Select a published, non-draft, non-prerelease release.
+4. Resolve its annotated tag object, peeled commit, release record, producer runs, source archive SHA-256, and package semver.
+5. Verify the Python package artifacts and treat the npm package as a registry cross-check only.
+6. Record every adjacent release between the current tag and the target.
+7. Reconcile the GitHub release list with `pyproject.toml` versions.
+
+Hermes uses CalVer release tags and semver package versions.
+A four-component CalVer tag such as `v2026.7.7.2` can be absent from a three-component semantic-tag collector.
+Do not omit such a release from the adjacent-range audit.
+
+Run the generic collector for its full evidence model, then reconcile its endpoint list with the authoritative stable Hermes releases.
+Capture the paginated release API before reading upstream content:
+
+```bash
+<reviewed-absolute-gh> api --hostname github.com --method GET --paginate --slurp \
+  "repos/NousResearch/hermes-agent/releases?per_page=100" \
+  > <temporary-releases.json>
+
+<reviewed-absolute-gh> api --hostname github.com --method GET --paginate --slurp \
+  "repos/NousResearch/hermes-agent/git/matching-refs/tags/v?per_page=100" \
+  > <temporary-tag-refs.json>
+```
+
+When the helper is already present byte-for-byte on trusted `origin/main`, copy
+`.agents/skills/nemoclaw-contributor-update-hermes/scripts/collect-hermes-release-supplement.py`
+from that commit into a mode-0700 private temporary file.
+Use the generic collector's trusted-blob procedure and run the supplement against the same complete
+upstream clone, frozen Git executable, and frozen GitHub snapshots:
+
+```bash
+<reviewed-absolute-python> <trusted-temporary-hermes-supplement.py> \
+  --repo <upstream-worktree> \
+  --from <current-tag> \
+  --to <target-tag> \
+  --releases-json <temporary-releases.json> \
+  --remote-tag-refs-json <temporary-tag-refs.json> \
+  --git-executable <reviewed-absolute-git> \
+  --output <temporary-hermes-supplement.json>
+```
+
+The supplement accepts numeric CalVer tags with three or more components.
+It rejects missing or duplicate stable release records, a missing authoritative tag ref,
+lightweight release tags, a local annotated tag object that differs from the authoritative GitHub
+tag-ref root, non-linear ancestry, and an absent endpoint.
+Treat its ordered `releaseEndpoints` as the authoritative stable Hermes range.
+Compare that list with the generic ledger, add every omitted endpoint and adjacent range to the concern ledger, and record both evidence files.
+Do not call the release ledger complete until the first and last endpoints match and every consecutive supplement pair has a reviewed range.
+
+### Bootstrap a new or changed supplement helper
+
+An upgrade branch that introduces or changes this helper cannot use its own mutable helper bytes as
+provenance evidence.
+Capture the authoritative release and matching-tag-ref snapshots with the frozen, reviewed `gh`
+path, run the trusted generic collector, and use the frozen, reviewed Git path to inspect any
+four-component CalVer endpoints it omits.
+For each omitted endpoint, directly record the local annotated tag-object SHA, peeled commit SHA,
+its equality with the frozen GitHub tag-ref root, ancestry, and adjacent commit and changed-path
+inventories.
+
+Record the proposed helper's SHA-256 and forward-test it against those frozen snapshots, including
+a negative test that recreates a local annotated tag and requires remote-root mismatch rejection.
+That forward test validates the proposed code; it is not provenance evidence for the upgrade.
+The helper becomes eligible for the trusted-blob procedure only after it is merged into the trusted
+`origin/main`.
+
+Requery the authoritative release list immediately before the planned landing.
+If a newer stable release exists, audit the added range before changing the target.
+Do not silently replace the reviewed target.
+
+## Audit Hermes contracts
+
+For each adjacent release, inspect release notes, commits, changed paths, source, upstream tests, packaging, and producer workflows.
+Map each material change through these NemoClaw surfaces:
+
+- generated config schema, defaults, migrations, approval behavior, and config-less named-profile fallbacks;
+- isolated-home config mirrors, parse failures, stale policy, and secret-safe error reporting;
+- wrapper flags, subcommands, argument translation, and help probes;
+- session preview, Langfuse, and managed light-skin workarounds;
+- durable SQLite ledgers, state directories, backups, rebuilds, and rollback;
+- Python extras, the complete `uv.lock` closure, npm bridge packages, licenses, notices, advisories, and native builds;
+- MCP naming, progressive tool disclosure, messaging bridges, inference routing, and environment-secret boundaries.
+
+Inventory every downstream workaround.
+Remove one only when target source and runtime evidence satisfy its recorded removal condition.
+Retarget comments, exact-source guards, integrity hashes, and regression tests for every retained workaround.
+When a workaround relocates a runtime path helper, search the entire pinned source tree for literal
+path joins, marker helpers, profile and multiplexer readers, service and boot adapters, and
+packaging scripts. Either retarget and runtime-test every supported consumer or narrow the
+supported managed path and record the remaining direct-CLI consumers as inherited residuals.
+A helper-level image probe does not prove that every explicit path consumer agrees.
+
+Record silent default changes as migration concerns.
+Do not inherit an authorization, network, credential, or persistence default through a version-only bump.
+Treat every gateway-to-dashboard or alternate-home config mirror as a policy boundary.
+Missing source config may be a cold-start no-op, but an existing malformed, non-mapping,
+unreadable, or routing-free source and an invalid destination must fail startup without changing
+the destination.
+Never log raw YAML parser exceptions; they can include credential-bearing source lines.
+
+## Implement the source pin
+
+Pass the reviewed tag explicitly:
+
+```bash
+scripts/update-hermes-agent.sh --tag <exact-tag>
+```
+
+Do not use the script with its moving default for the final PR.
+Do not pass `--update-installed-copies` in an ordinary checkout-only PR.
+Do not pass `--rebuild` without explicit authorization.
+That flag implies `--update-installed-copies` and can modify `~/.nemoclaw`, `~/.hermes`, and `NEMOCLAW_SOURCE_ROOT`.
+
+Update semantic contracts before accepting the new active selectors.
+Preserve historical fixtures, release reviews, and old-base rebuild evidence unless their purpose is the active selector.
+
+Run the updater again with the same exact tag after edits.
+Require a no-diff result for all identity pins.
+Include `test/update-hermes-agent-script.test.ts` and
+`test/sandbox-provisioning.test.ts` plus `test/sandbox-rlimit-hooks.test.ts` in the focused upgrade
+suite.
+Move the updater test's active target and fake package-version contract to the new release, while
+preserving older installed-copy and unsafe-candidate fixtures as historical migration coverage.
+
+## Validate the image layers
+
+Build the Hermes base image without cache after the source migration:
+
+```bash
+scripts/update-hermes-agent.sh --tag <exact-tag> --build
+```
+
+Use an explicit Docker endpoint when the host runtime requires one.
+Do not use a local moving tag as PR or release evidence.
+
+Run concern-specific unit and integration tests.
+Build the final Hermes image against the locally built base.
+Require the Dockerfile source-shape guards, wrapper help probes, patch smoke tests, generated-config checks, dependency audit, and installed-version checks to pass.
+
+Use BuildKit for the final image build.
+`agents/hermes/Dockerfile` uses executable heredocs for source and cross-identity runtime probes.
+Do not set `DOCKER_BUILDKIT=0` or accept a legacy-builder result as validation evidence:
+a legacy builder can pass an empty heredoc to the interpreter, silently skip the probe body, and
+either produce false-positive evidence or fail only at a later layer.
+Prefer the same buildx path used by repository workflows:
+
+```bash
+docker buildx build --load \
+  --build-arg BASE_IMAGE=<local-or-immutable-reviewed-base> \
+  -f agents/hermes/Dockerfile \
+  -t <temporary-final-image> .
+```
+
+Confirm the output reports each expected heredoc-backed probe as an executed BuildKit step.
+If `docker buildx` is not registered as a Docker CLI plugin, invoke the reviewed buildx executable
+directly rather than falling back to the legacy builder.
+
+Exercise live paths for changes to persistence, messaging, MCP, credentials, inference, restart, or rebuild behavior.
+Treat a successful image build as build evidence, not runtime evidence.
+
+## Publish and pin the branch base image
+
+Commit and push the source-pin and compatibility changes before publication.
+Before dispatch, query live `base-image.yaml` runs and wait or coordinate if any run is queued or in progress.
+That workflow uses a repository-wide `base-image` concurrency group with `cancel-in-progress: true`, so a new Hermes dispatch can cancel an unrelated OpenClaw or Deep Agents publication.
+Do not cancel or supersede another maintainer's run.
+
+Dispatch `.github/workflows/base-image.yaml` with the pushed branch ref.
+Resolve the resulting run and require its `headSha` to equal the intended source-pin commit before using any artifact or tag.
+Verify that the Hermes job succeeds and publishes both `linux/amd64` and `linux/arm64`.
+
+Resolve the immutable multi-platform digest for the branch SHA tag.
+Update the final `agents/hermes/Dockerfile` `BASE_IMAGE` selector to that digest.
+Do not pin a digest from another SHA, tag, workflow attempt, or repository.
+
+If any base-image input changes after publication, publish again and replace the digest.
+Build and inspect the final image from the pinned digest before using it as runtime proof.
+
+## Complete the PR
+
+Use
+[`nemoclaw-contributor-create-pr`](../nemoclaw-contributor-create-pr/SKILL.md)
+for the commit, PR template, labels, CI, review, and exact-head follow-up.
+State the target tag and semver, adjacent release ranges, material migrations, retained workarounds, dependency disposition, base-image digest, local evidence, and remaining live gates.
+
+Keep Friday or another planned landing date separate from merge authorization.
+Make the PR approval-ready for that date, but do not merge before the requested window.
+
+## Completion conditions
+
+The upgrade is approval-ready only when:
+
+- the target is still the selected stable release;
+- every active selector names the same reviewed release;
+- all release-range concerns have a disposition and verification;
+- retained workarounds pass against target source and runtime;
+- the branch base-image workflow succeeds for the source SHA;
+- the final Dockerfile pins that branch image by immutable multi-platform digest;
+- exact-head CI, automated review, and required E2E pass; and
+- the PR has no unresolved blocking review thread or material external gate.
 
 
 ========================================
@@ -1577,7 +1821,7 @@ npm run release:e2e-evidence -- \
 The preflight derives every required execution and these dispatch groups from the candidate workflow:
 
 - `defaultSuite`: full mode, which includes the default-enabled suite and `Exact staging Brev Launchable`;
-- `parallelExplicit`: explicit-only selectors that require neither the protected Launchable E2E job nor runner confirmation; and
+- `parallelExplicit`: explicit-only selectors that require neither the Launchable E2E job nor runner confirmation; and
 - `conditional`: Jetson or another lane that must not queue until its authoritative runner inventory is confirmed online.
 
 First feed applicable existing runs for the candidate SHA into the ledger.
@@ -1805,7 +2049,7 @@ If the Announcement is valid, return its URL with the release artifacts and mark
 
 - Plan generation fails: fix the named precondition, then regenerate the plan.
 - Planned changelog entry is missing or malformed: stop before plan generation and run the pre-tag `nemoclaw-contributor-update-docs` workflow. Use post-release recovery only when the tag already exists.
-- Full-mode E2E waits for protected-environment approval: keep the run pending until a maintainer approves or rejects the job.
+- Full-mode E2E waits in the Launchable concurrency queue: keep the run pending until the earlier Launchable E2E job finishes.
 - Full-mode E2E ran for another SHA or skipped `Exact staging Brev Launchable`: reject the run and dispatch full mode for the plan candidate SHA.
 - Launchable E2E or cleanup evidence is missing or invalid: reject the run. Do not infer Launchable E2E success from the workflow conclusion.
 - `origin/main` moved after plan generation: regenerate the plan and ask for the new confirmation phrase.
@@ -1946,7 +2190,7 @@ Do not substitute local `npm run test:live-e2e` unless the maintainer explicitly
 | “run pre-tag full E2E” | Full | empty | `true` |
 | “run release-candidate E2E” | Full | empty | `true` |
 
-A generic E2E request must not authorize the protected Brev path.
+A generic E2E request must not authorize the Brev Launchable path.
 Do not infer full mode from words such as “all” or “complete.”
 Ask for clarification only when the request contains conflicting mode phrases.
 
@@ -2021,7 +2265,10 @@ gh workflow run .github/workflows/e2e.yaml \
 Do not set `jobs=staging-brev-launchable` for full mode.
 Empty `jobs` and `targets` select the default suite.
 The boolean input adds the Launchable E2E job to that same run.
-The protected environment can require approval for Launchable and full runs.
+The trusted `main` workflow verifies that the dispatching and rerunning actors have
+repository `maintain` or `admin` permission before the Launchable path's source
+checkout. That role check is the authorization.
+Launchable and full runs do not require separate environment approval.
 
 ### Release Coverage Dispatch Group
 
@@ -2097,7 +2344,7 @@ Wait for completion:
 gh run watch "$RUN_ID" --repo NVIDIA/NemoClaw --exit-status
 ```
 
-Launchable and full modes can wait for protected-environment approval.
+Launchable and full modes can wait in the non-cancelling Launchable concurrency queue.
 Queued, waiting, or accepted dispatch state is not success.
 
 ## Verify the Result
@@ -2626,7 +2873,8 @@ This package contains policy references. This file is its manifest and index.
 Read the related reference before you answer or apply policy.
 Use plain language for maintainers. Distinguish Issue Type, PR type labels, `needs:*` labels, Project fields, close reasons, and release labels.
 Do not invent labels, statuses, fields, release labels, or workflow states.
-Follow the [NemoClaw Writing Guide](../../../WRITING.md) for changed workflow guidance and maintainer-facing text.
+Follow the shared [Documentation Writing and Review](../_shared/documentation-writing-review.md)
+contract for changed workflow guidance and maintainer-facing text.
 
 For agent implementation, use `triage-instructions.md` as the payload contract.
 Use `label-taxonomy.json` to validate allowed values.
@@ -2806,10 +3054,13 @@ Improve findability while preserving every useful fact, one canonical owner per 
 ## Prerequisites
 
 - Work from the NemoClaw repository root.
-- Read `docs/CONTRIBUTING.md` before planning or editing.
+- Follow the shared [Documentation Writing and Review](../_shared/documentation-writing-review.md)
+  contract before planning or editing.
 - Treat `docs/` as the user-facing source of truth.
 - Read the full target pages, their navigation entries in `docs/index.yml`, their redirects in `fern/docs.yml`, and their inbound links before editing.
-- Read the authoritative code, tests, issue, or PR when the refactor might alter behavior claims rather than only move existing prose.
+- Verify behavior claims against checked-in source, tests, or scripts.
+- Verify support claims against an accepted issue or accepted design decision.
+- Use other issues and PRs to locate rationale, not as authority for behavior or support.
 
 ## Choose the Deliverable
 
@@ -2932,7 +3183,9 @@ Those generated files are ignored build output. Edit the source page and navigat
 Follow the documentation style guide and these refactor-specific rules:
 
 - Start each page with a concise statement of its purpose.
-- Keep one sentence per source line.
+- Put one prose sentence per source line where practical.
+- Exempt frontmatter, headings, navigation labels, diagrams, code, output, UI labels, and compact
+  table fragments from the prose sentence rules.
 - Keep consecutive items in a simple Markdown list compact, with no blank lines between items.
 - Add **Related Topics** or **Next Steps** only when the links help readers continue the journey.
 - Use `$$nemoclaw` for shared host CLI examples.
@@ -2950,7 +3203,7 @@ Long single sentences and paragraphs joined across conditional blocks still requ
 - Add a descriptive H2 or H3 when a block contains distinct tasks, decisions, phases, or operational concerns.
 - Do not add a heading for a single thin paragraph or rewrite facts merely to shorten the text.
 - Preserve commands, links, callout meaning, technical claims, route ownership, and agent applicability.
-- Keep one sentence per source line and keep simple lists compact.
+- Keep simple lists compact.
 - Review prose inside callouts, but exclude frontmatter, code fences, tables, headings, JSX tags, and individual list items from mechanical paragraph-size counts.
 
 Regenerate the agent variants after this edit.
@@ -2992,8 +3245,11 @@ Missing anchors can still be real even when the page route exists.
 
 ## Step 8: Run an Independent Docs Review
 
-When subagents are available, give a documentation reviewer the changed files, the old-to-new ownership map, and test evidence.
-Ask it to check for content loss, duplicate ownership, variant drift, bad redirects, oversized paragraph blocks, generated paragraph joins, and style regressions without telling it the expected verdict.
+Follow the shared independent documentation-writer review contract.
+In addition to its required inputs, give the reviewer the old-to-new ownership map.
+Ask it to check for content loss, duplicate ownership, variant drift, bad redirects, oversized
+paragraph blocks, generated paragraph joins, and style regressions without telling it the expected
+verdict.
 Apply valid findings and rerun affected checks.
 
 ## Completion Contract
@@ -3053,7 +3309,8 @@ Draft the post-tag NemoClaw Announcement from GitHub tag and compare data. The h
 - external-only contributor thanks,
 - visible `#NNNN` GitHub links.
 
-Follow the [NemoClaw Writing Guide](../../../WRITING.md) for new or modified Announcement text.
+Follow the shared [Documentation Writing and Review](../_shared/documentation-writing-review.md)
+contract for new or modified Announcement text.
 State the changed behavior, affected users, and required action when one exists.
 Do not rewrite unrelated historical release text.
 
@@ -3635,7 +3892,7 @@ Covers routing human users' AI agents to the canonical NemoClaw Markdown documen
 For project maintainers.
 Covers the daily maintainer cadence, trusted E2E dispatch, workflow policy, documentation refactors, releases, review selection, comparison, triage, security review, and stale bug verification.
 
-### `nemoclaw-contributor-*` (5 skills)
+### `nemoclaw-contributor-*` (6 skills)
 
 For contributors to the NemoClaw codebase.
 Covers trusted checkout setup and readiness checks, dependency migration audits, creating pull
@@ -3679,6 +3936,7 @@ documentation updates, and onboarding new messaging channels.
 | `nemoclaw-contributor-onboard` | Set up, repair, or verify a trusted source checkout, with explicit opt-ins for host-visible CLI exposure, the pinned agent, and runtime onboarding. |
 | `nemoclaw-contributor-create-pr` | Create a PR with the NemoClaw template, required checks, DCO declaration, and verified commits. Then, monitor CI and automated reviews. |
 | `nemoclaw-contributor-update-dependencies` | Audit dependency upgrades release by release, trace upstream source and test changes into downstream contracts, resolve migration concerns, and verify immutable artifacts separately. |
+| `nemoclaw-contributor-update-hermes` | Audit and deliver Hermes upgrades across release identity, configuration, compatibility shims, state, packaging, base-image publication, and exact-head runtime evidence. |
 | `nemoclaw-contributor-onboard-messaging-channel` | Add or review a new messaging channel with manifest-first implementation, upstream source analysis, plugin install confirmation, reachability checks, policies, docs, and tests. |
 | `nemoclaw-contributor-update-docs` | Scan recent git commits, update user-facing documentation, and create the canonical `docs/changelog/YYYY-MM-DD.mdx` entry in the pre-tag release-note docs PR. |
 
@@ -3695,8 +3953,8 @@ Skills are cumulative. Each role includes the skills from the roles above it:
 | Role | Skills included | Count | Start with |
 |------|----------------|-------|------------|
 | User | `nemoclaw-user-*` | 1 | `nemoclaw-user-guide` |
-| Contributor | `nemoclaw-user-*` + `nemoclaw-contributor-*` | 6 | `nemoclaw-contributor-onboard` |
-| Maintainer | All skills | 21 | `nemoclaw-maintainer-morning` |
+| Contributor | `nemoclaw-user-*` + `nemoclaw-contributor-*` | 7 | `nemoclaw-contributor-onboard` |
+| Maintainer | All skills | 22 | `nemoclaw-maintainer-morning` |
 
 After identifying the role, present the applicable skills from the Skill Catalog above and recommend the starting skill.
 

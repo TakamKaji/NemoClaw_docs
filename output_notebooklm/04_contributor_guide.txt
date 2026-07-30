@@ -27,6 +27,7 @@ Stop and request maintainer direction, or route an independent solution through 
 This repo ships agent skills under `.agents/skills/`.
 Use `nemoclaw-user-guide` for end-user documentation routing, `nemoclaw-contributor-*` for contributor workflows, and `nemoclaw-maintainer-*` for maintainer workflows.
 Load the `nemoclaw-skills-guide` skill for a full catalog and quick decision guide mapping tasks to skills.
+Skills that write or review explanatory text must follow the shared [Documentation Writing and Review](.agents/skills/_shared/documentation-writing-review.md) contract.
 
 ## Architecture
 
@@ -72,8 +73,9 @@ Package-specific guides:
 | Run E2E support tests | `npx vitest run --project e2e-support` |
 | Run live E2E targets | `npm run test:live-e2e` |
 | Run plugin tests | `cd nemoclaw && npm test` |
-| Run repo-wide pre-commit and coverage checks | `npm run check` |
-| Reproduce `pre-commit`, `commit-msg`, and `pre-push` checks for the current diff | `npm run check:diff` |
+| Validate a routine PR diff with `pre-commit`, `commit-msg`, and `pre-push` checks | `npm run validate:pr` |
+| Run the narrow custom repository checks used by lint and hooks | `npm run checks:repository` |
+| Run the broad repo-wide pre-commit and coverage baseline | `npm run check` |
 | Type-check CLI | `npm run typecheck:cli` |
 | Type-check plugin and plugin tests | `npm --prefix nemoclaw run typecheck` |
 | Auto-format | `npm run format` |
@@ -103,7 +105,6 @@ Tests are organized into disjoint Vitest projects defined in `vitest.config.ts`:
 6. **`e2e-support`** — fast tests for the E2E fixture/support layer; this project runs in the
    aggregate checks for code-changing PRs and code-changing pushes to `main`
 7. **`e2e-live`** — opt-in live targets that mutate real external state
-8. **`e2e-branch-validation`** — opt-in validation on an ephemeral Brev instance
 
 When writing tests:
 
@@ -206,6 +207,7 @@ All hooks managed by [prek](https://prek.j178.dev/) (installed via `npm install`
 - Use one name for one concept across issues, code, workflows, checks, logs, tests, and docs.
 - Follow the [NemoClaw Writing Guide](WRITING.md) for changed comments, test titles, PR text, changelog entries, Announcements, and agent guidance.
   The guide defines the review scope and the conditions that make a language finding blocking.
+- Use the [NemoClaw Controlled Word List](.agents/skills/_shared/controlled-words.md) for approved project terms and exact product names.
 - Do not turn one case into a system of categories or a new abstraction.
 - Do not add configuration, fallback, migration, compatibility, or extension layers without a current requirement. Name the current consumer and the test that protects the contract.
 - Report conclusions and evidence, not an analysis transcript.
@@ -281,12 +283,66 @@ If the command trace contains no reviewer-request write, report the event as an 
 ## Documentation
 
 - Treat `docs/` as the source of truth for user-facing documentation and follow `docs/CONTRIBUTING.md`.
-- After completing code or documentation changes, run a documentation writer subagent before final handoff. Give it the changed files, change summary, and test or docs-build evidence. For documentation-only changes, ask it to verify the writing rules and documentation style.
+- Before completing a code change, determine whether it changes a user-visible surface.
+  This includes a public API, CLI, configuration, UI or front-end behavior, workflow, default, error, or other supported product behavior.
+- When it does and the host supports subagents, start a documentation authoring subagent while the primary agent continues the implementation.
+  Direct it to read `docs/AGENTS.md`, update the affected docs, and run validation.
+  Give it the changed sources and user-visible impact.
+- Reconcile the authoring subagent's documentation changes and validation evidence before completing the implementation.
+  Include the required documentation in the same change.
+- If the host cannot run subagents, read `docs/AGENTS.md` in the primary task, complete the documentation work, and run its documented validation.
+  Do not omit required documentation because parallel execution is unavailable.
+- Before final handoff, a documentation writer subagent must independently review every completed code or documentation change.
+  Give it the changed files, change summary, and test or docs-build evidence.
+  For a documentation-only change, require review of the writing rules and documentation style.
+- If the current host cannot run this reviewer, hand the completed diff and validation evidence to a capable host.
+  If no capable host is available, record the review as `blocked` and do not complete final handoff.
 - After the review, complete the PR template's Documentation Writer Review section. Record the result, evidence, and agent surface. Put the reviewed head SHA and current `AGENTS.md` blob SHA in the template's hidden metadata comments.
 - If any commit changes the pull-request head after the hidden head SHA, rerun the documentation writer review and refresh the hidden metadata. The receipt check runs again when new commits are pushed.
-- For normal docs changes, include source pages under `docs/`.
-- Update `.agents/skills/nemoclaw-user-guide/SKILL.md` only when the AI-agent docs routing guidance changes.
 - During pre-tag release prep, run `nemoclaw-contributor-update-docs` and include the canonical release entry in the release-note docs PR. Create or update `docs/changelog/YYYY-MM-DD.mdx` for `vX.Y.Z` following `docs/CONTRIBUTING.md`; a PR that updates ordinary pages without the dated changelog entry is incomplete. Merge that PR, or record an explicit maintainer waiver, before generating the release plan.
+
+### NVIDIA DORI Routing
+
+Use the ignored `.dori_user_status` file at the repository root to select the
+documentation path. The file can contain only one line: `authorized` or
+`external`.
+
+1. Read `.dori_user_status` before checking for DORI.
+   - If the value is `external`, use the
+     [Writing Style Guide](docs/AGENTS.md#writing-style-guide) without checking
+     DORI.
+   - If the value is `authorized`, continue to step 2.
+   - If the file is absent or invalid, ask the user to select one of these
+     options. Use selectable options when the host supports them. Otherwise,
+     present the numbered list:
+
+     1. Select `authorized` if you are an NVIDIA employee or authorized
+        contractor with access to `gitlab-master.nvidia.com`.
+     2. Select `external` for all other contributors.
+
+   - Normalize an unambiguous response and write only the corresponding
+     lowercase value to `.dori_user_status`.
+     - Store `authorized` for option 1, `1`, `authorized`, or a response that
+       clearly selects `authorized`, such as `yes, authorized`.
+     - Store `external` for option 2, `2`, `external`, or a response that
+       clearly selects `external`.
+     - If the response is ambiguous, selects both options, or does not select
+       either option, ask again and do not write the file.
+   - If the user declines to answer or store a value, do not create the file.
+     Use the [Writing Style Guide](docs/AGENTS.md#writing-style-guide).
+   - Tell the user that deleting `.dori_user_status` resets the choice.
+2. Only after an `authorized` value, check whether the current agent exposes
+   `dori_handle` or `dori_route`.
+   - If DORI is available, use it for task routing. When `dori_collections` is
+     available, verify that a collection source contains
+     `tech-docs/skill-library`.
+   - If DORI is unavailable or the Skill Library is missing, follow
+     [NVIDIA DORI Setup](docs/DORI_SETUP.md).
+
+The stored value does not prove access or approve installation or host
+configuration. Use the
+[Writing Style Guide](docs/AGENTS.md#writing-style-guide) if setup is declined
+or fails.
 
 ## PR Requirements
 
@@ -297,11 +353,11 @@ If the command trace contains no reviewer-request write, report the event as an 
 - Contributor agents must stop before `gh pr create` if the PR body will not include the DCO declaration or any commit is missing GitHub verification; tell the contributor to fix the issue before opening a PR
 - If force-push is not allowed and an already-published branch contains an unverified commit, require a fresh branch and fresh PR with a clean compliant history
 - Run targeted tests once per relevant change set, rerunning after later behavior-affecting edits or hook autofixes, and run `npm run docs` for doc changes
-- Count successful normal hooks as verification; if hooks were skipped or unavailable, refresh `origin/main` and use `npm run check:diff`
+- Count successful normal hooks as verification; if hooks were skipped or unavailable, refresh `origin/main` and use `npm run validate:pr`
 - Follow PR template (`.github/PULL_REQUEST_TEMPLATE.md`)
 - PRs that change `scripts/prepare-dgx-station-host.sh` must include reviewable DGX Station test evidence identifying the tested commit, Station profile or scenario, result, and a supporting link. Any maintainer may review the evidence; without acceptable evidence, the PR is not ready to approve or merge. Treat the evidence as human-reviewed, not authenticated hardware provenance. Exceptional bypasses use existing repository governance and must document the reason on the PR.
 - No secrets, API keys, or credentials committed
-- Limit open PRs to fewer than 10
+- Apply the 10-open-PR limit from `.github/workflows/pr-limit.yaml` only to accounts that the workflow does not exempt
 
 
 ========================================
@@ -331,6 +387,7 @@ Stop and request maintainer direction, or route an independent solution through 
 This repo ships agent skills under `.agents/skills/`.
 Use `nemoclaw-user-guide` for end-user documentation routing, `nemoclaw-contributor-*` for contributor workflows, and `nemoclaw-maintainer-*` for maintainer workflows.
 Load the `nemoclaw-skills-guide` skill for a full catalog and quick decision guide mapping tasks to skills.
+Skills that write or review explanatory text must follow the shared [Documentation Writing and Review](.agents/skills/_shared/documentation-writing-review.md) contract.
 
 ## Architecture
 
@@ -376,8 +433,9 @@ Package-specific guides:
 | Run E2E support tests | `npx vitest run --project e2e-support` |
 | Run live E2E targets | `npm run test:live-e2e` |
 | Run plugin tests | `cd nemoclaw && npm test` |
-| Run repo-wide pre-commit and coverage checks | `npm run check` |
-| Reproduce `pre-commit`, `commit-msg`, and `pre-push` checks for the current diff | `npm run check:diff` |
+| Validate a routine PR diff with `pre-commit`, `commit-msg`, and `pre-push` checks | `npm run validate:pr` |
+| Run the narrow custom repository checks used by lint and hooks | `npm run checks:repository` |
+| Run the broad repo-wide pre-commit and coverage baseline | `npm run check` |
 | Type-check CLI | `npm run typecheck:cli` |
 | Type-check plugin and plugin tests | `npm --prefix nemoclaw run typecheck` |
 | Auto-format | `npm run format` |
@@ -407,7 +465,6 @@ Tests are organized into disjoint Vitest projects defined in `vitest.config.ts`:
 6. **`e2e-support`** — fast tests for the E2E fixture/support layer; this project runs in the
    aggregate checks for code-changing PRs and code-changing pushes to `main`
 7. **`e2e-live`** — opt-in live targets that mutate real external state
-8. **`e2e-branch-validation`** — opt-in validation on an ephemeral Brev instance
 
 When writing tests:
 
@@ -510,6 +567,7 @@ All hooks managed by [prek](https://prek.j178.dev/) (installed via `npm install`
 - Use one name for one concept across issues, code, workflows, checks, logs, tests, and docs.
 - Follow the [NemoClaw Writing Guide](WRITING.md) for changed comments, test titles, PR text, changelog entries, Announcements, and agent guidance.
   The guide defines the review scope and the conditions that make a language finding blocking.
+- Use the [NemoClaw Controlled Word List](.agents/skills/_shared/controlled-words.md) for approved project terms and exact product names.
 - Do not turn one case into a system of categories or a new abstraction.
 - Do not add configuration, fallback, migration, compatibility, or extension layers without a current requirement. Name the current consumer and the test that protects the contract.
 - Report conclusions and evidence, not an analysis transcript.
@@ -585,12 +643,66 @@ If the command trace contains no reviewer-request write, report the event as an 
 ## Documentation
 
 - Treat `docs/` as the source of truth for user-facing documentation and follow `docs/CONTRIBUTING.md`.
-- After completing code or documentation changes, run a documentation writer subagent before final handoff. Give it the changed files, change summary, and test or docs-build evidence. For documentation-only changes, ask it to verify the writing rules and documentation style.
+- Before completing a code change, determine whether it changes a user-visible surface.
+  This includes a public API, CLI, configuration, UI or front-end behavior, workflow, default, error, or other supported product behavior.
+- When it does and the host supports subagents, start a documentation authoring subagent while the primary agent continues the implementation.
+  Direct it to read `docs/AGENTS.md`, update the affected docs, and run validation.
+  Give it the changed sources and user-visible impact.
+- Reconcile the authoring subagent's documentation changes and validation evidence before completing the implementation.
+  Include the required documentation in the same change.
+- If the host cannot run subagents, read `docs/AGENTS.md` in the primary task, complete the documentation work, and run its documented validation.
+  Do not omit required documentation because parallel execution is unavailable.
+- Before final handoff, a documentation writer subagent must independently review every completed code or documentation change.
+  Give it the changed files, change summary, and test or docs-build evidence.
+  For a documentation-only change, require review of the writing rules and documentation style.
+- If the current host cannot run this reviewer, hand the completed diff and validation evidence to a capable host.
+  If no capable host is available, record the review as `blocked` and do not complete final handoff.
 - After the review, complete the PR template's Documentation Writer Review section. Record the result, evidence, and agent surface. Put the reviewed head SHA and current `AGENTS.md` blob SHA in the template's hidden metadata comments.
 - If any commit changes the pull-request head after the hidden head SHA, rerun the documentation writer review and refresh the hidden metadata. The receipt check runs again when new commits are pushed.
-- For normal docs changes, include source pages under `docs/`.
-- Update `.agents/skills/nemoclaw-user-guide/SKILL.md` only when the AI-agent docs routing guidance changes.
 - During pre-tag release prep, run `nemoclaw-contributor-update-docs` and include the canonical release entry in the release-note docs PR. Create or update `docs/changelog/YYYY-MM-DD.mdx` for `vX.Y.Z` following `docs/CONTRIBUTING.md`; a PR that updates ordinary pages without the dated changelog entry is incomplete. Merge that PR, or record an explicit maintainer waiver, before generating the release plan.
+
+### NVIDIA DORI Routing
+
+Use the ignored `.dori_user_status` file at the repository root to select the
+documentation path. The file can contain only one line: `authorized` or
+`external`.
+
+1. Read `.dori_user_status` before checking for DORI.
+   - If the value is `external`, use the
+     [Writing Style Guide](docs/AGENTS.md#writing-style-guide) without checking
+     DORI.
+   - If the value is `authorized`, continue to step 2.
+   - If the file is absent or invalid, ask the user to select one of these
+     options. Use selectable options when the host supports them. Otherwise,
+     present the numbered list:
+
+     1. Select `authorized` if you are an NVIDIA employee or authorized
+        contractor with access to `gitlab-master.nvidia.com`.
+     2. Select `external` for all other contributors.
+
+   - Normalize an unambiguous response and write only the corresponding
+     lowercase value to `.dori_user_status`.
+     - Store `authorized` for option 1, `1`, `authorized`, or a response that
+       clearly selects `authorized`, such as `yes, authorized`.
+     - Store `external` for option 2, `2`, `external`, or a response that
+       clearly selects `external`.
+     - If the response is ambiguous, selects both options, or does not select
+       either option, ask again and do not write the file.
+   - If the user declines to answer or store a value, do not create the file.
+     Use the [Writing Style Guide](docs/AGENTS.md#writing-style-guide).
+   - Tell the user that deleting `.dori_user_status` resets the choice.
+2. Only after an `authorized` value, check whether the current agent exposes
+   `dori_handle` or `dori_route`.
+   - If DORI is available, use it for task routing. When `dori_collections` is
+     available, verify that a collection source contains
+     `tech-docs/skill-library`.
+   - If DORI is unavailable or the Skill Library is missing, follow
+     [NVIDIA DORI Setup](docs/DORI_SETUP.md).
+
+The stored value does not prove access or approve installation or host
+configuration. Use the
+[Writing Style Guide](docs/AGENTS.md#writing-style-guide) if setup is declined
+or fails.
 
 ## PR Requirements
 
@@ -601,11 +713,11 @@ If the command trace contains no reviewer-request write, report the event as an 
 - Contributor agents must stop before `gh pr create` if the PR body will not include the DCO declaration or any commit is missing GitHub verification; tell the contributor to fix the issue before opening a PR
 - If force-push is not allowed and an already-published branch contains an unverified commit, require a fresh branch and fresh PR with a clean compliant history
 - Run targeted tests once per relevant change set, rerunning after later behavior-affecting edits or hook autofixes, and run `npm run docs` for doc changes
-- Count successful normal hooks as verification; if hooks were skipped or unavailable, refresh `origin/main` and use `npm run check:diff`
+- Count successful normal hooks as verification; if hooks were skipped or unavailable, refresh `origin/main` and use `npm run validate:pr`
 - Follow PR template (`.github/PULL_REQUEST_TEMPLATE.md`)
 - PRs that change `scripts/prepare-dgx-station-host.sh` must include reviewable DGX Station test evidence identifying the tested commit, Station profile or scenario, result, and a supporting link. Any maintainer may review the evidence; without acceptable evidence, the PR is not ready to approve or merge. Treat the evidence as human-reviewed, not authenticated hardware provenance. Exceptional bypasses use existing repository governance and must document the reason on the PR.
 - No secrets, API keys, or credentials committed
-- Limit open PRs to fewer than 10
+- Apply the 10-open-PR limit from `.github/workflows/pr-limit.yaml` only to accounts that the workflow does not exempt
 
 
 ========================================
@@ -769,7 +881,8 @@ clear and testable, stop exploring and implement it.
 ### Writing Guide
 
 Follow the [NemoClaw Writing Guide](WRITING.md) when you add or modify explanatory text.
-The guide defines its scope, terms, rules, examples, and review policy.
+Use the [NemoClaw Controlled Word List](.agents/skills/_shared/controlled-words.md) for approved project terms.
+The Writing Guide defines its scope, rules, examples, and review policy.
 
 ## Before You Open an Issue
 
@@ -903,8 +1016,11 @@ These are the primary npm scripts for day-to-day development:
 | `npm run dev:setup` | Install or repair repository-local contributor tooling |
 | `npm run dev:doctor` | Run read-only contributor environment readiness checks |
 | `npm run agent` | Launch the repository-pinned Pi coding agent |
-| `npm run check` | Run repo-wide pre-commit and full CLI/plugin coverage checks |
-| `npm run check:diff` | Reproduce `pre-commit`, `commit-msg`, and `pre-push` checks for the diff from `origin/main` |
+| `npm run validate:pr` | Validate a routine PR diff with `pre-commit`, `commit-msg`, and `pre-push` checks from `origin/main` |
+| `npm run checks:repository` | Run the narrow custom repository checks used by lint and hooks |
+| `npm run check` | Run the broad repo-wide pre-commit and full CLI/plugin coverage baseline |
+| `npm run check:diff` | Compatibility alias for `npm run validate:pr` |
+| `npm run checks` | Compatibility alias for `npm run checks:repository`; prints scope guidance before delegating |
 | `npm run format` | Auto-format Biome-supported source files |
 | `npm run typecheck:cli` | Type-check the root TypeScript project using `tsconfig.cli.json` |
 | `npm --prefix nemoclaw run typecheck` | Type-check plugin production and test sources without emitting files |
@@ -1055,17 +1171,18 @@ All git hooks are managed by [prek](https://prek.j178.dev/), a fast, single-bina
 | **pre-push** | Path-scoped incremental CLI/plugin TypeScript checks and checked-JavaScript checks |
 
 For PR preparation, normal `pre-commit`, `commit-msg`, and `pre-push` hooks are valid verification when they pass and were not bypassed with `--no-verify`.
-If hooks were skipped, missing, failed, or uncertain, run `npm run check:diff` once to reproduce those checks for the diff from `origin/main`.
-Refresh that remote-tracking base with `git fetch origin main` before relying on the fallback.
+If hooks were skipped, missing, failed, or uncertain, refresh the remote-tracking base with `git fetch origin main`, then run `npm run validate:pr` once to reproduce those checks for the current diff.
 
 Pre-push selects the root TypeScript, checked-JavaScript, and plugin type checks from the paths changed relative to the push base, and uses incremental compilation for the TypeScript projects.
-The `check:diff` fallback applies the same path selection, so do not rerun type checks separately solely to prepare a PR.
+The `validate:pr` command applies the same path selection, so do not rerun type checks separately solely to prepare a PR.
 CI runs the complete type-check gates independently; local path selection is a fast-feedback optimization, not the authoritative trust boundary.
 
 If you still have `core.hooksPath` set from an old Husky setup, Git will ignore `.git/hooks`. Run `git config --unset core.hooksPath` in this repo, then `npm install` so `prek install` (via `prepare`) can register the hooks.
 
+`npm run checks:repository` runs only the custom checks collected under `scripts/checks`; lint and the repository-check hook use it internally. The `npm run checks` alias remains available for compatibility and prints the canonical routine and narrow command names before delegating.
+
 `npm run check` is the whole-repository pre-commit and full CLI/plugin coverage baseline for broad changes to hooks, formatters, generated checks, or shared validation behavior.
-It is not part of routine PR preparation for a focused change.
+It is not part of routine PR preparation for a focused change. The `npm run check:diff` alias remains available for consumers migrating to `npm run validate:pr`.
 Full coverage enforces the aggregate ratchets in `ci/coverage-threshold-*.json` and per-file floors
 for security-sensitive SSRF, credential filtering and redaction, policy mutation, and state-lock
 modules. CLI coverage shards defer the per-file checks until their reports are merged. Pull requests
@@ -1079,7 +1196,7 @@ npm run docs
 ```
 
 Leave the broad-gate verification item unchecked unless you actually ran the applicable command.
-If hooks were skipped or unavailable, run `npm run check:diff` before opening the PR.
+If hooks were skipped or unavailable, refresh `origin/main`, then run `npm run validate:pr` before opening the PR.
 For code changes, map each success criterion to the narrowest stable test or other evidence that proves it, then run those targeted checks once per relevant change set and record the commands as evidence.
 Reproduce defects before fixing them when feasible; when reproduction is not feasible, record why and preserve the strongest available pre-fix evidence.
 Add regression coverage at the earliest stable behavior boundary that could have caught the defect, and add higher-level coverage only when it protects a distinct integration boundary.
@@ -1186,7 +1303,8 @@ For Markdown docs routing, user-skill guidance, and release-prep documentation w
 
 ## Pull Requests
 
-We welcome contributions. Every PR requires maintainer review before merge. To keep the review queue healthy, limit the number of open PRs you have at any time to fewer than 10.
+We welcome contributions. Every PR requires maintainer review before merge. Contributors may have up to 10 open PRs at one time.
+Core maintainers listed in `.github/workflows/pr-limit.yaml` are exempt from this limit.
 Maintainers review pull requests according to project priority, security impact, release readiness, and reviewer availability.
 PRs that solve issues with Priority set to Urgent or High are more likely to receive earlier review when maintainers have capacity.
 For substantial features or behavior changes, start with a GitHub Discussion before opening a large implementation PR.
@@ -1236,7 +1354,7 @@ If any commit is missing GitHub verification, fix the branch before opening a PR
 If force-push is not allowed after an unverified commit is published, open a fresh branch and fresh PR with a clean compliant history.
 
 > [!WARNING]
-> Accounts that repeatedly exceed this limit or submit automated bulk PRs may have their PRs closed or their access restricted.
+> Non-exempt accounts that repeatedly exceed this limit or submit automated bulk PRs may have their PRs closed or their access restricted.
 
 ### No External Project Links
 
@@ -1259,7 +1377,7 @@ Follow these steps to submit a pull request.
 2. Make your changes with tests.
 3. Run the relevant checks.
    Run targeted tests once per relevant change set, let normal hooks provide verification, and run `npm run docs` for doc changes.
-   Rerun targeted tests after later behavior-affecting edits or hook autofixes. If hooks were skipped or unavailable, run `npm run check:diff` once instead of reproducing the checks separately.
+   Rerun targeted tests after later behavior-affecting edits or hook autofixes. If hooks were skipped or unavailable, refresh `origin/main`, then run `npm run validate:pr` once instead of reproducing the checks separately.
 4. Confirm the PR description includes the DCO declaration and every commit appears as `Verified` in GitHub.
 5. Open a PR.
 

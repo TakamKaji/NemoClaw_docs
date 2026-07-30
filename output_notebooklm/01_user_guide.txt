@@ -148,6 +148,7 @@ description-agent: "Configures OpenClaw heartbeat cadence through NemoClaw onboa
 keywords: ["nemoclaw heartbeat", "openclaw heartbeat", "HEARTBEAT.md"]
 content:
   type: "how_to"
+agent-variants: ["openclaw"]
 ---
 
 OpenClaw heartbeats run periodic main-session agent turns.
@@ -294,6 +295,7 @@ description-agent: "Explains OpenClaw context compaction behavior in NemoClaw-ma
 keywords: ["nemoclaw context compaction", "openclaw transcript compaction", "openclaw context management"]
 content:
   type: "concept"
+agent-variants: ["openclaw"]
 ---
 
 NemoClaw configures safeguard compaction for OpenClaw sandboxes that use its managed `inference.local` route, except for Local Ollama routes.
@@ -857,6 +859,10 @@ keywords: ["nemoclaw gateway lifecycle", "externally supervised gateway", "opens
 content:
   type: "reference"
 ---
+This page covers the host-side OpenShell gateway that NemoClaw uses for OpenClaw, Hermes, and LangChain Deep Agents Code sandboxes.
+It does not describe the in-sandbox agent gateway used by OpenClaw and Hermes.
+Deep Agents Code has no in-sandbox agent gateway.
+
 At every point, exactly one component owns the OpenShell gateway lifecycle.
 
 Platform images sometimes supervise the gateway with their own service.
@@ -917,7 +923,7 @@ The declaration uses the following fields.
 | `version` | Contract version. Only `1` is supported. |
 | `mode` | `nemoclaw-managed` or `externally-supervised`. |
 | `endpoint` | Exact bare origin for an externally supervised gateway. Use `http` or `https`, host `127.0.0.1` or `[::1]`, and the gateway port that this NemoClaw process uses. Credentials, DNS names such as `localhost`, paths, query strings, and fragments are rejected. |
-| `stateDir` | Absolute external gateway state directory. Keep it outside NemoClaw-owned state paths such as `~/.local/state/nemoclaw`; uninstall removes those owned paths and does not otherwise target the declared external directory. For HTTPS, it contains the client trust bundle. |
+| `stateDir` | Absolute external gateway state directory. Keep it outside NemoClaw-owned state paths such as `~/.local/state/nemoclaw`. While the external gateway process remains, uninstall preserves the selected local gateway state and does not otherwise target the declared external directory. For HTTPS, it contains the client trust bundle. |
 | `supervisor` | Required for `externally-supervised` and rejected for `nemoclaw-managed`. `kind` is `systemd-system` or `systemd-user`. `serviceName` names one `.service` unit, and `execPath` is the absolute gateway executable path. |
 | `requiredCapabilities` | Capabilities onboarding needs. Supported values are `gateway.health`, `sandbox.create`, `sandbox.exec`, and `gpu.passthrough`. |
 
@@ -997,15 +1003,15 @@ A completed gateway step does not bypass listener, supervisor, identity, health,
 
 ## Inspect the selected authority
 
-Run `nemoclaw status` to see the management mode and redacted owner identity selected by the last onboarding run.
+Run `$$nemoclaw status` to see the management mode and redacted owner identity selected by the last onboarding run.
 The JSON form includes the same secret-free fields under `gatewayAuthority`.
 
 ```bash
-nemoclaw status
-nemoclaw status --json
+$$nemoclaw status
+$$nemoclaw status --json
 ```
 
-`nemoclaw debug` also records `gatewayAuthority` in `onboard-session-summary.txt`.
+`$$nemoclaw debug` also records `gatewayAuthority` in `onboard-session-summary.txt`.
 The status and debug views omit the external state directory and never include credential values.
 
 ## Keep external lifecycle paths inert
@@ -1022,7 +1028,7 @@ When a valid checkpoint exists, they compare the current authority with that che
 The comparison uses the exact gateway name and port.
 If the authority changed, teardown stops before it scans listeners or changes gateway runtime resources.
 
-`nemoclaw stop` does not scan or signal the externally supervised gateway.
+`$$nemoclaw stop` does not scan or signal the externally supervised gateway.
 Final-sandbox cleanup can stop local dashboard forwards and remove the modern local gateway registration.
 It does not signal the gateway, use the legacy `gateway destroy` fallback, or remove its Docker volumes.
 Uninstall can delete the selected sandboxes, providers, and local registration.
@@ -1046,7 +1052,7 @@ For `systemd-user`, use the user manager:
 systemctl --user status openshell-gateway.service
 ```
 
-Bring the supervised gateway up, leave exactly one verified process holding the configured port, and rerun `nemoclaw onboard`.
+Bring the supervised gateway up, leave exactly one verified process holding the configured port, and rerun `$$nemoclaw onboard`.
 To hand the lifecycle back to NemoClaw, remove the platform gateway service and declare `nemoclaw-managed`, or remove the declaration.
 
 
@@ -1066,6 +1072,7 @@ content:
   type: "how_to"
 skill:
   priority: 20
+agent-variants: ["openclaw"]
 ---
 
 <Warning>
@@ -1374,6 +1381,7 @@ description-agent: "Includes the sandbox container image hardening reference, co
 keywords: ["nemoclaw sandbox hardening", "container security", "docker capabilities", "process limits"]
 content:
   type: "reference"
+agent-variants: ["openclaw"]
 ---
 The NemoClaw sandbox image applies several security measures to reduce the attack surface and limit damage from untrusted workloads.
 
@@ -2064,6 +2072,7 @@ content:
   type: "get_started"
 skill:
   priority: 20
+agent-variants: ["hermes"]
 ---
 Create a sandboxed Hermes agent, then chat with it from the dashboard or terminal.
 The `nemohermes` command is the NemoClaw CLI with Hermes pre-selected.
@@ -2372,6 +2381,7 @@ audience: "operators"
 status: published
 content:
   type: "get_started"
+agent-variants: ["deepagents"]
 ---
 Create a sandboxed LangChain Deep Agents Code agent, then run your first prompt.
 The `nemo-deepagents` command is an alias for `nemoclaw` with the `langchain-deepagents-code` agent pre-selected.
@@ -2516,6 +2526,44 @@ For a single headless task, run:
 ```bash
 dcode -n "Summarize this repository"
 ```
+
+For automation, add `--json`.
+The managed runtime writes exactly one UTF-8 JSON object to stdout and suppresses other stdout text.
+Progress is suppressed.
+Warnings and diagnostics go to stderr.
+
+```bash
+dcode -n "Summarize this repository" --json
+```
+
+A successful run has this version 1 envelope:
+
+```json
+{
+  "schema_version": 1,
+  "command": "non-interactive",
+  "data": {
+    "status": "success",
+    "exit_code": 0,
+    "response": "The repository contains...",
+    "completion": {
+      "thread_id": "thread-id",
+      "duration_ms": 842,
+      "response_bytes": 26
+    }
+  }
+}
+```
+
+`response` contains the exact final assistant text on success and is `null` on failure.
+`response_bytes` is its UTF-8 byte length on success and is `0` on failure.
+The process exit code matches `data.exit_code`.
+The terminal statuses are `success`, `agent_failure`, `process_failure`, `timeout`, `turn_limit`, `cancelled`, and `output_limit`.
+A timeout exits `124`, cancellation exits `130`, and other failures exit nonzero.
+
+The complete serialized envelope is limited to 1 MiB.
+If the response cannot fit, the runtime discards it and emits a bounded `output_limit` failure envelope.
+If it cannot write the envelope, the command exits nonzero and reports the write failure on stderr; callers must reject empty, malformed, additional, or unsupported-version stdout.
 
 The managed `dcode`, `dcode.real`, and `deepagents-code` launchers use `/opt/venv/bin/python3 -I` to run the pinned package with an isolated import path and `HOME=/sandbox`.
 For interactive and headless sessions, each launcher supervises its own process descendants so completion, terminal exit, or disconnect terminates the associated LangGraph server tree without affecting another session.
@@ -2747,6 +2795,7 @@ content:
   type: "get_started"
 skill:
   priority: 10
+agent-variants: ["openclaw"]
 ---
 Create a sandboxed OpenClaw agent, then send it a first prompt.
 
@@ -3865,6 +3914,7 @@ description-agent: "Configures OpenClaw reasoning mode, reasoning effort, and te
 keywords: ["nemoclaw reasoning model", "nemoclaw reasoning effort", "nemoclaw vision model"]
 content:
   type: "how_to"
+agent-variants: ["openclaw"]
 ---
 
 Declare model capabilities before onboarding so NemoClaw can bake them into the OpenClaw configuration.
@@ -4191,6 +4241,7 @@ content:
 skill:
   priority: 30
 status: published
+agent-variants: ["openclaw"]
 ---
 
 NemoClaw can bake a multi-agent OpenClaw layout into a sandbox image from a single checked-in manifest.
@@ -4897,6 +4948,7 @@ content:
   type: "how_to"
 skill:
   priority: 10
+agent-variants: ["openclaw", "hermes"]
 ---
 Use Ollama when you want the default local inference setup path.
 NemoClaw detects Ollama on the host and can install, start, or upgrade it on supported systems.
@@ -5363,6 +5415,7 @@ content:
   type: "how_to"
 skill:
   priority: 30
+agent-variants: ["openclaw"]
 ---
 OpenClaw documents the sub-agent behavior, `sessions_spawn` tool, `agents.list` configuration, tool policy, nesting, and auth model in [Sub-Agents](https://docs.openclaw.ai/tools/subagents).
 Use that page as the source of truth for how OpenClaw sub-agents work.
@@ -6384,6 +6437,7 @@ description-agent: "Sets up Hermes Provider for Hermes Agent. Use when choosing 
 keywords: ["Hermes Provider", "NemoClaw Hermes inference", "Hermes models"]
 content:
   type: "how_to"
+agent-variants: ["hermes"]
 ---
 Hermes Provider routes Hermes Agent through the host OpenShell provider that NemoClaw registers during Hermes onboarding.
 This option is available only for Hermes Agent.
@@ -6853,6 +6907,7 @@ description-agent: "Explains channels list and channels add behavior, policy app
 keywords: ["nemoclaw channels add", "add messaging channel", "channels list"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 Run channel commands from the host, not from inside the sandbox.
 
@@ -7161,7 +7216,10 @@ Treat snapshot directories as private local data.
 
 <AgentOnly variant="hermes">
 Hermes snapshots include `SOUL.md`, the Web Dashboard profile under `.hermes/dashboard-home/`, the SQLite database behind `.hermes/state.db`, and the default kanban board in `.hermes/kanban.db`.
-NemoClaw uses SQLite's online backup API and restores those databases through SQLite instead of copying live raw database files.
+The default-profile snapshot also includes cron execution history in `.hermes/runtime/cron-executions.db` and Discord replay state in `.hermes/gateway/discord_message_recovery.db`.
+NemoClaw captures cron job definitions from `.hermes/cron` as directory state.
+NemoClaw uses SQLite's online backup API and restores these databases through SQLite instead of copying live raw database files.
+Named-profile cron and Discord databases under `.hermes/profiles/<name>/` use raw directory capture and can be inconsistent if a write overlaps the snapshot.
 
 Kanban backup is limited to the backward-compatible default board in `kanban.db`.
 Named boards, attachments, worker logs, scratch workspaces under `.hermes/kanban/`, and external directory or worktree targets are not included; back up that state separately.
@@ -7338,6 +7396,7 @@ description-agent: "Explains the interactive and scripted onboarding flows for s
 keywords: ["nemoclaw onboard messaging", "messaging channel picker", "channel environment variables"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 Enable channels during onboarding when you are creating or recreating a sandbox.
 
@@ -7423,6 +7482,7 @@ content:
   type: "concept"
 skill:
   priority: 20
+agent-variants: ["openclaw", "hermes"]
 ---
 Built-in OpenClaw and Hermes images support two direct-container lifecycle topologies for `recover` and `gateway restart`.
 
@@ -7504,6 +7564,7 @@ content:
   type: "how_to"
 skill:
   priority: 40
+agent-variants: ["hermes"]
 ---
 Hermes plugins extend the Hermes runtime inside a NemoClaw-managed sandbox.
 They are different from NemoClaw skills and from OpenClaw plugins, so install them through the Hermes plugin path instead of `skill install`.
@@ -7993,6 +8054,7 @@ description-agent: "Explains channel credential rotation, destructive removal, p
 keywords: ["nemoclaw channels remove", "nemoclaw channels stop", "messaging credential rotation", "channel conflicts"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 Use host-side channel commands to change a configured messaging channel.
 
@@ -8064,24 +8126,26 @@ If policy restoration fails, the command keeps the channel disabled and exits wi
 
 ## Avoid Cross-Sandbox Conflicts
 
-Telegram, Discord, Slack, and WeChat allow one active consumer per channel credential.
-Multiple sandboxes can use the same channel type when each uses a distinct token or WeChat bot account.
+Use distinct credentials and resources for each active messaging sandbox.
+Follow these channel-specific rules:
 
-For WeChat, each sandbox must own a distinct iLink `accountId`.
-Running two sandboxes against the same account causes one to lose messages.
+- Use a distinct iLink `accountId` for each WeChat sandbox.
+- Use distinct bot and Socket Mode app tokens for each Slack sandbox.
+- Use a different gateway for each Slack sandbox.
+- Use a different local webhook port for each Microsoft Teams sandbox.
 
-If another sandbox already uses the same token, interactive onboarding prompts for confirmation and non-interactive onboarding exits nonzero.
-For Slack, NemoClaw checks both bot and Socket Mode app tokens.
+When you onboard, rebuild, or add a channel, the command aborts on a conflict or an incomplete required check.
+Legacy entries without credential hashes count as incomplete.
+An unreadable messaging registry also causes onboarding and rebuild to abort.
+Onboarding and rebuild have no conflict override.
 
-For Microsoft Teams, NemoClaw also checks the local webhook port because active Teams sandboxes cannot share it.
-If NemoClaw has only legacy metadata and cannot compare credential hashes, it keeps the conservative warning.
-
+For `channels add` only, `--force` overrides conflict and incomplete-check aborts.
+Use it only when you accept the duplicate-consumer or shared-resource risk.
 Rerun `channels add <channel>` with the intended token to refresh stored non-secret identity metadata.
 
-Before any rebuild, NemoClaw rechecks the staged messaging plan against other registered sandboxes.
-A credential or resource conflict aborts before backup or deletion and leaves the original sandbox registered and intact.
-
-Resolve the conflict, then rerun the operation.
+Before a rebuild, NemoClaw checks the messaging plan before backup or deletion.
+A conflict leaves the original sandbox intact.
+Resolve any conflict, then rerun the operation.
 `$$nemoclaw status` reports cross-sandbox overlaps.
 
 ## Stop All Delivery
@@ -8126,6 +8190,7 @@ content:
   type: "concept"
 skill:
   priority: 30
+agent-variants: ["openclaw", "hermes"]
 ---
 NemoClaw supports Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams for OpenClaw and Hermes sandboxes.
 OpenShell-managed processes and gateway resources carry channel traffic.
@@ -8609,6 +8674,7 @@ content:
   type: "concept"
 skill:
   priority: 10
+agent-variants: ["openclaw", "hermes"]
 ---
 Use this matrix to choose the operation that makes a sandbox change take effect.
 NemoClaw applies its security posture in three layers: what onboarding writes into the sandbox image, what the running sandbox can hot-reload, and what requires a rebuild or re-onboard.
@@ -8735,6 +8801,7 @@ description-agent: "Explains Discord bot credentials and NemoClaw server, user, 
 keywords: ["nemoclaw discord", "discord bot token", "discord server id"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 Create a Discord bot and choose its server and user access before you enable the channel.
 
@@ -8783,6 +8850,7 @@ description-agent: "Explains the experimental Microsoft Teams Bot Framework webh
 keywords: ["nemoclaw teams", "microsoft teams bot framework", "teams webhook"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 Microsoft Teams support is experimental and uses a public Bot Framework webhook that forwards to the sandbox.
 
@@ -8843,6 +8911,7 @@ description-agent: "Explains Slack bot and app token validation, allowlists, men
 keywords: ["nemoclaw slack", "slack socket mode", "slack app token", "slack allowlist"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 Slack uses Socket Mode and requires both a bot token and an app-level token.
 
@@ -8880,10 +8949,11 @@ This uses the existing Slack credentials and does not require additional scopes 
 
 ## Avoid Duplicate Socket Mode Sessions
 
-Slack Socket Mode allows one active connection per app-level token.
-If another sandbox on the same gateway already uses the same Slack app token, onboarding and `channels add slack` warn before continuing in interactive mode and abort in non-interactive mode.
-
-Use `--force` only when you intentionally want to move the Slack Socket Mode session to the new sandbox.
+The [cross-sandbox conflict policy](manage-messaging-channels) applies to Slack.
+Use different bot tokens, app tokens, and gateways for each active Slack sandbox.
+Onboarding, rebuild, and `channels add slack` abort on a conflict.
+Onboarding and rebuild have no override.
+For `channels add slack` only, pass `--force` to accept the conflict risk.
 
 ## Enable Slack
 
@@ -8911,6 +8981,7 @@ description-agent: "Explains Telegram bot creation and NemoClaw allowlist, group
 keywords: ["nemoclaw telegram", "telegram bot token", "telegram allowed ids"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 Create a Telegram bot and choose the direct-message and group behavior before you enable the channel.
 
@@ -8969,6 +9040,7 @@ description-agent: "Explains the experimental personal WeChat iLink QR flow, pro
 keywords: ["nemoclaw wechat", "wechat qr", "wechat ilink"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 WeChat support is experimental and uses Tencent's iLink gateway.
 The supported mode in this release is personal WeChat with `bot_type=3`.
@@ -9013,6 +9085,7 @@ description-agent: "Explains the experimental in-sandbox WhatsApp QR pairing flo
 keywords: ["nemoclaw whatsapp", "whatsapp qr pairing", "whatsapp session"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes"]
 ---
 WhatsApp support is experimental and pairs inside the sandbox rather than through a host-side token or OpenShell credential provider.
 
@@ -9278,7 +9351,7 @@ $$nemoclaw uninstall
 | Flag | Effect |
 |---|---|
 | `--yes` | Skip the confirmation prompt. |
-| `--keep-openshell` | Leave OpenShell binaries and NemoClaw-managed gateway service files in place, and do not stop the host gateway process. |
+| `--keep-openshell` | Leave OpenShell binaries, NemoClaw-managed gateway service files, and local gateway state in place, and do not stop the host gateway process. |
 | `--delete-models` | Also remove NemoClaw-pulled Ollama models. |
 | `--destroy-user-data` | Also remove preserved user data in `rebuild-backups/`, `backups/`, and `sandboxes.json`. |
 | `--gateway <name>` | Optional consistency check; must match the name derived from `NEMOCLAW_GATEWAY_PORT`. |
@@ -9289,7 +9362,8 @@ Do not use `--gateway` to select another instance; when supplied for compatibili
 Default-port uninstall removes NemoClaw-managed entries in `openshell/gateway.env`.
 For a NemoClaw-managed authority, it also removes only NemoClaw's marked Linux gateway unit.
 It preserves upstream Linux package units, the macOS Homebrew service, and unrelated environment entries.
-For an externally supervised authority, uninstall preserves the gateway process, supervisor resources, marked Linux unit, Docker resources, OpenShell binaries, and the declared external state directory.
+For an externally supervised authority, uninstall preserves the local gateway state used by the running process in both full and gateway-scoped cleanup.
+It also preserves the gateway process, supervisor resources, marked Linux unit, Docker resources, OpenShell binaries, and the declared external state directory.
 A custom-port uninstall does not stop or remove the default gateway service or its environment file.
 
 <Note>
@@ -9622,8 +9696,8 @@ Deep Agents Code creates them when you start the first `dcode` session.
 | `/sandbox/.deepagents/.state/` | Deep Agents Code runtime state, including persisted session and MCP-related state. |
 | `/sandbox/.deepagents/agent/AGENTS.md` | Global memory file for the default Deep Agents Code agent, loaded at session start. |
 | `/sandbox/.deepagents/agent/memories/` | Topic-specific markdown memories that Deep Agents Code can read and update across sessions. |
-| `/sandbox/.deepagents/skills/` | User-level skills available to Deep Agents Code in the sandbox. |
-| `/sandbox/.deepagents/agent/skills/` | Default-agent skills created by the built-in skill creator and preserved by NemoClaw snapshots. |
+| `/sandbox/.deepagents/skills/` | Legacy NemoClaw skill-upload state. Deep Agents Code does not load skills from this path, and `$$nemoclaw <name> skill install` leaves it untouched. |
+| `/sandbox/.deepagents/agent/skills/` | Skills that Deep Agents Code loads at session start, including skills created by the built-in skill creator and fresh-name skills installed directly by `$$nemoclaw <name> skill install`. Preserved by NemoClaw snapshots. |
 | `/sandbox/.deepagents/.nemoclaw-mcp.json` | NemoClaw-generated managed MCP projection with OpenShell credential placeholders. NemoClaw reconstructs it from host-side registry state. |
 | `/sandbox/.deepagents/.state/auth.json` | Upstream auth state. The managed launchers refuse to start when this file contains credentials. |
 | `/sandbox/.deepagents/.state/chatgpt-auth.json` | Upstream ChatGPT auth state. The managed launchers refuse to start when this file exists. |
@@ -9711,6 +9785,7 @@ description-agent: "Manages Deep Agents trace export. Use when stopping the coll
 keywords: ["manage deep agents traces", "disable nemoclaw observability", "remove otel collector"]
 content:
   type: "how_to"
+agent-variants: ["deepagents"]
 ---
 Manage sandbox instrumentation and the operator-owned host collector as separate lifecycle controls.
 NemoClaw does not start, stop, upgrade, or remove the collector.
@@ -9790,6 +9865,7 @@ content:
   type: "how_to"
 skill:
   priority: 10
+agent-variants: ["openclaw", "hermes"]
 ---
 Use NemoClaw status commands, log streams, and OpenShell TUI views to inspect sandbox health, trace agent behavior, and diagnose problems.
 
@@ -9929,6 +10005,7 @@ description-agent: "Sets up Deep Agents trace export. Use when enabling observab
 keywords: ["set up deep agents otlp", "nemoclaw observability collector", "langsmith otel collector"]
 content:
   type: "how_to"
+agent-variants: ["deepagents"]
 ---
 Enable Deep Agents trace export, then configure an operator-owned collector on the host.
 This example uses Linux with Docker and the OpenTelemetry Collector Contrib `0.155.0` image.
@@ -10221,6 +10298,7 @@ description-agent: "Explains Deep Agents trace export boundaries. Use when evalu
 keywords: ["deep agents trace export", "nemoclaw otlp privacy", "dcode observability security"]
 content:
   type: "concept"
+agent-variants: ["deepagents"]
 ---
 NemoClaw can export Deep Agents Code traces to an OTLP/HTTP collector that you operate on the host.
 Review the data and trust boundaries before you enable the exporter.
@@ -10314,6 +10392,7 @@ description-agent: "Verifies Deep Agents trace export. Use when proving local an
 keywords: ["verify deep agents traces", "trace delivery diagnosis", "troubleshoot otlp collector"]
 content:
   type: "how_to"
+agent-variants: ["deepagents"]
 ---
 Verify the local collector and downstream backend independently.
 Deep Agents work continues when export fails, so the agent exit status is not delivery evidence.
