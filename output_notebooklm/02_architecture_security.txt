@@ -2477,6 +2477,7 @@ The logical diagram above shows how components relate.
 This section shows what actually runs where on the host.
 NemoClaw's default Docker-driver topology does not place the sandbox in an embedded k3s cluster.
 Only the default gateway port `8080` uses a NemoClaw-managed service.
+
 On Linux, NemoClaw prefers the upstream package-managed `openshell-gateway.service`.
 For tarball installs, the NemoClaw installer stages a marked user-level `nemoclaw-openshell-gateway.service` based on the upstream unit.
 Onboarding validates and reuses a healthy selected service.
@@ -2484,17 +2485,21 @@ It enables or restarts the service when startup or verified runtime drift requir
 The marked service generates the local OpenShell mTLS bundle and reads `$XDG_CONFIG_HOME/openshell/gateway.env`, or `~/.config/openshell/gateway.env` when `XDG_CONFIG_HOME` is not absolute.
 NemoClaw preserves unrelated environment entries, accepts `DOCKER_HOST` only for an absolute local `unix://` socket, and refuses foreign or symlinked managed files.
 The standalone Linux process is used only when the systemd user manager is unavailable; after a service is selected, startup or health failure stops onboarding.
+
 On Apple Silicon macOS, Homebrew makes the official OpenShell formula authoritative.
 The installer stages the formula and onboarding starts its `openshell` service.
 When Homebrew is present, a missing formula, a formula from another tap, a service-start failure, or a health failure stops onboarding.
 Only a host without Homebrew uses the standalone macOS gateway fallback.
+
 NemoClaw-managed gateways on custom ports remain detached and separate from the default service.
 An externally supervised gateway can use any matching configured port; its declared supervisor retains lifecycle authority.
 In both Docker-driver modes, the sandbox is a Docker container, not a Kubernetes pod.
+
 Entrypoint supervisors create the in-container `/tmp/nemoclaw-gateway-local` marker only when they actually launch an in-container gateway, and they normally keep it present while that supervisor is active.
 On normal exits, handled `SIGTERM`/`SIGINT`, startup failures, and shell `errexit` termination through the `EXIT` trap, the supervisor removes the marker on a best-effort basis so the Docker health check does not keep trusting a stale gateway PID.
 Terminal runtimes may not write it.
 NemoClaw does not treat sandbox environment hints such as `OPENSHELL_DRIVERS` as authoritative for gateway ownership.
+
 Legacy non-Docker-driver installs still use the k3s-based gateway path.
 In that topology, the `openshell-cluster-nemoclaw` container runs an embedded k3s cluster that includes the OpenShell gateway, an `agent-sandbox-controller` workload, and a Kubernetes custom resource definition named `sandboxes.agents.x-k8s.io`.
 Each NemoClaw sandbox appears as a `Sandbox` custom resource in the `openshell` namespace, and the controller reconciles that resource into the corresponding agent pod.
@@ -2575,6 +2580,7 @@ The OpenClaw integration is a thin TypeScript plugin that runs in-process with t
 Its durable entry points are `nemoclaw/src/index.ts`, `nemoclaw/src/runtime-context.ts`, and `nemoclaw/openclaw.plugin.json`.
 The `nemoclaw/src/commands/` directory contains in-sandbox `/nemoclaw` command handlers and migration helpers.
 The `nemoclaw/src/blueprint/` directory contains runner, state, snapshot, SSRF, and private-network validation code.
+
 Before an OpenClaw turn starts, the plugin prepends a short system-context block with the active sandbox name, sandbox phase, network policy summary, and filesystem policy summary.
 This guidance stays out of the visible chat transcript.
 When the policy or phase changes during a session, the plugin sends a smaller update block instead of repeating the full context.
@@ -2656,118 +2662,16 @@ flowchart LR
 
 ### Experimental Runtime Identity
 
+<AgentOnly variant="openclaw">
 The direct OpenClaw blueprint runner can opt in to a provider-neutral runtime identity component.
-The Hermes manifest onboarding path does not consume this component.
-This experimental reference capability is not enabled by the shipped blueprint, and normal `$$nemoclaw onboard` does not collect or provision its inputs.
-The bundled Okta profile is the first data-only implementation of the component.
-The blueprint schema describes the OpenShell provider binding and OAuth refresh inputs without using the identity provider as a schema discriminator.
 
-<Warning>
-  Runtime identity profiles may use DNS-backed HTTPS only within a provider type's repository-reviewed hostname suffixes.
-  NemoClaw resolves every destination before import and rejects private or internal addresses.
-  OpenShell performs connect-time SSRF and L7 enforcement for sandbox requests before it injects the provider credential.
-  OpenShell 0.0.85's gateway-side OAuth refresh client enforces HTTPS and verifies the original hostname's certificate but does not pin the address NemoClaw resolved, so only identity-platform-controlled DNS suffixes such as `okta.com` belong in this trust table.
-  Adding an attacker-controlled or customer-controlled DNS suffix requires a pinning-capable upstream refresh boundary and new conformance evidence.
-</Warning>
-
-#### Threat Model and Conformance Evidence
-
-Runtime identity is opt-in only when a direct-runner blueprint includes `components.identity`; there is no implicit activation path.
-The host process that supplies the named OAuth bootstrap variables and the authenticated OpenShell gateway are trusted.
-The blueprint, copied profile, same-name gateway resources, sandbox workload, subprocess output, persisted state, and CI artifacts are treated as untrusted or observable surfaces.
-The runner therefore validates the complete data-only profile before import, fails closed on ambiguous resource inspection, scopes secret material to the single refresh-configuration subprocess, and persists only non-secret ownership receipts.
-OpenShell remains responsible for credential custody, refresh, admitted-request enforcement, and bearer substitution; NemoClaw never exposes the minted bearer to the sandbox.
-
-The deterministic `TC-INF-12` protected E2E scenario is the conformance gate for this boundary.
-It runs the real blueprint runner against a real OpenShell gateway and sandbox, enables provider-derived policy for the test and restores its prior setting, exchanges a refresh token through a public HTTPS OAuth endpoint, proves the sandbox sees only opaque placeholders, proves a child launched after rotation receives a different revision-scoped placeholder, proves the protected resource receives the first and rotated bearers, checks secret-free plan, status, state, logs, and request ledgers, and verifies ownership-aware rollback.
-Focused runner and runtime-identity tests cover malformed profiles, endpoint and DNS rejection, subprocess scoping, same-name resource handling, partial-apply compensation, and retryable rollback receipts.
-The gateway refresh client's connect-time DNS-pinning limitation described above is the accepted residual boundary; expanding the trusted hostname policy requires upstream pinning and new conformance evidence.
-
-Enable provider-derived policy on the target gateway before applying a blueprint that attaches this component:
-
-```bash
-openshell settings set --global --key providers_v2_enabled --value true --yes
-```
-
-Apply reads the gateway-global setting before identity mutation and again immediately before attachment, and stops unless its JSON value is exactly `true`.
-This prevents a successful-looking attachment whose provider-derived network policy and credential injection are inactive.
-
-Copy `nemoclaw-blueprint/provider-profiles/okta-runtime-v1.yaml` into the blueprint you operate as `provider-profiles/acme-okta-runtime.yaml`.
-You can choose another tenant-specific filename, but set `profile_path` below to that exact relative path.
-Set its `token_url` to the tenant's authorization-server token endpoint.
-Replace `api.example.okta.com` with the approved upstream API host.
-Keep the token endpoint and upstream host in the profile so refresh material and bearer-token presentation cannot be redirected by blueprint input.
-
-Configure the reference under `components`:
-
-```yaml
-identity:
-  profile_path: provider-profiles/acme-okta-runtime.yaml
-  provider_type: okta-runtime-v1
-  provider_name: acme-okta-runtime
-  credential_key: OKTA_ACCESS_TOKEN
-  client_id_env: OKTA_CLIENT_ID
-  refresh_token_env: OKTA_REFRESH_TOKEN
-  client_secret_env: OKTA_CLIENT_SECRET
-```
-
-`client_secret_env` is optional, but when it is configured its environment variable must be present.
-Secret-material environment names must equal one of `API_KEY`, `TOKEN`, `SECRET`, `PASSWORD`, or `CREDENTIAL`, or end in one of those terms preceded by an underscore.
-Subprocess-control names such as `NODE_OPTIONS` and names forwarded by the general subprocess allowlist, such as the `OPENSHELL_`, `GRPC_`, and `XDG_` prefixes, are rejected.
-The profile path must name an existing regular file whose resolved path stays inside the blueprint directory; absolute paths, outward traversal, and outward symlinks are rejected.
-The profile `id` must match `provider_type`, and the profile must declare exactly one credential whose name matches `credential_key`.
-Before import, the runner validates the complete credential-delivery policy and rejects unknown fields.
-The Okta reference requires bearer presentation through the `authorization` header, the reviewed OAuth refresh-material shape, enforced REST `GET /**` endpoint rules, and exactly the bundled Node.js and curl executable allowlist.
-The runner imports a private temporary snapshot of the exact profile bytes that passed validation, so replacing the original file or its symlink cannot change the policy OpenShell receives.
-Before importing the profile, the runner requires HTTPS refresh and endpoint destinations, restricts them to the provider type's trusted host policy, and sends each through NemoClaw's DNS-aware SSRF boundary; private, loopback, link-local, and unresolved destinations are rejected.
-DNS-backed destinations require an explicit reviewed policy marking their namespace as identity-platform-controlled; other profile policies reject them before import.
-The current `okta-runtime-v1` policy accepts `okta.com` and its subdomains; custom Okta domains are not supported in this slice.
-The same reviewed policy fixes the non-secret client ID source to `OKTA_CLIENT_ID`; a blueprint cannot select another host variable, and command failures redact the client ID value along with secret refresh material.
-Before applying the blueprint, export the named environment variables in the host process that runs the direct blueprint runner.
-Obtain the refresh token through an authorized OAuth bootstrap flow for the same Okta client and authorization server as the profile.
-`openshell gateway login` authenticates a CLI user to the gateway and is not part of this runtime-credential flow.
-
-During plan, the runner reports only the non-secret provider type, provider name, and credential key.
-During apply, the runner first inspects the target sandbox and stops before identity mutation unless it confirms the exact name and `Ready` phase or an explicit sandbox-not-found result.
-If sandbox creation races with another creator, the runner repeats the same exact-name and `Ready` inspection before continuing.
-It performs that inspection again immediately before attaching the runtime identity, after inference routing is confirmed, and compensates without attachment if the sandbox changed.
-The runner always inspects the configured inference provider before identity mutation, whether it will create or reuse the sandbox.
-It reuses that inference provider only when its reported name, type, and required non-secret key shape match the blueprint, and permits creation only after an explicit provider-not-found result.
-If creation then reports that another actor created the provider concurrently, the runner repeats the same binding inspection before treating it as unowned reusable state.
-Any other inference-provider inspection failure stops apply.
-The runner then inspects the requested runtime identity provider name and stops if any same-name provider already exists.
-It validates an existing provider's non-secret binding to produce a precise error, but never reuses it for this mutable refresh flow because OpenShell does not expose a secret-safe snapshot that rollback could restore.
-Only an absent provider proceeds to profile import, or exact export comparison when that profile is already registered, followed by provider creation, gateway-managed OAuth refresh configuration, and initial token rotation.
-Before attaching that runtime identity to the sandbox, the runner creates or reuses the configured inference provider.
-For a reused sandbox and provider, it reads the live gateway route and preserves it only when the provider, model, and any requested timeout match the blueprint; an absent or different route must pass `openshell inference set`.
-This keeps the new credential attachment out of the sandbox until OpenShell has either reported the exact active route or accepted the requested route; only then does the runner attach the runtime identity and apply any policy additions.
-Each successful apply therefore creates and owns the provider whose refresh state it mutates.
-The persisted run plan records whether that apply created the runtime identity provider, its sandbox attachment, the inference provider, and the sandbox itself.
-The runner writes that ownership receipt as each identity resource is acquired, so `status` and a later `rollback` retain a recovery path if automatic compensation fails.
-If a later apply step fails, the runner detaches the runtime identity provider when that apply attached it, deletes each provider when that apply created it, and removes a sandbox created by that apply.
-The runner never places the refresh token or optional client secret in command arguments or persisted plans.
-It passes those values to `openshell provider refresh configure` through a scoped subprocess environment, and OpenShell stores the resulting credential material in the gateway credential store.
-All other runner subprocesses receive the allowlisted environment without the identity material.
-Each sandbox child launch receives an opaque `OKTA_ACCESS_TOKEN` placeholder, and the OpenShell L7 proxy substitutes its corresponding access token only for admitted HTTPS requests.
-After a credential rotation, launch a new child process to receive the new revision-scoped placeholder instead of expecting an earlier child launch to adopt the rotation.
-
-Check the gateway-side state without printing credential values:
-
-```bash
-openshell provider refresh status acme-okta-runtime --credential-key OKTA_ACCESS_TOKEN
-openshell sandbox provider list <sandbox-name>
-```
-
-The direct runner `status` action reports the non-secret identity ownership receipt.
-The `rollback` action verifies the current provider binding again, detaches it only when that apply created the sandbox attachment, and deletes it only when that apply created the provider.
-Rollback stops and removes the sandbox only when the persisted plan proves that apply created it; reused sandboxes and legacy plans with unknown sandbox ownership are preserved.
-After an owned sandbox is removed, or immediately when the sandbox was reused, rollback deletes the inference provider only when the persisted receipt proves that apply created it.
-If removal of an apply-owned sandbox fails, rollback returns the bounded error without writing its completion marker, leaving the ownership receipt available for retry.
-Rollback stops without mutating a same-name provider when the binding no longer matches the receipt.
-
-Runtime identity does not add a generic blueprint middleware surface in this slice.
-Configure any deployment-specific pre-credential policy through separately supported OpenShell tooling.
-This reference does not package an OAuth bootstrap application, an on-behalf-of exchange, or a production identity middleware service.
+The shipped blueprint and normal `nemoclaw onboard` do not enable or configure this experimental capability.
+Refer to [Configure Experimental Runtime Identity](configure-runtime-identity) for the trust boundary, Okta and Microsoft Entra reference profiles, apply lifecycle, inspection, and rollback behavior.
+</AgentOnly>
+<AgentOnly variant="hermes,deepagents">
+Runtime identity is an experimental capability of the direct OpenClaw blueprint runner.
+The maintained onboarding path for this agent does not consume the component.
+</AgentOnly>
 
 ## Sandbox Environment
 
@@ -3231,7 +3135,8 @@ For guidance on choosing between the agent CLIs and the underlying `openshell` C
 <AgentOnly variant="openclaw">
 
 Use `$$nemoclaw` for the OpenClaw variant.
-OpenClaw is the default agent for `$$nemoclaw onboard` unless you pass `--agent hermes` or set `NEMOCLAW_AGENT=hermes`.
+OpenClaw is the default agent for `$$nemoclaw onboard` unless you select another installed agent with `--agent <name>` or set `NEMOCLAW_AGENT=<name>`.
+Run `$$nemoclaw agents list` to see the installed agent names; for example, use `hermes` for Hermes or `langchain-deepagents-code` for LangChain Deep Agents Code.
 OpenClaw-specific sections below describe the `/nemoclaw` slash command, the OpenClaw dashboard URL, the OpenClaw gateway token, and OpenClaw config paths under `/sandbox/.openclaw`.
 
 </AgentOnly>
@@ -3562,7 +3467,9 @@ After a cache miss, source checkouts require a fresh local build before candidat
 For a clean release checkout or versioned install, NemoClaw first accepts the exact release-version image.
 If that tag exists locally but fails compatibility validation, NemoClaw refreshes the same tag from the registry once and validates it again.
 If the release-version image is missing or still incompatible, NemoClaw builds a compatible local base instead of falling back to mutable `:latest`.
-For unversioned development checkouts, NemoClaw tries the image tagged with the newest reachable release version from `origin` before source-commit images, and only uses `:latest` when no version tag is discoverable.
+For clean unversioned development checkouts, NemoClaw first tries the image tagged with the exact source commit.
+If that image is unavailable and committed base-image inputs differ from `main`, NemoClaw requires a compatible local build.
+When committed base-image inputs match `main`, NemoClaw tries the image tagged with the newest reachable release version from `origin` and only uses `:latest` when no version tag is discoverable.
 When a stable tag and a prerelease tag share the same version, NemoClaw prefers the stable tag.
 If `origin` tag lookup is unavailable, NemoClaw uses the newest reachable local release tag as a fallback.
 If that nearest release-version image is missing or incompatible, NemoClaw builds a compatible local base instead of falling back to mutable `:latest`.
@@ -4353,8 +4260,12 @@ In a direct root-entrypoint container, the request reaches the root PID 1 superv
 In an OpenShell-managed container, the request enters the root-owned mode `0500` managed controller through a sanitized root exec while OpenShell remains PID 1.
 It does not use ordinary `openshell sandbox exec` or an in-sandbox manual relaunch as a fallback.
 When the root-owned managed controller attests two unchanged zero-supervisor process scans with a stable PID 1 and reports `SUPERVISOR_NOT_RUNNING`, a local Docker-driver sandbox with the legacy keepalive startup can enter a transactional container recreation.
-The recreation uses a credential-free managed startup command, pins the registered container identity, retains the previous container for rollback, and commits only after managed gateway health and the settle check pass.
-The recreation preserves mounted sandbox state, but a committed swap does not retain changes stored only in the previous container's writable layer.
+The recreation uses a credential-free managed startup command, pins the registered container identity, and retains the previous container for rollback.
+Before recreation, NemoClaw backs up the state directories and files declared by the agent manifest.
+It commits only after managed gateway health, the settle check, exact replacement identity, and state restoration pass.
+NemoClaw removes the temporary state backup after a successful restore or rollback.
+If state restoration and rollback both fail, it retains the backup and prints host recovery guidance.
+Mounted state remains available, but a committed swap does not retain other writable-layer changes.
 It is idempotent.
 When `recover` repairs a stopped built-in OpenClaw or Hermes gateway, it repeats the recovery action only for an exit status of `1` with blank stdout and a sole nonblank stderr line equal to `SUPERVISOR_BUSY`, with at most three controller attempts.
 The same result is inconclusive during managed settle confirmation and can be probed again only within the configured settle window.
@@ -4432,7 +4343,8 @@ Run `$$nemoclaw <name> shields down` before a Hermes config or inference change;
 
 <AgentOnly variant="openclaw,hermes">
 
-The command can fail at these layers: unsupported agent, privileged control unavailable, supervisor not running, secret-boundary refusal, unsafe config path, config hash mismatch when a strict hash is available, launch failure, health timeout, or forward recovery failure.
+The command can fail at these layers: unsupported agent, privileged control unavailable, supervisor not running, secret-boundary refusal, unsafe config path, config hash mismatch when a strict hash is available, MCP reconciliation refusal, relaunch quarantined, launch failure, health timeout, or forward recovery failure.
+`relaunch quarantined` means the in-sandbox supervisor stopped attempting relaunch after a startup refusal or repeated gateway exits, so restart and recovery report the supported repair, `$$nemoclaw <name> rebuild --yes`, instead of a retry.
 An older direct-container image without the matching supervisor or managed controller helper reports `privileged control unavailable` and requires `$$nemoclaw <name> rebuild --yes`.
 Ordinary OpenShell exec and manual in-sandbox relaunch are not fallback paths.
 Terminal agents do not have a gateway runtime and fail as unsupported.
@@ -5908,6 +5820,11 @@ Credentials are stripped from backups before storage.
 Policy presets applied to the old sandbox are reapplied to the new one so your egress rules survive the rebuild.
 Before creating the replacement sandbox, NemoClaw prints the finalized create-time policy scope whenever presets are included.
 The replacement uses the recorded compatible-endpoint reasoning mode, reasoning effort, and web search selection instead of ambient shell values.
+When same-gateway legacy sandbox records use the selected supported provider but omit its credential environment-variable name, rebuild fills only those missing names from the provider's canonical configuration.
+The target update and peer metadata migration use one registry update.
+Conflicting credential environment-variable names, custom endpoints, or API families still stop the rebuild.
+Incomplete routes and invalid gateway bindings also stop the rebuild.
+NemoClaw checks the shared route again immediately before deleting the original sandbox.
 Rebuild preserves the recorded sandbox GPU enablement mode and, for an explicitly enabled sandbox, its recorded device selector.
 It re-resolves the Docker-driver GPU route from the current host and current `NEMOCLAW_DOCKER_GPU_PATCH` value, so native-only, explicitly authorized native-with-fallback, and compatibility-only routing may differ from the original onboarding run.
 A rebuild preserves the recorded tool-disclosure mode unless `--tool-disclosure` explicitly changes it; it ignores an ambient `NEMOCLAW_TOOL_DISCLOSURE` value while recreating the sandbox.
@@ -6097,7 +6014,7 @@ $$nemoclaw my-assistant snapshot list
 ### `$$nemoclaw <name> snapshot restore [selector] [--to <dst>] [--force] [--yes|-y]`
 
 Restore sandbox state from a snapshot.
-The sandbox must be running before you restore.
+For an in-place restore, the sandbox must be running.
 If no selector is provided, the latest snapshot is used.
 Restore removes files added after the snapshot only from state directories selected for cleanup.
 It preserves directories that exist only in the target manifest or whose backup failed.
@@ -6111,8 +6028,10 @@ The selector accepts any of:
 - An exact timestamp.
 
 Pass `--to <dst>` to restore the snapshot into a different sandbox instead of the source.
-When `dst` does not exist, it is auto-created by reusing the source sandbox's container image.
-No re-onboarding is needed.
+When `dst` does not exist, it is auto-created from the source image.
+For a Docker- or VM-driver source, the source can be stopped when its registry entry records both the sandbox image and a complete inference route.
+For a Kubernetes-driver source, the pod image must remain resolvable through its gateway.
+No re-onboarding is needed when those prerequisites are present.
 A cross-sandbox restore refuses to clone a source or replace an existing destination whose baseline exclusion transaction needs repair, before it creates or deletes anything.
 When `dst` already exists, `snapshot restore --to <dst>` refuses by default to avoid silently mutating the destination's filesystem.
 To overwrite an existing destination, pass `--force`: the command deletes `dst`, then recreates it from the source's image and restores the snapshot into the fresh copy.
@@ -6120,7 +6039,7 @@ If the existing destination has an active shields timer, the force path restores
 It clears the remaining local shields state only after deletion succeeds.
 The `--force` path prompts interactively to confirm the destination name before deleting.
 Pass `--yes` (or set `NEMOCLAW_NON_INTERACTIVE=1`) to skip the prompt.
-The snapshot selector and source pod image are both validated before any deletion, so a bad selector or unresolvable image cannot destroy `dst` and only fail afterwards.
+The snapshot selector, source image, and durable inference route are validated before any deletion. If any prerequisite is invalid, restore stops before it deletes `dst`.
 
 ```bash
 # restore latest snapshot in-place
@@ -7199,6 +7118,296 @@ $$nemoclaw setup
 
 
 ========================================
+[FILE: docs/reference/configure-runtime-identity.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Configure Experimental Runtime Identity"
+sidebar-title: "Configure Runtime Identity"
+description: "Configure the experimental provider-neutral runtime identity component for a direct OpenClaw blueprint."
+description-agent: "Configures the direct OpenClaw blueprint runner's experimental runtime identity component, including its Okta and Microsoft Entra profiles, trust boundary, lifecycle, inspection, and rollback. Use when operating components.identity outside normal onboarding."
+keywords: ["nemoclaw runtime identity", "openclaw runtime identity", "okta runtime identity", "microsoft entra runtime identity"]
+agent-variants: ["openclaw"]
+content:
+  type: "how_to"
+---
+
+The direct OpenClaw blueprint runner can attach a provider-neutral runtime identity to a sandbox.
+The shipped blueprint and normal `nemoclaw onboard` do not enable or configure this experimental capability.
+
+The bundled Okta and Microsoft Entra profiles are data-only implementations of the component.
+The blueprint schema describes the OpenShell provider binding and OAuth refresh inputs without using the identity provider as a schema discriminator.
+
+## Review the Trust Boundary
+
+Runtime identity is opt-in only when a direct-runner blueprint includes `components.identity`.
+There is no implicit activation path.
+
+The host process that supplies the named OAuth bootstrap variables and the authenticated OpenShell gateway are trusted.
+The blueprint, copied profile, same-name gateway resources, sandbox workload, subprocess output, persisted state, and CI artifacts are untrusted or observable surfaces.
+
+The runner validates the complete data-only profile before import.
+It fails closed on ambiguous resource inspection, scopes secret material to one refresh-configuration subprocess, and persists only non-secret ownership receipts.
+OpenShell owns credential custody, refresh, admitted-request enforcement, and bearer substitution.
+NemoClaw never exposes the minted bearer to the sandbox.
+
+<Warning>
+Runtime identity profiles may use DNS-backed HTTPS only within a provider type's repository-reviewed hostname suffixes.
+NemoClaw resolves every destination before import and rejects private or internal addresses.
+OpenShell performs connect-time server-side request forgery (SSRF) and L7 enforcement before it injects the provider credential.
+
+OpenShell 0.0.85 verifies the original hostname's certificate but does not pin the address that NemoClaw resolved.
+Only identity-platform-controlled DNS namespaces such as `okta.com`, `login.microsoftonline.com`, and `graph.microsoft.com` belong in this trust table.
+An attacker-controlled or customer-controlled suffix requires a pinning-capable upstream refresh boundary and new conformance evidence.
+</Warning>
+
+### Review the Conformance Evidence
+
+The deterministic `TC-INF-12` and `TC-INF-13` protected end-to-end (E2E) scenarios are the conformance gates for this boundary.
+Both run the real blueprint runner against a real OpenShell gateway and sandbox.
+
+The scenarios enable provider-derived policy and restore its prior setting.
+They exchange a refresh token through a public HTTPS OAuth endpoint and prove that the sandbox sees only opaque placeholders.
+They prove that a child launched after rotation receives a different revision-scoped placeholder and that the protected resource receives both bearers.
+They also check secret-free plan, status, state, logs, request ledgers, and ownership-aware rollback.
+`TC-INF-13` additionally uses the Entra v2 token-path shape, `ENTRA_ACCESS_TOKEN`, and the exact Microsoft Graph `GET /v1.0/me` credential-delivery rule.
+It proves that a `GET /v1.0/users` request is rejected before its bearer reaches the fixture.
+The deterministic fixture proves the complete Entra-shaped runtime path without storing a third-party tenant credential in pull-request CI; tenant acceptance remains a maintainer-run check against Microsoft Entra and Graph.
+
+Focused tests cover malformed profiles, endpoint and DNS rejection, subprocess scoping, same-name resources, partial-apply compensation, and retryable rollback receipts.
+The gateway refresh client's DNS-pinning limitation is the accepted residual boundary.
+Expanding the trusted hostname policy requires upstream pinning and new conformance evidence.
+
+## Enable Provider-Derived Policy
+
+Enable provider-derived policy on the target gateway before you apply the blueprint.
+
+```bash
+openshell settings set --global --key providers_v2_enabled --value true --yes
+```
+
+Apply reads the gateway-global setting before identity mutation and again before attachment.
+It stops unless the JSON value is exactly `true`.
+This check prevents an attachment whose provider-derived network policy and credential injection are inactive.
+
+## Configure the Okta Reference Profile
+
+Copy `nemoclaw-blueprint/provider-profiles/okta-runtime-v1.yaml` into your blueprint as `provider-profiles/acme-okta-runtime.yaml`.
+You may choose another tenant-specific filename.
+Set `profile_path` to that exact relative path.
+
+Set `token_url` to the tenant's authorization-server token endpoint.
+Replace `api.example.okta.com` with the approved upstream API host.
+Keep both hosts in the profile so blueprint input cannot redirect refresh material or bearer-token presentation.
+
+Configure the reference under `components`.
+
+```yaml
+identity:
+  profile_path: provider-profiles/acme-okta-runtime.yaml
+  provider_type: okta-runtime-v1
+  provider_name: acme-okta-runtime
+  credential_key: OKTA_ACCESS_TOKEN
+  client_id_env: OKTA_CLIENT_ID # must be exactly this value
+  refresh_token_env: OKTA_REFRESH_TOKEN
+  client_secret_env: OKTA_CLIENT_SECRET
+```
+
+`client_secret_env` is optional.
+Its environment variable must be present when you configure it.
+
+Secret-material environment names must equal `API_KEY`, `TOKEN`, `SECRET`, `PASSWORD`, or `CREDENTIAL`.
+They may instead end in one of those terms after an underscore.
+The runner rejects subprocess-control names such as `NODE_OPTIONS`.
+It also rejects names forwarded by the general subprocess allowlist, including the `OPENSHELL_`, `GRPC_`, and `XDG_` prefixes.
+
+The profile path must name an existing regular file inside the blueprint directory.
+The runner rejects absolute paths, outward traversal, and outward symlinks.
+The profile `id` must match `provider_type`.
+The profile must declare exactly one credential whose name matches `credential_key`.
+The runner validates the complete credential-delivery policy and rejects unknown fields.
+
+The Okta reference requires these properties:
+
+- Bearer presentation through the `authorization` header.
+- The reviewed OAuth refresh-material shape.
+- Enforced REST `GET /**` endpoint rules.
+- The bundled Node.js and curl executable allowlist.
+
+The runner imports a private temporary snapshot of the validated profile bytes.
+Replacing the original file or symlink cannot change the policy that OpenShell receives.
+
+The runner requires HTTPS refresh and endpoint destinations.
+It restricts them to the provider type's trusted host policy and applies NemoClaw's DNS-aware SSRF validation.
+Private, loopback, link-local, and unresolved destinations are rejected.
+
+DNS-backed destinations require a reviewed policy that marks their namespace as identity-platform-controlled.
+Other profile policies reject them before import.
+The current `okta-runtime-v1` policy accepts `okta.com` and its subdomains.
+Custom Okta domains are not supported.
+
+The reviewed policy fixes the non-secret client ID source to `OKTA_CLIENT_ID`.
+A blueprint cannot select another host variable.
+Command failures redact the client ID with the secret refresh material.
+
+Export the named environment variables in the host process that runs the direct blueprint runner.
+Obtain the refresh token through an authorized OAuth bootstrap flow for the same Okta client and authorization server.
+`openshell gateway login` authenticates a CLI user to the gateway and is not part of this runtime-credential flow.
+
+<Warning>
+The host process can read `OKTA_REFRESH_TOKEN` and `OKTA_CLIENT_SECRET`, and the runner forwards them only to the scoped refresh-configuration subprocess.
+These environment variables remain available until you unset them or the host process exits.
+After apply succeeds, run `unset OKTA_REFRESH_TOKEN OKTA_CLIENT_SECRET` in the host shell.
+OpenShell retains the refresh material in the gateway credential store until rollback or provider deletion removes the owned provider.
+</Warning>
+
+## Configure the Microsoft Entra Reference Profile
+
+Copy `nemoclaw-blueprint/provider-profiles/entra-runtime-v1.yaml` into your blueprint as `provider-profiles/acme-entra-runtime.yaml`.
+Replace `organizations` in `token_url` with the Directory (tenant) ID for the application registration.
+The built-in policy accepts only the exact `login.microsoftonline.com` token issuer and `graph.microsoft.com` resource host.
+It does not admit national-cloud endpoints or tenant-controlled custom domains.
+Bearer delivery is restricted to exactly `GET /v1.0/me`.
+
+Configure the same provider-neutral component with the Entra implementation.
+
+```yaml
+identity:
+  profile_path: provider-profiles/acme-entra-runtime.yaml
+  provider_type: entra-runtime-v1
+  provider_name: acme-entra-runtime
+  credential_key: ENTRA_ACCESS_TOKEN
+  client_id_env: ENTRA_CLIENT_ID
+  refresh_token_env: ENTRA_REFRESH_TOKEN
+  client_secret_env: ENTRA_CLIENT_SECRET
+```
+
+Register a separate Entra application for the delegated runtime flow.
+Grant only the Microsoft Graph delegated `User.Read` permission needed by [`GET /me`](https://learn.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0), and request [`offline_access`](https://learn.microsoft.com/en-us/entra/identity-platform/scopes-oidc#the-offline_access-scope) during the external authorization-code bootstrap so the v2 endpoint returns a refresh token.
+Microsoft documents `offline_access` as an explicit requirement for v2 refresh-token issuance and [documents replacement of the stored refresh token](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token) when a refresh response carries a new one.
+Use a confidential web application and `ENTRA_CLIENT_SECRET` when the bootstrap client can keep a secret.
+Omit `client_secret_env` for a public client rather than placing a public-client secret on the host.
+NemoClaw does not package the authorization redirect, consent UI, PKCE exchange, or MSAL cache.
+
+<Warning>
+The host process can read `ENTRA_REFRESH_TOKEN` and `ENTRA_CLIENT_SECRET`, and the runner forwards them only to the scoped refresh-configuration subprocess.
+These environment variables remain available until you unset them or the host process exits.
+After apply succeeds, run `unset ENTRA_REFRESH_TOKEN ENTRA_CLIENT_SECRET` in the host shell.
+OpenShell retains the refresh material in the gateway credential store until rollback or provider deletion removes the owned provider.
+</Warning>
+
+Acquire the initial refresh token outside NemoClaw using Microsoft-supported identity tooling, then export the application client ID, refresh token, and optional client secret into the host process that runs the direct blueprint runner.
+
+The repository does not publish a user-facing command for this experimental direct runner.
+A maintainer-run tenant acceptance must establish all of the following criteria:
+
+- Apply imports the copied Entra profile, creates the owned provider, attaches it to the intended sandbox, and reports successful refresh status.
+- A newly launched sandbox child sees an `openshell:resolve:env:...` placeholder instead of the access token.
+- The protected-resource request below returns the signed-in delegated user.
+- OpenShell rejects a request to another Graph path before bearer delivery.
+- Credential rotation gives a new child a new revision-scoped placeholder, and `GET /v1.0/me` succeeds with the rotated credential.
+- Rollback removes the owned attachment and provider while preserving any reused sandbox.
+
+Do not save the Graph response, refresh token, access token, or client secret in a terminal transcript or CI artifact.
+Run the protected-resource acceptance request from a newly launched sandbox child, where `ENTRA_ACCESS_TOKEN` is the child-scoped OpenShell placeholder.
+Do not run this request from the host shell; the child request must traverse the OpenShell proxy so its bearer delivery and Graph path restrictions are exercised:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${ENTRA_ACCESS_TOKEN}" \
+  https://graph.microsoft.com/v1.0/me
+```
+
+## Apply the Runtime Identity
+
+During plan, the runner reports only the provider type, provider name, and credential key.
+It does not report secret material.
+
+During apply, the runner inspects the target sandbox before identity mutation.
+It requires either the exact sandbox name in the `Ready` phase or an explicit sandbox-not-found result.
+If sandbox creation races with another creator, the runner repeats the same inspection.
+It inspects the sandbox again after inference routing and immediately before identity attachment.
+If the sandbox changed, the runner compensates without attachment.
+
+The runner always inspects the configured inference provider before identity mutation.
+It reuses a provider only when its name, type, and required non-secret key shape match the blueprint.
+It permits creation only after an explicit provider-not-found result.
+If another actor creates the provider concurrently, the runner repeats the binding inspection before it treats the provider as unowned reusable state.
+Any other inspection failure stops apply.
+
+The runner also inspects the requested runtime identity provider name.
+Any same-name provider stops apply.
+The runner validates an existing provider's non-secret binding to report a precise error.
+It never reuses that provider because OpenShell does not expose a secret-safe snapshot that rollback could restore.
+
+Only an absent provider proceeds to profile import.
+When the profile is already registered, the runner first requires an exact export match.
+It then creates the provider, configures gateway-managed OAuth refresh, and performs the initial token rotation.
+
+Before attachment, the runner creates or reuses the configured inference provider.
+For a reused sandbox and provider, it preserves the live route only when the provider, model, and requested timeout match the blueprint.
+An absent or different route must pass `openshell inference set`.
+The runner attaches the runtime identity and applies policy additions only after OpenShell confirms the route.
+
+Each successful apply creates and owns the runtime identity provider whose refresh state it mutates.
+The persisted plan records ownership of the runtime identity provider, sandbox attachment, inference provider, and sandbox.
+The runner writes the receipt as it acquires each resource.
+The receipt preserves a recovery path when automatic compensation fails.
+
+If a later step fails, the runner reverses only resources that apply created.
+It detaches the runtime identity provider, deletes created providers, and removes a created sandbox.
+
+The runner never places the refresh token or optional client secret in command arguments or persisted plans.
+It passes them to `openshell provider refresh configure` through a scoped subprocess environment.
+OpenShell stores the credential material in the gateway credential store.
+Other runner subprocesses receive the allowlisted environment without identity material.
+
+Each sandbox child launch receives an opaque provider-specific placeholder such as `OKTA_ACCESS_TOKEN` or `ENTRA_ACCESS_TOKEN`.
+The OpenShell L7 proxy substitutes the corresponding access token only for admitted HTTPS requests.
+After rotation, launch a new child process to receive the new revision-scoped placeholder.
+An earlier child process does not adopt the rotation.
+
+## Inspect Runtime Identity State
+
+Check gateway-side state without printing credential values.
+
+```bash
+openshell provider refresh status acme-okta-runtime --credential-key OKTA_ACCESS_TOKEN
+openshell sandbox provider list <sandbox-name>
+```
+
+The direct runner `status` action reports the non-secret identity ownership receipt.
+
+## Roll Back Runtime Identity
+
+The `rollback` action verifies the current provider binding before it changes resources.
+It detaches the provider only when the apply created the sandbox attachment.
+It deletes the provider only when the apply created it.
+
+Rollback removes a sandbox only when the persisted plan proves that apply created it.
+It preserves reused sandboxes and legacy plans with unknown sandbox ownership.
+After an owned sandbox is removed, rollback deletes an inference provider only when the receipt proves that apply created it.
+The same provider rule applies immediately when the sandbox was reused.
+
+If removal of an apply-owned sandbox fails, rollback returns the bounded error without writing its completion marker.
+The ownership receipt remains available for retry.
+Rollback does not mutate a same-name provider when its binding no longer matches the receipt.
+
+## Review the Scope Limits
+
+Runtime identity does not add a generic blueprint middleware surface.
+Configure deployment-specific pre-credential policy through separately supported OpenShell tooling.
+This reference does not package an OAuth bootstrap application, an on-behalf-of exchange, or a production identity middleware service.
+
+## Related Topics
+
+- [Architecture Details](architecture) for the blueprint lifecycle and system topology.
+- [Credential Storage](../security/credential-storage) for the OpenShell credential boundary.
+
+
+========================================
 [FILE: docs/reference/enterprise-readiness.mdx]
 ========================================
 
@@ -7614,14 +7823,6 @@ Hermes sandboxes use an agent-specific baseline policy in `agents/hermes/policy-
 
 Deep Agents sandboxes use an agent-specific baseline policy in `agents/langchain-deepagents-code/policy-additions.yaml` so the managed `dcode` runtime can reach inference, GitHub, and package endpoints while keeping the same deny-by-default model.
 Deep Agents uses strict Landlock compatibility, so sandbox startup fails when OpenShell cannot enforce the managed filesystem policy.
-
-</AgentOnly>
-
-<AgentOnly variant="hermes">
-
-<Note>
-Hermes sandboxes use an agent-specific baseline policy in `agents/hermes/policy-additions.yaml` so Hermes runtime binaries can reach the service endpoints they need while keeping the same deny-by-default model.
-</Note>
 
 </AgentOnly>
 
@@ -11069,6 +11270,51 @@ nemohermes <name> start
 Then run `nemohermes inference get` and verify Dashboard Chat uses the selected model.
 If the command succeeds because the dashboard profile is missing, the dashboard is disabled and no dashboard recovery is required.
 
+### Shields Reports Drift for the Hermes Configuration Root
+
+The Hermes configuration root holds the agent's top-level runtime state, not only its configuration: `auth.json`, the drain request, and the temporary files that back every atomic `gateway_state.json` and `gateway.pid` replace are created directly in `/sandbox/.hermes`.
+Lockdown therefore moves that directory to `root:sandbox` mode `3770`, keeping the set-id and sticky bits, so the gateway can still manage its own runtime files while the sticky bit stops the sandbox identity from unlinking or renaming the sealed root-owned configuration.
+Run the following command to inspect a locked root:
+
+```bash
+$$nemoclaw <name> exec -- stat -c '%a %U:%G' /sandbox/.hermes
+```
+
+Expected output:
+
+```text
+3770 root:sandbox
+```
+
+A sandbox locked by an older release carries a `755 root:root` root instead.
+The gateway cannot write its runtime state there.
+`$$nemoclaw <name> shields status` reports the stale posture as drift.
+Before restarting the gateway, repair the posture:
+
+```bash
+$$nemoclaw <name> shields up
+```
+
+If the command refuses the repair, follow its recovery guidance and do not restart the gateway.
+Otherwise, verify the repaired posture:
+
+```bash
+$$nemoclaw <name> shields status
+$$nemoclaw <name> exec -- stat -c '%a %U:%G' /sandbox/.hermes
+```
+
+Continue only when status no longer reports drift and `stat` prints the expected output above.
+Then restart the gateway:
+
+```bash
+$$nemoclaw <name> gateway restart
+```
+
+The restart must exit zero and report that the health check passed.
+If restart or recovery already reports `relaunch quarantined`, repairing the directory cannot clear the supervisor quarantine.
+Follow [Restart or recovery reports `relaunch quarantined`](#restart-or-recovery-reports-relaunch-quarantined) to rebuild the sandbox.
+The sealed files are unchanged by the repair and stay `444 root:root`.
+
 ### Hermes restart reports `config hash mismatch`
 
 A Hermes restart reports `config hash mismatch` when a strict root-owned hash is available and `/sandbox/.hermes/config.yaml` or `/sandbox/.hermes/.env` does not match it.
@@ -11092,6 +11338,21 @@ Replace them through the supported credential flow so the file contains `openshe
 The Hermes entrypoint supervisor remains responsible for the gateway, dashboard, internal API relay, dashboard relay, and gateway log stream throughout recovery.
 In the OpenShell-managed topology, that nonroot supervisor repairs failed auxiliaries continuously, recovers a gateway after four consecutive failed listener or HTTP health checks, and quarantines relaunch after five exits within 60 seconds until the sandbox is recreated.
 The host only repairs the host-side OpenShell forwards after the supervised processes pass health checks.
+
+### Restart or recovery reports `relaunch quarantined`
+
+In the OpenShell-managed topology the strict root-owned hash is not a trust anchor for mutable config, so a direct edit of `/sandbox/.hermes/config.yaml` or `/sandbox/.hermes/.env` is not refused by the host controller.
+The in-sandbox supervisor still refuses to start a gateway on configuration it cannot match to the persisted managed state, and it stops attempting relaunch once that refusal or repeated gateway exits exhaust its crash budget.
+`$$nemoclaw <name> gateway restart`, `$$nemoclaw <name> recover`, and `$$nemoclaw <name> connect` then report the `relaunch quarantined` failure layer.
+
+The refusal is deterministic, so retrying any of those commands cannot clear it.
+Restore the registered configuration and refresh its integrity metadata in one transaction:
+
+```bash
+nemohermes <name> rebuild --yes
+```
+
+After the rebuild, make the intended change through a supported command such as `$$nemoclaw <name> config set` or `$$nemoclaw inference set`, which update the configuration and its hashes together.
 
 ### Port 8642 in a browser shows a blank page or `Cannot GET /`
 
@@ -13158,7 +13419,7 @@ No live E2E, sandbox build, migration, rollback, compatibility shim, or changelo
 
 # Hermes 0.19.0 dependency and compatibility review
 
-Review date: 2026-07-29
+Review date: 2026-07-30
 
 ## Decision
 
@@ -13171,8 +13432,9 @@ Named-profile copies remain inside the raw `profiles` directory capture under th
 The gateway-runtime-metadata, session-preview, Langfuse-placeholder, managed-light-skin, provider-routing, and resumed-one-shot workarounds remain necessary against the target source and retain exact-shape guards.
 
 The selected Python graph is hardened before installation with a reviewed, exact-source patch that updates the published dependency metadata and frozen lock together.
-It selects `cryptography==48.0.1`, `Pillow==12.3.0`, and `starlette==1.3.1`, then verifies those installed versions and the complete environment with `uv pip check`.
+It selects `cryptography==48.0.1`, `mcp==1.28.1`, `Pillow==12.3.0`, `starlette==1.3.1`, and `tornado==6.5.7`, then verifies those installed versions and the complete environment with `uv pip check`.
 The final image also replaces the published `python-multipart==0.0.27` lock resolution with the hash-verified and attested `python-multipart==0.0.32`.
+The base image overlays checksum-pinned Node.js `24.18.1` archives for both supported architectures and installs exact uv `0.11.33`; build-time assertions reject version drift before Hermes is installed.
 
 The source-pin commit must publish a fresh multi-platform Hermes base image before the final Dockerfile can name its immutable digest.
 The PR is not approval-ready until the pinned final image and required live E2E gates pass on the exact PR head.
@@ -13188,6 +13450,8 @@ The PR is not approval-ready until the pinned final image and required live E2E 
 | Target source commit | `3ef6bbd201263d354fd83ec55b3c306ded2eb72a` |
 | Target source archive SHA-256 | `285f3fc134ff466a90065e1517801a68993733b807158ee8f32aa01613786990` |
 | Target npm cross-check integrity | `sha512-+oVKG3lXbk2kEP+J6BXZjtmSBSaFfczIdOWQ9CUSTdTqq2uyHbk4p+kPyZ6MeGs56JU5qXzMNbqGKRVOQRGC1A==` |
+| Target Node.js release | `24.18.1` |
+| Target uv release | `0.11.33` |
 | Target PyPI wheel SHA-256 | `bd0bac012aee38a60894781f4597dc29ee7bedb3448540249921f10d3bef327f` |
 | Target PyPI source distribution SHA-256 | `ac986bede64a2785436676c0ea084ec586574f8cb00a9d047e095b435d3e21c0` |
 | Target publish date | `2026-07-20` |
@@ -13211,7 +13475,7 @@ The `hermes-agent` npm package is published from a different bridge repository a
 
 The complete adjacent range contains 2,399 source commits.
 The upstream release-note estimate is not used as the audit boundary.
-Python remains `>=3.11,<3.14`, and the JavaScript runtime remains Node `>=20`, so NemoClaw's Python 3.13 and Node 22 image floors remain compatible.
+Python remains `>=3.11,<3.14`, and the JavaScript runtime remains Node.js `>=20`, so NemoClaw's Python 3.13 and checksum-pinned Node.js 24.18.1 runtime remain compatible.
 
 ## Semantic migration and retained workarounds
 
@@ -13307,21 +13571,18 @@ The override clears `GHSA-5rvq-cxj2-64vf`, `GHSA-6jv3-5f52-599m`, and `GHSA-v9pg
 A Python 3.13 FastAPI `TestClient` probe covered ordinary forms, file upload, and dense CRLF input with the replacement parser.
 
 The source patch changes the published constraints and `uv.lock` as one transaction rather than overlaying packages after `uv sync`.
-In addition to the three direct selections, the resolver necessarily moves `alibabacloud-tea-openapi` from `0.4.4` to `0.4.5`, `darabonba-core` from `1.0.5` to `1.0.8`, and adds `websocket-client==1.9.0`.
+In addition to the five direct selections, the resolver necessarily moves `alibabacloud-tea-openapi` from `0.4.4` to `0.4.5`, `darabonba-core` from `1.0.5` to `1.0.8`, and adds `websocket-client==1.9.0`.
 The changed packages remain under Apache-2.0, BSD-3-Clause, MIT-CMU, or compatible dual-license terms; no restrictive license enters the selected graph.
 
-The 2026-07-29 point-in-time audit reports no advisory for `cryptography==48.0.1`, `Pillow==12.3.0`, or `starlette==1.3.1`.
-The exported patched lock still reports 14 records in seven other packages, but three records are for the published `python-multipart==0.0.27` resolution that the final image already replaces with `0.0.32`, for which the same point-in-time audit reports no advisories.
-The effective image therefore retains 11 newly published records in six unrelated packages: `click==8.3.1`, `mcp==1.26.0`, `pydantic-settings==2.13.1`, `Pygments==2.19.2`, `PyNaCl==1.5.0`, and `tornado==6.5.5`.
-Those records are not introduced by this targeted remediation and remain visible for a separate dependency-lifecycle review; this review does not describe the complete image as vulnerability-free.
+The 2026-07-30 point-in-time audit reports no advisory for `cryptography==48.0.1`, `mcp==1.28.1`, `Pillow==12.3.0`, `starlette==1.3.1`, or `tornado==6.5.7`.
+The exported patched lock still contains lower-severity records in unrelated packages and records for the published `python-multipart==0.0.27` resolution that the final image replaces with `0.0.32`.
+Those records are not introduced by this targeted Critical and High remediation and remain visible for a separate dependency-lifecycle review; this review does not describe the complete image as vulnerability-free.
 
 Compatibility evidence covers all 97 upstream image-routing tests with Pillow `12.3.0`, plus a real FastAPI `0.133.1`, Starlette `1.3.1`, and multipart `0.0.32` form and upload `TestClient` smoke.
 The image build additionally requires the frozen environment to remain consistent and asserts the exact installed versions before continuing.
 
-The remaining high records have evidence-backed exclusions from currently enabled Hermes paths.
-Hermes-owned MCP servers use stdio and do not enable authenticated stateful HTTP, custom WebSocket servers, or MCP tasks.
-Telegram uses HTTPX outbound requests and polling by default rather than Tornado's affected HTTP client and decompression paths.
-No Hermes call to `click.edit()` or PKCS#7 and S/MIME verification was found.
+The remaining audit records do not meet the Critical or High remediation threshold.
+They stay recorded rather than being described as fixed or excluded.
 
 The final root JavaScript runtime graph remains `agent-browser@0.26.0` plus the existing Streamdown tree and reports zero production audit findings.
 The TUI and web workspaces retain unchanged high package-level findings in build-only dependencies whose `node_modules` directories are deleted after compilation.
@@ -13351,7 +13612,7 @@ Artifact scanning must therefore inspect the assembled image and record the down
 | `HERMES-7` | High | Test and runtime-proof | The target's `mcp__server__tool` names are compatible by source inspection, while managed-tool discovery and invocation remain a live E2E gate. |
 | `HERMES-8` | High | Guard and runtime-proof | Optional upstream secret sources stay disabled, `--safe-mode` does not broaden the generated environment allowlist, and the live environment boundary must reject raw credentials. |
 | `HERMES-9` | High | Pin and test | The selected Python delta adds no advisory regression, and the affected multipart parser is replaced with attested `0.0.32` plus hash and runtime probes. |
-| `HERMES-10` | High | Pin and test | The exact-source patch updates Hermes metadata and its frozen lock together, selects `cryptography==48.0.1`, `Pillow==12.3.0`, and `starlette==1.3.1`, and fails the image build on dependency inconsistency or installed-version drift. |
+| `HERMES-10` | High | Pin and test | The exact-source patch updates Hermes metadata and its frozen lock together, selects `cryptography==48.0.1`, `mcp==1.28.1`, `Pillow==12.3.0`, `starlette==1.3.1`, and `tornado==6.5.7`, and fails the image build on dependency inconsistency or installed-version drift. The base image separately checksum-pins Node.js `24.18.1` and asserts uv `0.11.33`. |
 | `HERMES-11` | High | Migrate, test, and runtime-proof | Root npm audit reports zero production findings and the WhatsApp bridge removes its current critical, high, and medium advisory entries, while both architectures still require native bridge and message-path evidence. |
 | `HERMES-12` | High | Pin and runtime-proof | Trusted workflow run `30411365314` published the exact source commit as amd64 and arm64 manifests under OCI index `sha256:c4aee5c9b087840da6e1eb2127fef9f4a2eab0862992008d1741dc09f632422e`. The final Dockerfile pins that digest. Before the cron ledger relocation, the pinned arm64 final image passed all 62 BuildKit steps, including installed-version, patch, config, and cross-identity SQLite probes. The exact PR head must build the three added relocation layers and changed cron probe before protected runtime E2E. |
 | `HERMES-13` | Medium | Document bounded residual | Static `state_files` entries online-back up the default profile only. Cron or Discord ledgers created by a process launched under `profiles/<name>` remain in the raw `profiles` tar capture and can be inconsistent during a concurrent snapshot. Dynamic profile-local SQLite discovery is generic snapshot work outside this upgrade PR. |
@@ -13391,6 +13652,120 @@ Before merge, the exact PR head must still pass:
 - messaging, environment-secret, restart, snapshot, rebuild, and rollback E2E paths;
 - normal repository checks with no unresolved actionable automated-review finding; and
 - documentation-writer and security-review receipts tied to the final pushed head.
+
+
+========================================
+[FILE: docs/security/managed-base-perl-5.44-dependency-review.md]
+========================================
+
+<!--
+  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-License-Identifier: Apache-2.0
+-->
+
+# Managed base-image Perl 5.44 review
+
+Date: 2026-07-29
+
+## Scope
+
+This review extends the existing Perl 5.44.0 remediation to the Hermes and LangChain Deep Agents Code base images.
+
+The OpenClaw base image already installs the reviewed packages.
+The sibling images used Debian Perl 5.40.1-6 before this change.
+
+This change does not cross an upstream Perl release range.
+It preserves these reviewed identities:
+
+- source release: Perl 5.44.0;
+- source SHA-256: `505cf43912e9480495c344c70260452e32aa2a73c546a026b3f100053b23ce91`;
+- package revision: `1nemoclaw1`; and
+- package versions: `perl-base=5.44.0-1nemoclaw1` and `perl=5.44.0-1nemoclaw1`.
+
+The public vulnerability set includes `CVE-2026-12087`, `CVE-2026-13221`, `CVE-2026-48959`, `CVE-2026-48961`, `CVE-2026-48962`, `CVE-2026-57432`, `CVE-2026-57433`, and `CVE-2026-7017`.
+
+## Artifact flow
+
+`scripts/security/build-perl-security-packages.sh` owns the source download, checksum verification, configuration, test selection, install, and Debian package metadata.
+
+Each managed base image uses this flow:
+
+1. Build the existing libssh2 and Python security packages.
+2. Build Perl from the checksum-pinned CPAN archive.
+3. Run the complete upstream test selection.
+4. Build native `perl-base` and `perl` Debian packages.
+5. Install both packages before deleting the build artifacts.
+6. Execute exact interpreter, module, behavior, and dpkg assertions.
+
+The package metadata replaces the Debian `libperl5.40` and `perl-modules-5.40` ownership without leaving unmanaged files.
+
+## Build topology
+
+The complete Perl suite approaches the image-job timeout under QEMU arm64 emulation.
+
+The base-image publisher now builds these image and platform pairs on native runners:
+
+- OpenClaw on amd64 and arm64;
+- Hermes on amd64 and arm64; and
+- Deep Agents Code on amd64 and arm64.
+
+All six platform builds run independently.
+Each final publisher creates tags only after both platform digests for its image pass.
+The publisher then verifies that the manifest contains amd64 and arm64.
+Clean unversioned development checkouts resolve an available exact source-SHA image before attempting a local rebuild.
+Dirty base-image inputs still require a local build and cannot consume a published candidate.
+
+## Runtime proof
+
+Each completed image must report these values:
+
+| Component | Required value |
+|---|---|
+| Perl | `v5.44.0` |
+| Socket | `2.041` |
+| Storable | `3.41` |
+| HTTP::Tiny | `0.096` |
+| IO::Compress::Base | `2.223` |
+| IO::Uncompress::Unzip | `2.223` |
+| File::GlobMapper | `1.001` |
+
+The image build also executes the reviewed Socket argument-length rejection and regular-expression behavior checks.
+`dpkg --audit` must return no output.
+
+## Concern ledger
+
+| ID | Surface | Failure mode | Disposition | Evidence |
+|---|---|---|---|---|
+| PERL-01 | Source identity | A moving or modified archive changes the runtime behind the package version. | Pin | The CPAN URL contains `5.44.0`, and SHA-256 verification precedes extraction. |
+| PERL-02 | Test coverage | A sibling image installs an untested native build. | Test | The shared builder runs the complete selection-equivalent upstream suite before packaging. |
+| PERL-03 | Package ownership | Replacing Perl leaves conflicting Debian package ownership. | Guard | Package metadata declares `Provides`, `Conflicts`, `Breaks`, and `Replaces`; every image runs `dpkg --audit`. |
+| PERL-04 | Image selection | One managed image continues to copy packages from the older native-only stage. | Guard | All three Dockerfiles copy `/out` from `perl-builder`. |
+| PERL-05 | Runtime selection | The expected package exists but another interpreter or module executes. | Runtime proof | Every final image executes the interpreter, module, Socket, and regex checks. |
+| PERL-06 | Platform execution | arm64 emulation exceeds the job timeout or hides architecture-specific failure. | Migrate | Hermes and Deep Agents Code use native amd64 and arm64 platform jobs with atomic manifests. |
+| PERL-07 | Published identity | One platform tag becomes visible before its sibling platform passes. | Guard | Platform jobs push by digest. Manifest jobs publish tags after both digest artifacts exist. |
+
+## Downstream boundaries
+
+The change does not modify agent configuration, credentials, network policy, runtime entrypoints, or persistent state.
+It changes the Perl files and dpkg identities inside the three existing managed base images.
+It also lets a clean unversioned development checkout resolve its exact published source-SHA candidate before the committed-input divergence check requires a local build.
+Dirty base-image inputs still require a local build.
+
+Rollback selects an earlier immutable base-image digest.
+The change does not add a data migration or a compatibility fallback.
+
+## Verification
+
+The repository tests verify:
+
+- one shared package definition and checksum identity;
+- complete upstream test selection before packaging;
+- package ownership and cleanup order;
+- exact runtime and module assertions in all three images;
+- native amd64 and arm64 jobs for both sibling images; and
+- atomic multi-platform manifest publication.
+
+The remaining external gates are the six production platform builds, manifest publication, and a vulnerability rescan of the published image digests.
 
 
 ========================================
@@ -15099,16 +15474,11 @@ usable. The target then reattaches through `mcp restart`, rebuilds without the
 host MCP secret, and removes the bridge. Every request is identified independently
 of its credential, and the upstream ledger is required to contain no literal
 resolve placeholder.
-The stable workflow keeps the OpenClaw, Hermes, and Deep Agents MCP lifecycles
-on three fresh-runner shards with separate artifacts. It runs the
-`openshell-credential-generation-window` live target once, after the Deep Agents
-case, rather than repeating that proof in every shard.
-The workflow first ran this bounded target against the exact reviewed development
-artifacts and scanned its artifacts for the whole generated-secret prefix. The
-stable-source review retains the upstream
-`expired_retained_generation_does_not_resolve` unit. The default stable job now
-binds the target to tag commit `3dee5570`, the extracted release binaries, and the
-immutable supervisor index; its final result for the PR SHA remains a merge gate.
+The stable workflow keeps the OpenClaw, Hermes, and Deep Agents MCP lifecycles on three fresh-runner shards with separate artifacts.
+It runs the `openshell-credential-generation-window` live target once on a fourth fresh runner in parallel with the stable MCP agent matrix, rather than serializing or repeating that proof in the agent matrix.
+The workflow first ran this bounded target against the exact reviewed development artifacts and scanned its artifacts for the whole generated-secret prefix.
+The stable-source review retains the upstream `expired_retained_generation_does_not_resolve` unit.
+The default stable job now binds the target to tag commit `3dee5570`, the extracted release binaries, and the immutable supervisor index; its final result for the PR SHA remains a merge gate.
 
 ### v0.0.82 to v0.0.83
 
@@ -15567,7 +15937,7 @@ Required evidence for the final pull-request head:
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Sandbox base native package review: libssh2 and Python HTMLParser
+# Sandbox Base Native Package Review for libssh2 and Python HTMLParser
 
 Date: 2026-07-27
 
@@ -15628,7 +15998,7 @@ The completed production images repeat the inventory, package, file, and runtime
 
 ## Concern ledger
 
-### SEC-1: libssh2 1.11.1 lacks four upstream memory-safety fixes
+### SEC-1 libssh2 1.11.1 Lacks Four Upstream Memory-Safety Fixes
 
 - Surface: native SSH2 client library
 - Severity: high
@@ -15637,7 +16007,7 @@ The completed production images repeat the inventory, package, file, and runtime
 - Disposition: backport, build, test, package, runtime-proof
 - Validation: native amd64 and arm64 image builds passed for all managed images.
 
-### SEC-2: Python 3.13.5 HTMLParser repeatedly rescans incomplete input
+### SEC-2 Python 3.13.5 HTMLParser Repeatedly Rescans Incomplete Input
 
 - Surface: Python standard library
 - Severity: high

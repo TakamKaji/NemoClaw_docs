@@ -191,6 +191,106 @@ nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 
 
 ========================================
+[FILE: docs/configure-agents/configure-memory-search.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Configure Memory Search"
+sidebar-title: "Configure Memory Search"
+description: "Configure OpenClaw memory search to use an embedding model from a host Ollama container."
+description-agent: "Configures OpenClaw memory search with a host Ollama embedding provider, including policy access, provider settings, index rebuild, and verification. Use when setting agents.defaults.memorySearch.provider."
+keywords: ["openclaw memory search", "ollama embeddings", "qwen3 embedding"]
+agent-variants: ["openclaw"]
+content:
+  type: "how_to"
+---
+
+Configure OpenClaw memory search to use an embedding model from a host Ollama container.
+This setup lets another local server, such as managed vLLM, continue to serve the chat model.
+
+## Prepare the Embedding Server
+
+Start the host Ollama container with the embedding model.
+This example uses `qwen3-embedding:4b` on port `11434`.
+
+The sandbox reaches the container through `http://host.openshell.internal:11434`.
+Keep the container bound to the local host or a reviewed host interface.
+Port `11434` is commonly unauthenticated.
+Allow it only from the OpenShell Docker bridge or an equivalent local container network.
+
+## Permit the Bridge Route
+
+The `local-inference` policy preset permits the sandbox to reach the host bridge.
+Apply the preset, then verify the Ollama API from the sandbox.
+
+```bash
+nemoclaw my-assistant policy add local-inference --yes
+nemoclaw my-assistant exec -- curl -fsS http://host.openshell.internal:11434/api/tags
+```
+
+## Configure the Embedding Provider
+
+Open a bounded shields-down window before you change the OpenClaw configuration.
+Define an Ollama provider, select it for memory search, restart OpenClaw, and restore lockdown.
+
+<Warning>
+Shields down temporarily relaxes selected lockdown controls for five minutes.
+If a configuration command or restart fails, run `nemoclaw my-assistant shields up` before you retry.
+</Warning>
+
+```bash
+nemoclaw my-assistant shields down \
+  --timeout 5m \
+  --reason "configure memory search"
+
+nemoclaw my-assistant config set \
+  --key models.providers.ollama-mem \
+  --value '{"api":"ollama","baseUrl":"http://host.openshell.internal:11434","apiKey":"x","models":[{"id":"qwen3-embedding:4b","name":"Qwen3 embedding 4B"}]}' \
+  --config-accept-new-path
+
+nemoclaw my-assistant config set \
+  --key agents.defaults.memorySearch.provider \
+  --value ollama-mem \
+  --config-accept-new-path \
+  --restart
+
+nemoclaw my-assistant shields up
+```
+
+Verify that Shields up restored lockdown:
+
+```bash
+nemoclaw my-assistant shields status
+```
+
+Continue only when the command succeeds and reports `Shields: UP (lockdown active)`.
+
+The host-side `config set` command accepts the bridge URL only for supported provider `baseUrl` fields.
+Generic configuration keys and other private URL shapes remain rejected.
+
+## Rebuild and Verify the Index
+
+An existing index can report an identity mismatch after its embedding provider changes.
+Inspect the index, rebuild it, and verify the configured memory provider.
+
+```bash
+nemoclaw my-assistant exec -- openclaw memory status --index
+nemoclaw my-assistant exec -- openclaw memory index --force
+nemoclaw my-assistant exec -- openclaw memory status --deep
+```
+
+Add `--agent <id>` to each `openclaw memory` command for a non-default OpenClaw agent.
+
+## Related Topics
+
+- [Set Up Ollama](../inference/local-inference/set-up-ollama) for the host Ollama lifecycle and authenticated chat proxy.
+- [Apply Policy Presets](../network-policy/configure-policies/apply-policy-presets) for managed network-policy access.
+- [Understand Runtime Changes](../manage-sandboxes/configure-sandboxes/understand-runtime-changes) for shields and configuration mutations.
+
+
+========================================
 [FILE: docs/configure-agents/progressive-tool-disclosure.mdx]
 ========================================
 
@@ -1892,37 +1992,13 @@ For the current support status and direct GPU policy boundaries, see [Platform S
 ## Prepare a Two-Station Pair
 
 Complete NVIDIA's [two-Station CX8 fabric playbook](https://build.nvidia.com/station/connect-two-stations/instructions) before running NemoClaw pair preparation.
-The published [dual-Station Nemotron Ultra playbook](https://build.nvidia.com/station/nemoclaw/dual-nodes) is the runtime recipe tracked by this managed path.
-
-When no peer or model is selected explicitly, Station Express selects `nemotron-3-ultra-550b-a55b` and checks for one trusted reciprocal peer at the deterministic counterpart address on each of two configured private `/30` ConnectX-8 rails.
-If both Stations pass reciprocal identity, GPU, route, neighbor, and jumbo-frame checks, NemoClaw uses the distributed Ultra recipe.
-If no trusted pair qualifies, Express retains the existing single-Station Ultra recipe.
-An explicit `NEMOCLAW_VLLM_MODEL` remains authoritative.
-When `NEMOCLAW_DGX_STATION_PEER` is set, that exact peer must qualify or setup stops instead of falling back.
 
 Configure both Stations before installation with exactly two active 400 Gbit/s Ethernet rails, MTU 9000, and one usable private `/30` address per rail.
 The reciprocal addresses must use direct-link routes, the expected peer MAC neighbors, and jumbo-frame connectivity in both directions.
 The SSH target must already have usable host-key trust and non-interactive authentication, and the selected peer account must have passwordless `sudo` for remote preparation.
 NemoClaw checks only the two deterministic `/30` counterpart addresses; it does not scan other addresses, configure the rails, enroll SSH trust, or accept a shared `/24` as equivalent evidence.
 
-Station preparation binds the preparing non-root account's UID in root-owned `/etc/nemoclaw/dual-station-controller-uid`.
-Rebinding requires an administrator to remove that file before preparation is rerun as the replacement account.
-If either Station requires a reboot, the installer stops with status `10` and names the host to reboot manually.
-The initial local-host receipt preserves the accepted NemoClaw revision and Express selections.
-After reciprocal peer qualification begins, owner-only pair state additionally binds the preparation helper, SSH host key, GPU identities, and reciprocal rails.
-The installer never reboots either host automatically.
-
-<Warning title="Trusted Pair Boundary">
-The dual-Station runtime uses unauthenticated Ray, NCCL, and vLLM coordination traffic, including the Ray head on TCP port `6379` and Ray's worker traffic.
-Treat both Stations and every host that can reach either private rail as mutually trusted.
-The operator owns physical rail isolation, host firewalling, SSH trust, and reboot control.
-Do not use the pair path on a shared or routed network without separately reviewed isolation evidence.
-</Warning>
-
-<Warning title="DGX Station Support Status">
-The dual-Station path is a Deferred evaluation.
-It does not change the single-Station support status.
-</Warning>
+Follow [Set Up vLLM on Two DGX Stations](../../inference/local-inference/set-up-vllm-on-two-dgx-stations) for pair selection, qualification, fallback, reboot and resume behavior, runtime trust, and cleanup.
 
 ## Next Step
 
@@ -2218,7 +2294,8 @@ Use these details when your first-run path needs more control.
     DGX Spark, qualifying DGX Station hosts, and Windows WSL can offer an interactive express path after the third-party software notice.
     After you confirm the Express prompt, the installer switches the remaining onboarding to non-interactive mode and selects the managed local inference path for that platform.
     The first Hermes build can take several minutes because NemoClaw builds the Hermes sandbox base image when it is not already cached.
-    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles, Station choices, and headless setup.
+    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles and headless setup.
+    Refer to [Set Up vLLM on Two DGX Stations](../inference/local-inference/set-up-vllm-on-two-dgx-stations) for the Deferred paired workflow.
     Refer to [Platform Support](../reference/platform-support) for current validation status.
   </Accordion>
 
@@ -2457,7 +2534,8 @@ Use these details when you need more control during setup or after the first san
     DGX Spark, qualifying DGX Station hosts, and Windows WSL can offer an interactive express path after the third-party software notice.
     After you confirm the Express prompt, the installer switches the remaining onboarding to non-interactive mode and selects the managed local inference path for that platform.
 
-    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles, Station choices, and headless setup.
+    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles and headless setup.
+    Refer to [Set Up vLLM on Two DGX Stations](../inference/local-inference/set-up-vllm-on-two-dgx-stations) for the Deferred paired workflow.
     Refer to [Platform Support](../reference/platform-support) for current validation status.
   </Accordion>
 
@@ -2951,7 +3029,8 @@ Use these details when your first-run path needs more control.
     The installer passes `HF_TOKEN` only to the temporary model downloader.
     If the download receives HTTP `429`, keep the existing cache and run `nemoclaw onboard --resume`.
 
-    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles, Station choices, Hugging Face token setup, and headless setup.
+    Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles, Hugging Face token setup, and headless setup.
+    Refer to [Set Up vLLM on Two DGX Stations](../inference/local-inference/set-up-vllm-on-two-dgx-stations) for the Deferred paired workflow.
     Refer to [Platform Support](../reference/platform-support) for current validation status.
   </Accordion>
 
@@ -5010,6 +5089,7 @@ $$nemoclaw onboard
 Select the Ollama entry for your host.
 The menu identifies a reachable daemon as running and labels an installed but stopped daemon **Start local Ollama**.
 NemoClaw lists installed models or offers starter models when none are installed.
+
 For registry-known models, each menu entry shows the download size and approximate VRAM requirement.
 The menu shows currently available GPU memory when the host reports it, or total GPU memory when available memory is unknown.
 
@@ -5020,6 +5100,7 @@ It pulls the selected model, loads it into memory, and validates it before conti
 <AgentOnly variant="openclaw">
 When Ollama reports a loaded-model context length, NemoClaw uses it for the `contextWindow` written to `openclaw.json` unless you set `NEMOCLAW_CONTEXT_WINDOW`.
 Onboarding stops when the selected model does not declare tool support or returns tool-call JSON as plain message text instead of structured tool calls.
+
 If the validation probe times out, NemoClaw retries with a larger timeout before failing.
 Each Ollama-backed OpenClaw passthrough checks whether the selected model is still loaded and sends a bounded warm-up request when necessary.
 </AgentOnly>
@@ -5028,6 +5109,7 @@ Each Ollama-backed OpenClaw passthrough checks whether the selected model is sti
 Hermes requires at least `64000` tokens, so NemoClaw requests that host-side context length when it starts Ollama on macOS or Linux.
 Fresh onboarding verifies after model warm-up that `/api/ps` reports at least `64000` for the loaded model.
 Resumed onboarding and sandbox rebuilds warm the exact recorded Ollama model and repeat this verification before reusing its route.
+
 When `NEMOCLAW_CONTEXT_WINDOW` is unset, NemoClaw writes the verified runtime value as `model.context_length` in `/sandbox/.hermes/config.yaml`.
 An explicit `NEMOCLAW_CONTEXT_WINDOW` must be at least `64000`; NemoClaw writes that value only when the loaded model reports at least the same context length.
 If an existing or unmanaged daemon reports less, omits the value, or returns a malformed value, onboarding stops before building the sandbox and shows the required `OLLAMA_CONTEXT_LENGTH` value for restarting Ollama.
@@ -5105,50 +5187,8 @@ If the probe cannot run because the host uses another routing model, onboarding 
 
 ## Point Memory Search at a Host Ollama Container
 
-On DGX Spark and other local-inference hosts, you can use one local server for chat and a separate Ollama container for OpenClaw memory-search embeddings.
-For example, managed vLLM can serve the chat model while a host-side Ollama container serves `qwen3-embedding:4b` on port `11434`.
-
-The sandbox reaches that container through `http://host.openshell.internal:11434`.
-The `local-inference` policy preset allows that egress path, while `config set` separately validates that the bridge URL is written only to supported provider `baseUrl` fields.
-
-First make sure the embedding server is reachable from the sandbox:
-
-```bash
-$$nemoclaw my-assistant policy add local-inference --yes
-$$nemoclaw my-assistant exec -- curl -fsS http://host.openshell.internal:11434/api/tags
-```
-
-Then define an OpenClaw provider for the embedding model and point memory search at it:
-
-```bash
-$$nemoclaw my-assistant shields down
-
-$$nemoclaw my-assistant config set \
-  --key models.providers.ollama-mem \
-  --value '{"api":"ollama","baseUrl":"http://host.openshell.internal:11434","apiKey":"x","models":[{"id":"qwen3-embedding:4b","name":"Qwen3 embedding 4B"}]}' \
-  --config-accept-new-path
-
-$$nemoclaw my-assistant config set \
-  --key agents.defaults.memorySearch.provider \
-  --value ollama-mem \
-  --config-accept-new-path \
-  --restart
-
-$$nemoclaw my-assistant shields up
-```
-
-If your memory index already contains documents, check whether OpenClaw reports an index-identity mismatch, rebuild the index, then verify the configured memory provider:
-
-```bash
-$$nemoclaw my-assistant exec -- openclaw memory status --index
-$$nemoclaw my-assistant exec -- openclaw memory index --force
-$$nemoclaw my-assistant exec -- openclaw memory status --deep
-```
-
-Add `--agent <id>` to those `openclaw memory` commands when you are configuring a specific non-default OpenClaw agent.
-
-Keep the Ollama container bound only to the local host or a reviewed host interface.
-Port `11434` is commonly unauthenticated, so allow it only from the OpenShell Docker bridge or the equivalent local container network path.
+OpenClaw can use a separate host Ollama container for memory-search embeddings.
+Follow [Configure Memory Search](../../configure-agents/configure-memory-search) to permit the bridge route, configure the provider, and rebuild an existing index.
 
 </AgentOnly>
 
@@ -5182,6 +5222,7 @@ Onboarding exits when a download requires confirmation and the run cannot prompt
 When `NEMOCLAW_MODEL` and the `NEMOCLAW_PROVIDER_MODEL` compatibility fallback are unset, NemoClaw selects a starter model based on currently available memory.
 During interactive onboarding, if the requested model env contains a safe model tag that appears in the current Ollama menu, NemoClaw uses that menu entry as the default.
 If the tag is absent from the rendered installed or starter list, the normal memory-based default remains.
+
 If a known bootstrap model does not fit, NemoClaw warns and falls back to the largest known model that does fit.
 Unknown or custom tags pass through to the Ollama runner for validation.
 
@@ -5452,7 +5493,7 @@ It adds a `vision-operator` sub-agent backed by an Omni vision model.
 | Primary model | `inference/nvidia/nemotron-3-super-120b-a12b` |
 | Auxiliary provider | `nvidia-omni` |
 | Sub-agent | `vision-operator` |
-| Sub-agent model | `nvidia-omni/private/nvidia/nemotron-3-nano-omni-reasoning-30b-a3b` |
+| Sub-agent model | `nvidia-omni/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` |
 | Delegation tool | `sessions_spawn` |
 
 The sub-agent uses Omni as the specialist model for image tasks.
@@ -5642,6 +5683,159 @@ Continue with these resources:
 
 
 ========================================
+[FILE: docs/inference/set-up-vllm-on-two-dgx-stations.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Set Up vLLM on Two DGX Stations"
+sidebar-title: "Set Up vLLM on Two DGX Stations"
+description: "Qualify a trusted two-Station DGX GB300 pair and use NemoClaw's distributed Nemotron Ultra vLLM recipe."
+description-agent: "Sets up the Deferred two-DGX Station managed vLLM path, including pair qualification, runtime topology, network controls, ownership receipts, and cleanup. Use when configuring NEMOCLAW_DGX_STATION_PEER or distributed Nemotron Ultra."
+keywords: ["nemoclaw dual dgx station", "two dgx station vllm", "distributed nemotron ultra"]
+content:
+  type: "how_to"
+---
+
+Use this workflow to let DGX Station Express select a trusted two-Station GB300 pair for distributed Nemotron Ultra serving.
+The two-Station path is a Deferred evaluation and does not change single-Station support status.
+
+## Prepare the Stations
+
+Prepare both hosts before you start managed vLLM setup.
+
+1. Follow [Prepare DGX Station to Install NemoClaw](../../get-started/additional-setup/dgx-station-preparation) on the local host and peer, including its rail and SSH prerequisites.
+2. Refer to [Platform Support](../../reference/platform-support) for the current qualification and direct GPU policy boundaries.
+
+On each Station, preparation binds the preparing non-root account's UID in the root-owned `/etc/nemoclaw/dual-station-controller-uid` file.
+To replace that account, an administrator must remove the file on the affected Station before rerunning preparation as the replacement account.
+
+<Warning>
+The distributed runtime uses unauthenticated Ray, NVIDIA Collective Communications Library (NCCL), and vLLM coordination traffic on the private rails.
+Treat both Stations and every host that can reach either rail as mutually trusted.
+Do not use this path on a shared or routed network without separately reviewed isolation evidence.
+</Warning>
+
+## Select a Trusted Pair
+
+When no peer or model is selected, Station Express selects `nemotron-3-ultra-550b-a55b`.
+It derives one counterpart from each of two configured private `/30` ConnectX-8 rails.
+It consults existing SSH trust only for those two addresses.
+
+At least one derived address must already be trusted.
+If both addresses are trusted, their host keys must identify one SSH host.
+The Stations must pass reciprocal identity, GPU, route, neighbor, MAC, rail, and jumbo-frame checks.
+After qualification, the installer prepares the peer with the same reviewed helper and exports the qualified peer.
+
+No managed-vLLM image or model download starts before the pair qualification or single-Station fallback decision completes.
+If no trusted pair qualifies, Express retains the single-Station Ultra recipe.
+
+Set `NEMOCLAW_DGX_STATION_PEER` to request one exact already-trusted peer.
+The installer stops instead of falling back when that peer does not qualify.
+An explicit `NEMOCLAW_VLLM_MODEL` remains authoritative.
+
+For the first non-interactive setup, pass the managed provider and exact peer to the shell installer.
+The installer qualifies the pair and creates the peer binding that managed vLLM requires.
+Do not set `NEMOCLAW_DGX_STATION_SSH_BINDING` yourself or run `$$nemoclaw onboard` directly for the first pair setup.
+
+```bash
+curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
+<AgentOnly variant="openclaw">
+  NEMOCLAW_AGENT=openclaw \
+</AgentOnly>
+<AgentOnly variant="hermes">
+  NEMOCLAW_AGENT=hermes \
+</AgentOnly>
+<AgentOnly variant="deepagents">
+  NEMOCLAW_AGENT=langchain-deepagents-code \
+</AgentOnly>
+  NEMOCLAW_NON_INTERACTIVE=1 \
+  NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
+  NEMOCLAW_PROVIDER=install-vllm \
+  NEMOCLAW_DGX_STATION_PEER="<peer-host-or-address>" \
+  NEMOCLAW_SANDBOX_NAME=my-assistant \
+  bash
+```
+
+## Review Reboot and Resume Behavior
+
+If the local host requires a reboot during initial preparation, the installer stops with status `10`.
+Its owner-only receipt preserves the printed exact NemoClaw revision and Express selections.
+
+After reciprocal qualification starts, pair state binds the preparation helper, SSH host key, GPU identities, and reciprocal rails.
+The state names the host that must be rebooted manually.
+NemoClaw never reboots either host automatically.
+
+When Express finds a complete running NemoClaw-managed dual-Station head, it defers the workload-rejecting host probe during pair and lifecycle revalidation.
+Incomplete or mismatched workloads remain blocked.
+If the installer also recovers existing sandboxes, it reconciles the accepted Station Express runtime state before it completes.
+
+## Understand the Distributed Runtime
+
+The managed recipe tracks the [NVIDIA dual-Station playbook](https://build.nvidia.com/station/nemoclaw/dual-nodes).
+It uses the ARM64 manifest digest `sha256:2cc49b81319f7a66a33dd8bd63a7bfddae079122b33ce51989b6828a1f038c37` under `vllm/vllm-openai:v0.25.1-aarch64`.
+The image has `10.24 GB` of compressed layers.
+
+The recipe pins vLLM `0.25.1` and Ray `2.56.0`.
+It uses one tensor-parallel rank per Station and pipeline parallelism across the pair.
+It serves the `nemotron-ultra` alias with a `262144`-token model limit.
+It retains the Nemotron reasoning and tool-call parsers.
+
+The qualified dual-Station runtime intentionally uses Docker host networking on both containers.
+This topology lets NCCL and remote direct memory access (RDMA) bind the validated direct-attach rails.
+The head binds only the selected rank-0 address on a qualified private `/30` rail.
+It requires the generated bearer key for `/v1`.
+The `/health` endpoint remains unauthenticated for readiness.
+
+The worker joins the Ray cluster and exposes no vLLM API.
+Neither container publishes a Docker port.
+Docker bridge isolation and port-mapping rules do not protect this path.
+
+Both containers apply these controls:
+
+- The probed non-root UID and GID.
+- A read-only root filesystem and model cache.
+- All Linux capabilities dropped.
+- `no-new-privileges`.
+- Only the selected GPU UUID and exact `uverbs` devices.
+
+The worker does not receive the serving key.
+
+## Restrict Network Access
+
+Treat both Stations and their direct rails as one trusted runtime boundary.
+
+- Allow port `8000` from the OpenShell Docker subnet only to the selected rank-0 rail address.
+- Deny port `8000` on management and LAN interfaces.
+- Restrict Ray, NCCL, and serving traffic to the reciprocal addresses on the two qualified private rails.
+- Keep Ray TCP port `6379` and Ray worker ports off untrusted or routed networks.
+
+The single-Station fallback uses the bridge-networked managed-inference topology and publishes port `8000` through Docker.
+Follow [Set Up vLLM](set-up-vllm) for that workflow.
+
+## Preserve Cleanup Ownership
+
+After readiness and container validation pass, NemoClaw writes an owner-only cleanup receipt.
+It also copies the SSH binding under the selected gateway state root.
+A later onboarding run that reuses the validated pair recreates this cleanup ownership before it accepts the endpoint.
+
+The receipt contains no serving API key.
+It records the peer, cluster, and GPU identities needed to revalidate and remove both managed containers.
+Full uninstall uses the receipt to remove the exact pair.
+
+If NemoClaw cannot write the receipt, setup stops and rolls back a newly started pair.
+It does not leave a runtime that full uninstall cannot reach.
+
+## Related Topics
+
+- [Prepare DGX Station to Install NemoClaw](../../get-started/additional-setup/dgx-station-preparation) for host, rail, and SSH preparation.
+- [Set Up vLLM](set-up-vllm) for existing servers, single-host managed setup, model selection, and non-interactive onboarding.
+- [Uninstall NemoClaw](../../manage-sandboxes/operate-sandboxes/uninstall-nemoclaw) for managed-pair cleanup.
+- [Host Files and State](../../reference/host-files-and-state) for the cleanup receipt location.
+
+
+========================================
 [FILE: docs/inference/set-up-vllm.mdx]
 ========================================
 
@@ -5670,7 +5864,9 @@ Existing-server and single-host managed-vLLM paths need port `8000` on host loop
 Use a host firewall with default-deny inbound rules.
 Allow TCP port `8000` only from the OpenShell Docker subnet to its gateway address, keep loopback access, and deny the port on every other interface.
 Do not expose the port to your LAN or the internet.
-The qualified dual-DGX Station path instead binds its bearer-protected `/v1` API to one selected private rail address and uses host networking on both runtime containers; follow the additional isolation guidance in the DGX Station section below.
+
+The qualified dual-DGX Station path instead binds its bearer-protected `/v1` API to one selected private rail address and uses host networking on both runtime containers.
+Follow [Set Up vLLM on Two DGX Stations](set-up-vllm-on-two-dgx-stations) for its isolation requirements.
 </Warning>
 
 ## Use an Existing Server
@@ -5686,6 +5882,7 @@ $$nemoclaw onboard
 Select **Local vLLM**.
 On generic hosts, the entry includes an experimental label; on DGX Spark or DGX Station, it does not.
 NemoClaw validates the detected endpoint and records the model reported by `/v1/models`.
+
 When an install request encounters an already-running server, NemoClaw selects that server instead of starting another container.
 If the requested registry model and the served `id` differ, NemoClaw accepts the served `id` only when `/v1/models` reports a safe `root` that exactly matches the registry model.
 NemoClaw rejects mismatched or unverifiable roots, and it still requires the exact served identity for a newly started NemoClaw-managed container and for an existing shared-gateway route.
@@ -5697,6 +5894,7 @@ Start vLLM with the model you want before onboarding because NemoClaw uses the m
 On DGX Spark, an existing vLLM server is operator-managed.
 NemoClaw warns when vLLM metadata heuristically indicates a large checkpoint without reported quantization, does not identify the underlying model size, or reports an unusually long context window.
 These configurations can leave too little unified-memory headroom for the host and surface as `NVRM NV_ERR_NO_MEMORY`, SSH loss, or a hard host freeze under agent/tool load.
+
 Prefer the managed Spark vLLM path when you want NemoClaw to use the validated Spark recipe, or restart your existing server with lower `--gpu-memory-utilization`, `--max-model-len`, `--max-num-seqs`, and `--max-num-batched-tokens` before onboarding.
 For full diagnostics and recovery steps, refer to [DGX Spark troubleshooting](../../reference/troubleshooting#dgx-spark).
 </Warning>
@@ -5728,6 +5926,7 @@ Press **Enter** to use the profile default or select another validated model wit
 
 NemoClaw pulls the vLLM image, downloads model weights into `~/.cache/huggingface`, starts the `nemoclaw-vllm` container on `localhost:8000`, streams Hugging Face download progress, and polls `/v1/models` until the model is ready.
 The container carries a NemoClaw ownership label so later onboarding runs can distinguish it from a bring-your-own server without trusting the container name alone.
+
 If an existing `nemoclaw-vllm` container does not carry that label, NemoClaw preserves it and asks you to remove or rename it before installing managed vLLM.
 If another vLLM server already occupies port `8000`, NemoClaw selects the existing-server path and applies the model-identity checks described above.
 Managed profiles and model-specific recipes use immutable image digests:
@@ -5735,12 +5934,12 @@ Managed profiles and model-specific recipes use immutable image digests:
 - DGX Spark and DGX Station models without a model-specific runtime use the `linux/arm64` digest `sha256:9204569b17ee4c0eff75194b8e6e458479c8aee18953b5ab9cf359fcdac659e2` with a compressed layer size of `9.60 GB` under `nvcr.io/nvidia/vllm:26.05.post1-py3`.
 - The DGX Station Nemotron 3 Ultra express recipe uses the multi-platform index digest `sha256:0fec7ec5f3e6bc168e54899935fb0557da908a4832a1dbc88e2debcf2f889416` under `vllm/vllm-openai:v0.22.0`; on DGX Station, that index selects a `linux/arm64` manifest with a compressed layer size of `10.67 GB`.
   It also pins Hugging Face revision `183968f87ae4cedce3039313cac1fd43d112c578` for the approximately `352.38 GB` model download.
-- A qualified two-Station Ultra pair instead uses the ARM64 manifest digest `sha256:2cc49b81319f7a66a33dd8bd63a7bfddae079122b33ce51989b6828a1f038c37` under `vllm/vllm-openai:v0.25.1-aarch64`, with `10.24 GB` of compressed layers.
 - Generic Linux `arm64` hosts use `sha256:447995cbb57e6c7cf792cab95e9852e5f62b5fb6d2f39e030fa4eda9a54eadb4` with a compressed layer size of `9.28 GB` under `nvcr.io/nvidia/vllm:26.03.post1-py3`.
 - Generic Linux `amd64` hosts use `sha256:7be6c2f676c36059a494fe17254e69ae5c677535ba6191044e5fc8e42a91c773` with a compressed layer size of `8.93 GB` under `nvcr.io/nvidia/vllm:26.03.post1-py3`.
 
 Image pulls from `nvcr.io` require NGC registry login.
 The Station Nemotron 3 Ultra recipe pulls its vLLM image from Docker Hub instead.
+The two-Station page records the distributed recipe's image and runtime versions.
 
 The first run duration depends on image and model size, storage performance, and network throughput.
 Later runs reuse the cached image and model weights.
@@ -5777,11 +5976,13 @@ Gated models still require license acceptance and a token before NemoClaw starts
 
 For a cold managed-vLLM install, NemoClaw estimates local storage before the watched image pull starts.
 The estimate adds the pinned image's compressed layer size, the digest catalog's pre-measured unpacked layer size when available, the selected model's Hugging Face file size, a `3 GiB` model-download staging reserve, and a writable allowance.
+
 For the DGX Station default, that is approximately `393.68 GB`: `9.603 GB` compressed image layers, `27.659 GB` unpacked image layers, `352.381 GB` model files, `3.221 GB` model-download staging, and `0.816 GB` writable allowance.
 
 For Docker's classic image store, NemoClaw checks the absolute `DockerRootDir` reported by `docker info`.
 For Docker's containerd image store, it checks the top-level `root` from `/etc/containerd/config.toml`, or `/var/lib/containerd` when that configuration file is absent, and also checks `DockerRootDir` for pull staging.
 For model files, NemoClaw checks the filesystem backing `~/.cache/huggingface`.
+
 The check compares Docker image storage against the image bytes and compares model-cache storage against the model files, download staging, and writable allowance.
 When those paths share a filesystem, NemoClaw compares the shared capacity against the aggregate requirement.
 When NemoClaw cannot determine whether successful checks share a filesystem, it conservatively compares their aggregate requirement against the lowest reported capacity.
@@ -5790,6 +5991,7 @@ NemoClaw does not move the Hugging Face cache to `/raid` or another fallback mou
 NemoClaw recognizes an image cache hit only when Docker contains the exact platform digest.
 A cache hit skips the image portion of the estimate, but still checks the model-cache estimate before `hf download`.
 The explicit watched `docker pull` still runs against that immutable digest.
+
 After an image pull, NemoClaw checks the model-cache estimate again before `hf download`.
 The model-download helper and the long-lived vLLM container use `--pull=never`, so an implicit pull cannot select another image.
 
@@ -5797,6 +5999,7 @@ NemoClaw treats `/var/run/docker.sock` and `/run/docker.sock` as the local defau
 It cannot inspect daemon storage through a remote endpoint, a named non-default Docker context, or another Unix socket.
 When both `DOCKER_CONTEXT` and `DOCKER_HOST` are set, NemoClaw follows Docker CLI precedence and uses `DOCKER_CONTEXT`.
 Before a registered model with pinned size metadata is downloaded, NemoClaw also checks the filesystem that contains the host Hugging Face cache.
+
 When a Docker image-storage check is inconclusive, NemoClaw prints the reason, approximate requirement, and diagnostic commands, then continues without claiming that capacity is sufficient.
 An inconclusive model-cache check remains guarded because a registered model download can be hundreds of gigabytes.
 For an inconclusive model-cache check, interactive setup requires explicit confirmation, and non-interactive setup stops with guidance to rerun interactively.
@@ -5809,6 +6012,7 @@ Pressing **Enter**, entering `n` or `no`, or entering any other response stops b
 `--yes` and `NEMOCLAW_YES=1` do not change managed vLLM storage-warning handling.
 Express installation and other non-interactive setup treat a verified warning that Docker image storage or model-cache storage is insufficient as advisory, so NemoClaw prints the warning and continues the guarded download.
 Interactive setup still requires you to enter `y` or `yes` for a verified insufficient-capacity warning.
+
 An inconclusive model-cache warning also requires explicit confirmation interactively, and non-interactive setup stops with guidance to rerun interactively.
 An inconclusive Docker image-storage check retains its existing automatic-continue behavior.
 </Warning>
@@ -5817,6 +6021,7 @@ An inconclusive Docker image-storage check retains its existing automatic-contin
 The model-cache guard applies when the selected registered recipe declares a pinned snapshot size.
 NemoClaw creates `~/.cache/huggingface` as the host user and runs the one-shot download container with the host UID and GID, avoiding root-owned cache paths.
 Hugging Face credentials are forwarded only to that temporary downloader, not retained by the long-lived vLLM container.
+
 A legacy root-owned or otherwise unwritable required model-cache path stops before the image pull and prints a scoped ownership-repair command; NemoClaw never changes its ownership automatically.
 </Note>
 If image pull output stops making progress, a watchdog stops the stalled pull without imposing a fixed wall-clock limit on slow but active downloads.
@@ -5830,15 +6035,10 @@ When you start managed vLLM outside the installer express flow, NemoClaw uses th
 | DGX Station | `deepseek-ai/DeepSeek-V4-Flash` |
 | Linux with an NVIDIA GPU | `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` |
 
-On DGX Station, accepting the installer express prompt selects `NEMOCLAW_VLLM_MODEL=nemotron-3-ultra-550b-a55b` and checks for a trusted reciprocal pair.
-The installer prepares the local host with the pinned Station helper, derives exactly one counterpart from each of two configured private `/30` CX-8 rails, and consults existing SSH trust only for those two addresses.
-At least one derived address must already be trusted; if both are trusted, their host keys must identify one coherent SSH host.
-After the Stations pass reciprocal GPU, rail, MAC, route, neighbor, and jumbo-frame checks across both rails, the installer prepares the peer with the same reviewed helper and exports the qualified peer.
-No managed-vLLM runtime image or model download starts before the pair-qualification or single-Station fallback decision completes.
-If no trusted pair qualifies, Express retains the existing single-Station Ultra recipe.
-Setting `NEMOCLAW_VLLM_MODEL` remains authoritative; setting `NEMOCLAW_DGX_STATION_PEER` requests that exact already-trusted peer and fails closed if it does not qualify.
-When Express finds a complete running NemoClaw-managed dual-Station head, it defers the workload-rejecting host-preparation probe only while it revalidates the reciprocal pair and managed lifecycle contract; incomplete or mismatched workloads remain blocked.
-If the installer also recovers existing sandboxes, it still reconciles the newly accepted Station Express runtime state before completing.
+On DGX Station, accepting the installer express prompt selects `NEMOCLAW_VLLM_MODEL=nemotron-3-ultra-550b-a55b`.
+Express uses the single-Station Ultra recipe unless a trusted reciprocal pair qualifies for distributed serving.
+Refer to [Set Up vLLM on Two DGX Stations](set-up-vllm-on-two-dgx-stations) for pair qualification, lifecycle receipts, runtime topology, and network controls.
+
 To select the existing `deepseek-v4-flash` recipe while retaining the same one-confirmation express flow, run:
 
 ```bash
@@ -5857,27 +6057,8 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
 
 The flag requires an interactive terminal; in a `curl | bash` pipeline, `/dev/tty` must be available.
 Without terminal access, the installer stops before it installs Docker or build dependencies instead of silently continuing with another configuration.
+
 The registered single-Station Ultra recipe tracks the [official DGX Station deployment guide](https://github.com/NVIDIA-NeMo/Nemotron/blob/287ae845639d2ce998998cb8fd1f70a3fa943c0b/usage-cookbook/Nemotron-3-Ultra/StationDeploymentGuide/README.md) and configures the pinned model revision, CPU offload, `16 GB` of shared memory, memory/stack ulimits, MTP speculative decoding, and the Nemotron reasoning and tool-call parsers.
-Configure the physical rails and SSH host-key and authentication trust before installation.
-NemoClaw does not modify rail configuration, enroll SSH trust, or reboot either host automatically.
-If the local host requires a reboot during initial preparation, the installer stops with status `10`; its owner-only receipt preserves the printed exact revision and Express selections.
-After reciprocal peer qualification begins, the pair state additionally binds SSH, GPU, and rail identity and names either host that must be rebooted manually.
-After the managed pair passes readiness and container validation, NemoClaw writes an owner-only cleanup receipt and a copied SSH binding under the selected gateway state root.
-A later onboarding run that reuses the same validated managed pair recreates this cleanup ownership before accepting the endpoint.
-The receipt contains no serving API key.
-It records the exact peer, cluster, and GPU identities needed to revalidate and remove both managed containers during full uninstall.
-If NemoClaw cannot write this receipt, setup stops and rolls back a newly started pair instead of leaving a runtime that full uninstall cannot safely reach.
-The registered two-Station Ultra recipe tracks the [latest NVIDIA dual-Station playbook](https://build.nvidia.com/station/nemoclaw/dual-nodes).
-It pins vLLM `0.25.1` and Ray `2.56.0`, uses one tensor-parallel rank per Station with pipeline parallelism across the pair, serves the `nemotron-ultra` alias with a `262144`-token model limit, and retains the Nemotron reasoning and tool-call parsers.
-The single-Station fallback keeps NemoClaw's bridge-networked managed-inference topology and publishes port `8000` through Docker.
-The qualified dual-Station runtime intentionally uses Docker host networking on both containers so NCCL and RDMA can bind the validated direct-attach rails.
-The head binds only the selected rank-0 address on a qualified private `/30` rail and requires the generated bearer key for `/v1`; `/health` remains unauthenticated for readiness.
-The worker joins the Ray cluster and exposes no vLLM API.
-Neither dual-Station container publishes a Docker port, so Docker bridge isolation and port-mapping rules do not protect this path.
-As compensating controls, both containers run as the probed non-root UID and GID with a read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, only the selected GPU UUID and exact `uverbs` devices, and a read-only model cache; the worker does not receive the serving key.
-Treat both Stations and their direct rails as one trusted runtime boundary.
-Allow port `8000` from the OpenShell Docker subnet only to the selected rank-0 rail address, deny it on management and LAN interfaces, and restrict distributed-serving traffic to the reciprocal addresses on the two qualified private rails.
-That distributed traffic includes the Ray head on TCP `6379` and Ray worker ports; do not expose either rail to an untrusted or routed network.
 
 <Warning>
 Before managed vLLM setup on DGX Station, follow [Prepare DGX Station to Install NemoClaw](../../get-started/additional-setup/dgx-station-preparation).
@@ -5909,9 +6090,10 @@ NEMOCLAW_PROVIDER=install-vllm \
 On DGX Spark and DGX Station, `NEMOCLAW_PROVIDER=install-vllm` is sufficient for a non-interactive run.
 Add `NEMOCLAW_EXPERIMENTAL=1` on a generic Linux NVIDIA GPU host.
 Non-interactive runs use the profile default unless you set `NEMOCLAW_VLLM_MODEL`.
+
 The commands above invoke `$$nemoclaw onboard` directly, so a DGX Station run with no model or peer selects the `deepseek-v4-flash` profile default.
 Supplying `NEMOCLAW_PROVIDER=install-vllm` to the shell installer enters the Station host-preparation boundary while retaining that profile default.
-To request a non-interactive pair through this path, also set `NEMOCLAW_DGX_STATION_PEER`; the exact peer must qualify, and the installer selects the distributed Nemotron 3 Ultra recipe.
+For paired non-interactive setup, follow [Set Up vLLM on Two DGX Stations](set-up-vllm-on-two-dgx-stations).
 
 For a headless DGX Station setup that selects DeepSeek V4 Flash explicitly, use the environment-variable path instead of `--station-deepseek`.
 
@@ -5990,6 +6172,7 @@ If the selected image does not support an argument, the managed container exits 
 ## Related Topics
 
 - [Choose a Local Inference Server](choose-local-inference-server) to compare vLLM with Ollama and NVIDIA NIM.
+- [Set Up vLLM on Two DGX Stations](set-up-vllm-on-two-dgx-stations) for the Deferred distributed-serving workflow.
 - [Configure Inference Timeouts](../manage-inference/configure-inference-timeouts) when model startup or validation needs more time.
 - [Verify the Inference Route](../validate-inference/verify-inference-route) after setup.
 
@@ -6104,9 +6287,9 @@ Move a sandbox to another provider family while keeping the OpenShell route, age
 Use onboarding first when the target is neither `compatible-endpoint` nor `compatible-anthropic-endpoint` and is not registered.
 The compatible endpoint workflow below can register an absent custom provider from complete route metadata.
 
-## Find a Registered Provider
-
 <AgentOnly variant="openclaw,hermes">
+
+## Find a Registered Provider
 
 List the configured provider credentials when you need the exact provider ID.
 
@@ -6123,9 +6306,9 @@ For a compatible custom endpoint, pass the complete route metadata described bel
 
 </AgentOnly>
 
-## Switch the Provider at Runtime
-
 <AgentOnly variant="openclaw,hermes">
+
+## Switch the Provider at Runtime
 
 Pass the target provider and model together.
 Target a non-default sandbox by name.
@@ -6137,15 +6320,27 @@ $$nemoclaw inference set --provider <provider> --model <model> --sandbox <name>
 $$nemoclaw <name> shields up
 ```
 
+</AgentOnly>
+
+<AgentOnly variant="openclaw">
+
 For OpenClaw, NemoClaw updates the provider namespace and selected model in the running configuration.
 Changes within the current API family hot-reload without replacing the gateway process.
 When the API family changes, NemoClaw commits the route and configuration, then restarts only the OpenClaw gateway and verifies its health.
+
+</AgentOnly>
+
+<AgentOnly variant="hermes">
 
 For Hermes, NemoClaw updates `/sandbox/.hermes/config.yaml`, including the model, base URL, API-family mode, and OpenShell proxy API-key placeholder.
 When the dashboard profile exists, NemoClaw also mirrors the route into `/sandbox/.hermes/dashboard-home/config.yaml`; a normal runtime route change does not rebuild or restart Hermes.
 If that dashboard mirror cannot be confirmed, the route and main config remain committed but the command exits nonzero.
 Follow [Hermes dashboard config did not converge](../../reference/troubleshooting#hermes-dashboard-config-did-not-converge) before using Dashboard Chat.
 A missing dashboard profile is treated as disabled and does not fail the switch.
+
+</AgentOnly>
+
+<AgentOnly variant="openclaw,hermes">
 
 If the in-sandbox configuration sync fails after the gateway route changes, NemoClaw keeps the gateway and host registry aligned and prints a rebuild hint.
 Run the rebuild before relying on the running agent.
@@ -6168,9 +6363,9 @@ $$nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 
 </AgentOnly>
 
-## Handle Compatible Endpoints
-
 <AgentOnly variant="openclaw,hermes">
+
+## Handle Compatible Endpoints
 
 When moving from another provider family to `compatible-endpoint` or `compatible-anthropic-endpoint`, provide the trusted endpoint URL and enough API metadata to record the complete route identity.
 Export the canonical credential environment variable for the target provider.
@@ -6697,6 +6892,17 @@ Before changing the route, `connect` verifies the same provider-global identity 
 When the identity is compatible, `connect` warns and re-points the route to the sandbox's recorded provider and model.
 When the identity differs or required metadata is incomplete, `connect` stops because a provider-and-model-only route change cannot safely reconstruct that configuration.
 
+## Rebuild a Legacy Shared Route
+
+During rebuild, NemoClaw may find same-gateway legacy sandbox records that use the selected supported provider but omit its credential environment-variable name.
+Before deleting the target sandbox, NemoClaw fills only those missing names from the provider's canonical configuration and saves the target and peer metadata together.
+The peer migration does not replace an explicit credential environment-variable name.
+
+Credential environment-variable name, custom endpoint, or API-family conflicts still stop the rebuild.
+Incomplete routes and invalid gateway bindings also stop the rebuild.
+NemoClaw reads a fresh registry snapshot immediately before deletion.
+If that snapshot contains a target route change or peer provider-identity conflict, rebuild stops and leaves the original sandbox intact.
+
 ## Inspect Recorded and Live Routes
 
 Run sandbox status to compare the sandbox's recorded route with the gateway's live route.
@@ -7219,6 +7425,7 @@ Hermes snapshots include `SOUL.md`, the Web Dashboard profile under `.hermes/das
 The default-profile snapshot also includes cron execution history in `.hermes/runtime/cron-executions.db` and Discord replay state in `.hermes/gateway/discord_message_recovery.db`.
 NemoClaw captures cron job definitions from `.hermes/cron` as directory state.
 NemoClaw uses SQLite's online backup API and restores these databases through SQLite instead of copying live raw database files.
+After it replaces a database, NemoClaw opens a write transaction against the result and fails the restore when the database cannot be written.
 Named-profile cron and Discord databases under `.hermes/profiles/<name>/` use raw directory capture and can be inconsistent if a write overlaps the snapshot.
 
 Kanban backup is limited to the backward-compatible default board in `kanban.db`.
@@ -7296,6 +7503,11 @@ If the destination sandbox already exists, NemoClaw refuses to overwrite it unle
 $$nemoclaw my-assistant snapshot restore before-upgrade --to my-assistant-clone
 $$nemoclaw my-assistant snapshot restore before-upgrade --to my-assistant-clone --force --yes
 ```
+
+Cross-sandbox restore from a stopped source is available for Docker- and VM-driver sandboxes.
+For a stopped source, its registry entry must record both the sandbox image and a complete inference route; NemoClaw creates the destination from the recorded image.
+NemoClaw stops before creating or replacing the destination when either record is missing, and directs you to run `$$nemoclaw onboard` when no image is recorded.
+For a Kubernetes-driver source, the pod image must remain resolvable through its gateway.
 
 For dashboard-enabled agents, NemoClaw allocates the destination sandbox its own dashboard port instead of reusing the source port.
 If no port is available, restore stops before deleting an existing `--force` destination.
@@ -8337,8 +8549,12 @@ Refer to [`$$nemoclaw <name> recover`](../../reference/commands#$$nemoclaw-name-
 Recovery uses registry-scoped privileged direct-container control and does not fall back to ordinary `openshell sandbox exec` or a manual in-sandbox relaunch.
 For a local Docker-driver sandbox whose container still uses the legacy keepalive startup, `recover` can transactionally recreate the registered container with a credential-free managed startup command.
 
-NemoClaw keeps the previous container available until the managed controller proves the supervisor topology, gateway health, and settle check, and attempts to restore it if that proof fails.
-The recreation preserves mounted sandbox state, but a committed swap does not retain changes stored only in the previous container's writable layer.
+NemoClaw keeps the previous container available until the managed controller proves the supervisor topology, gateway health, and settle check.
+Before recreation, NemoClaw backs up the state directories and files declared by the agent manifest.
+It commits only after the replacement container identity and state restoration pass.
+NemoClaw removes the temporary state backup after a successful restore or rollback.
+If state restoration and rollback both fail, it retains the backup and prints host recovery guidance.
+Mounted state remains available, but a committed swap does not retain other writable-layer changes.
 After a transactional recreation, NemoClaw uses the `NEMOCLAW_SANDBOX_READY_TIMEOUT` budget (180 seconds by default) for OpenShell to re-register the sandbox before starting the primary dashboard or API host forward.
 A definitive managed-health failure still stops immediately; if re-registration does not complete within the budget, the forward stays stopped.
 
