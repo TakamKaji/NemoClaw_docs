@@ -419,6 +419,8 @@
 │   │   ├── 2026-07-25.mdx
 │   │   ├── 2026-07-28.mdx
 │   │   ├── 2026-07-29.mdx
+│   │   ├── 2026-07-30.mdx
+│   │   ├── 2026-07-31.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -484,6 +486,7 @@
 │   │   ├── manage-messaging-channels.mdx
 │   │   ├── messaging-channels.mdx
 │   │   ├── recover-rebuild-sandboxes.mdx
+│   │   ├── run-deep-agents-code.mdx
 │   │   ├── run-sandboxes.mdx
 │   │   ├── runtime-controls.mdx
 │   │   ├── set-up-discord.mdx
@@ -3262,4 +3265,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-264 directories, 2999 files
+264 directories, 3002 files

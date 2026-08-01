@@ -3205,7 +3205,7 @@ dcode -n "Summarize this repository" --json
 dcode status
 ```
 
-For the JSON schema, status and exit behavior, and 1 MiB output limit, refer to [Quickstart with LangChain Deep Agents Code](/user-guide/deepagents/get-started/quickstart#use-the-harness).
+For the JSON schema, status and exit behavior, and 1 MiB output limit, refer to [Run Deep Agents Code](/user-guide/deepagents/manage-sandboxes/operate-sandboxes/run-deep-agents-code).
 
 </AgentOnly>
 
@@ -3375,6 +3375,11 @@ Completed onboarding sessions are not resumable.
 Use `--resume` only for resumable interrupted or failed sessions, not to change provider, model, agent, or sandbox recreation settings after onboarding has completed.
 During resume, NemoClaw reruns preflight, gateway, provider, and sandbox repair checks even when the saved session has already reached a later nonterminal onboarding phase.
 If the recorded session conflicts with flags you pass on the recovery run, NemoClaw exits and tells you to either rerun with the original settings or start over.
+
+An active same-name replacement is separate from ordinary onboarding-step resume.
+If onboarding printed `Journaled replacement` before it stopped, rerun the original onboarding command with the same target settings.
+The replacement can continue without an explicit `--resume` flag.
+Refer to [Continue an Interrupted Replacement](../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes#continue-an-interrupted-replacement) for the identity checks and failure conditions.
 
 Use `--fresh` to discard the saved onboarding session and start the wizard from the beginning.
 This clears stale or failed session state before NemoClaw creates a new session record.
@@ -3734,6 +3739,11 @@ The behaviour matches `$$nemoclaw <name> rebuild --force`.
 NemoClaw aborts the recreate when the backup cannot complete in full, including when individual state directories or files fail mid-backup, so failed entries are not silently dropped on delete.
 Set `NEMOCLAW_RECREATE_WITHOUT_BACKUP=1` to skip the pre-recreate backup.
 The destination sandbox starts with a fresh workspace.
+
+Before deletion, onboarding prints a `Journaled replacement` diagnostic with the replacement identifier, recorded OpenShell gateway, and current phase.
+If the process stops after this point, a later same-target onboarding run continues the active replacement without requiring `--resume`.
+It accepts a ready same-name replacement only when the live identity and sandbox registry generation match the journal.
+It fails closed if the gateway, source, target, durable source registry fields, or replacement settings changed.
 
 <AgentOnly variant="openclaw">
 
@@ -4152,7 +4162,7 @@ Bare invocations run `dcode`, and `--help` runs `dcode --help`.
 Use `dcode -n` for explicit headless automation when you are already connected to the sandbox, or use `$$nemoclaw <name> agent -n "<task>"` from the host.
 Add `--json` to either form for one managed, versioned JSON envelope on stdout.
 The host wrapper forwards the flag to `dcode`.
-For the schema, status and exit behavior, and 1 MiB output limit, refer to [Quickstart with LangChain Deep Agents Code](/user-guide/deepagents/get-started/quickstart#use-the-harness).
+For the schema, status and exit behavior, and 1 MiB output limit, refer to [Run Deep Agents Code](/user-guide/deepagents/manage-sandboxes/operate-sandboxes/run-deep-agents-code).
 The host wrapper keeps `HOME=/sandbox`, the managed proxy environment, and the manifest-declared Deep Agents config path aligned with `connect`.
 Interactive `$$nemoclaw <name> agent` launches the same terminal TUI as `dcode`.
 Headless `$$nemoclaw <name> agent -n "<task>"` uses the managed headless boundary, where non-shell tools can auto-run without the interactive approval UI.
@@ -4262,7 +4272,12 @@ It does not use ordinary `openshell sandbox exec` or an in-sandbox manual relaun
 When the root-owned managed controller attests two unchanged zero-supervisor process scans with a stable PID 1 and reports `SUPERVISOR_NOT_RUNNING`, a local Docker-driver sandbox with the legacy keepalive startup can enter a transactional container recreation.
 The recreation uses a credential-free managed startup command, pins the registered container identity, and retains the previous container for rollback.
 Before recreation, NemoClaw backs up the state directories and files declared by the agent manifest.
-It commits only after managed gateway health, the settle check, exact replacement identity, and state restoration pass.
+NemoClaw waits for the exact replacement to pass managed gateway health and OpenShell re-registration before it restores state.
+After state restoration, it restarts the gateway in the exact replacement container and requires an authenticated `ok` result.
+It then runs the managed settle check.
+It commits only after the replacement identity, state restoration, gateway restart, and settle check pass.
+If OpenShell re-registration, state restoration, or a later gateway check fails, NemoClaw attempts to roll back the replacement.
+The primary dashboard or API host forward stays stopped.
 NemoClaw removes the temporary state backup after a successful restore or rollback.
 If state restoration and rollback both fail, it retains the backup and prints host recovery guidance.
 Mounted state remains available, but a committed swap does not retain other writable-layer changes.
@@ -4473,7 +4488,8 @@ A successful recovery clears the stale stopped-container failure.
 If OpenShell already reports the registered Docker-driver sandbox as present and `Ready`, status verifies the OpenClaw gateway and host forward.
 It recovers either component when the verification reports it absent.
 </AgentOnly>
-If Docker readiness or the agent delivery chain cannot be proven, status exits non-zero and reports the failed recovery layer.
+When status finds the sandbox but cannot prove its agent delivery chain, it exits non-zero and reports the `sandbox_recovery_failed` state.
+Address the reported recovery layer, then run the displayed `$$nemoclaw <sandbox-name> recover` command.
 <AgentOnly variant="openclaw,hermes">
 If the sandbox's recorded dashboard port is also held by a foreign listener, the header escalates to the `sandbox_dashboard_port_conflict` failure layer with the message `sandbox container is stopped and the dashboard port is held by a foreign listener.` so the operator can recover the port before restarting the sandbox.
 </AgentOnly>
@@ -4856,6 +4872,9 @@ Cleaning up the gateway after the last sandbox also purges the shared cluster vo
 If final gateway cleanup finds a live PID-file process whose command line does not prove it owns the target gateway, `destroy` exits non-zero after sandbox and registry deletion and skips gateway and volume removal.
 NemoClaw preserves the per-gateway PID file and runtime marker so you can inspect the process.
 Stop only the listener that matches the target gateway, then rerun `destroy` to converge cleanup.
+When the default-port gateway runs under the packaged OpenShell gateway service, gateway cleanup stops that service before it reaps host processes, so the gateway port is released instead of being rebound by the service manager.
+The service is stopped, not disabled or removed, and the next onboarding run starts it again.
+If the service cannot be stopped, `destroy` exits non-zero after sandbox and registry deletion, prints the status command for the service, and skips gateway and volume removal.
 If the OpenShell gateway is unreachable and the sandbox has no managed MCP ownership state, `--force` removes only NemoClaw's local registry entry and local artifacts.
 Gateway-side deletion remains unconfirmed, shared host-service and gateway teardown are skipped, and the sandbox and retained volume may still exist if the gateway returns.
 Start the gateway with `$$nemoclaw <name> status` and retry destroy when you need a confirmed deletion.
@@ -5879,6 +5898,10 @@ After OpenShell accepts the sandbox deletion, `rebuild` waits until OpenShell ex
 Only then can NemoClaw perform any required local registry removal and begin creating the replacement.
 If OpenShell does not confirm absence within the bounded wait, including when gateway transport errors block the probes, `rebuild` exits nonzero before registry removal or replacement creation and preserves both the local registry entry and the state backup.
 Restore OpenShell connectivity and confirm the sandbox's live state before you retry, and keep the printed backup path for recovery.
+Before deletion, rebuild records a replacement journal that binds the operation to the recorded gateway, source identity, and target settings.
+Rerunning the same rebuild continues from the recorded boundary or accepts the proven replacement instead of deleting it again.
+Use `--verbose` to print the replacement identifier, gateway, and journal phase.
+Refer to [Continue an Interrupted Replacement](../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes#continue-an-interrupted-replacement) for the recovery procedure and fail-closed conditions.
 When rebuild starts with shields up, NemoClaw opens a 30-minute shields-down window for backup and recreation.
 A detached auto-lock timer remains active until NemoClaw commits a successful shields-up state, so it can attempt to restore lockdown if the host rebuild process exits unexpectedly.
 
@@ -6032,6 +6055,11 @@ When `dst` does not exist, it is auto-created from the source image.
 For a Docker- or VM-driver source, the source can be stopped when its registry entry records both the sandbox image and a complete inference route.
 For a Kubernetes-driver source, the pod image must remain resolvable through its gateway.
 No re-onboarding is needed when those prerequisites are present.
+<AgentOnly variant="openclaw">
+After NemoClaw creates the destination, it waits for the managed OpenClaw supervisor to pass a bounded readiness check before it applies snapshot state.
+If the check fails, the command leaves the destination registered without restored snapshot state and exits nonzero.
+Correct the reported supervisor failure, then run `$$nemoclaw <destination> destroy` or rerun the restore with `--force`.
+</AgentOnly>
 A cross-sandbox restore refuses to clone a source or replace an existing destination whose baseline exclusion transaction needs repair, before it creates or deletes anything.
 When `dst` already exists, `snapshot restore --to <dst>` refuses by default to avoid silently mutating the destination's filesystem.
 To overwrite an existing destination, pass `--force`: the command deletes `dst`, then recreates it from the source's image and restores the snapshot into the fresh copy.
@@ -7057,8 +7085,8 @@ Set them before running `$$nemoclaw onboard` if a slow connection or large model
 
 <AgentOnly variant="openclaw,hermes">
 
-For managed recovery, the same timeout covers OpenShell re-registration after transactional recreation.
-When the deadline expires, the primary dashboard or API host forward stays stopped.
+For managed recovery, the same timeout covers OpenShell re-registration before state restoration and replacement commit.
+When the deadline expires, NemoClaw attempts to roll back the replacement and leaves the primary dashboard or API host forward stopped.
 
 </AgentOnly>
 
@@ -7285,8 +7313,10 @@ identity:
 ```
 
 Register a separate Entra application for the delegated runtime flow.
-Grant only the Microsoft Graph delegated `User.Read` permission needed by [`GET /me`](https://learn.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0), and request [`offline_access`](https://learn.microsoft.com/en-us/entra/identity-platform/scopes-oidc#the-offline_access-scope) during the external authorization-code bootstrap so the v2 endpoint returns a refresh token.
-Microsoft documents `offline_access` as an explicit requirement for v2 refresh-token issuance and [documents replacement of the stored refresh token](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token) when a refresh response carries a new one.
+Grant only the Microsoft Graph delegated `User.Read` permission needed by [`GET /me`](https://learn.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0).
+During the external authorization-code bootstrap, request [`offline_access`](https://learn.microsoft.com/en-us/entra/identity-platform/scopes-oidc#the-offline_access-scope) so the v2 endpoint returns a refresh token.
+Microsoft documents `offline_access` as an explicit requirement for v2 refresh-token issuance.
+It also [documents replacement of the stored refresh token](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token) when a refresh response carries a new refresh token.
 Use a confidential web application and `ENTRA_CLIENT_SECRET` when the bootstrap client can keep a secret.
 Omit `client_secret_env` for a public client rather than placing a public-client secret on the host.
 NemoClaw does not package the authorization redirect, consent UI, PKCE exchange, or MSAL cache.
@@ -8392,6 +8422,49 @@ Consumers can ignore fields that they do not recognize within major version 1.
 Use stable capability and finding IDs instead of parsing human summaries.
 Treat bounded evidence as diagnostic context unless an observation, capability, or finding references that evidence ID.
 
+## Verify the report producer
+
+Schema version `1.1.0` adds a required immutable identity for the CLI build that produced the report.
+The identity is present for `supported`, `incompatible`, and `inconclusive` reports.
+
+| Field | Consumer use |
+| --- | --- |
+| `provenance.nemoclawVersion` | Public version of the executing CLI build. |
+| `provenance.sourceRevision` | Full immutable source revision of that build. |
+| `provenance.observedAt` | Time when the host observation started. |
+
+A Git-described version can use a value such as `0.0.96-35-g8bfff4526`.
+The version must begin with three dot-separated digit groups.
+It can add an alphanumeric prerelease suffix after `-` and an alphanumeric build suffix after `+`; each suffix can also contain `.` and `-` separators.
+The revision after `g` must match the leading characters of `sourceRevision`.
+Packaged releases retain the full revision in their compiled build identity when Git metadata is unavailable at runtime.
+
+A strict scenario must fail closed before it uses readiness facts.
+Apply these checks in order:
+
+1. Reject an unknown schema major version.
+2. Require `schemaVersion` `1.1.0` or later within schema major 1.
+3. Compare the leading `X.Y.Z` release identity in `nemoclawVersion` with the scenario minimum.
+4. If the scenario supplies an expected source revision, require an exact `sourceRevision` match.
+5. If `nemoclawVersion` has a Git revision suffix, require it to match `sourceRevision`.
+6. Require `status: "supported"` and retain the producer identity in the admission receipt.
+
+An admission receipt can retain this bounded projection:
+
+```json
+{
+  "readinessStatus": "supported",
+  "readinessProducer": {
+    "schemaVersion": "1.1.0",
+    "nemoclawVersion": "0.0.96-35-g8bfff4526",
+    "sourceRevision": "8bfff4526aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}
+```
+
+Retain the full `sourceRevision` even when the scenario accepts every build above a minimum release.
+Do not use `observedAt` as build identity.
+
 ## Interpret Docker storage
 
 The Docker storage capabilities separate the current host configuration from NemoClaw's supported remediation path.
@@ -8714,6 +8787,26 @@ docker info
 
 The managed default gateway service accepts `DOCKER_HOST` only as an absolute local `unix://` socket path.
 It rejects remote endpoints and relative socket paths before service startup.
+
+### Onboarding reports `invalid_docker_host`
+
+The `invalid_docker_host` advisory means that `DOCKER_HOST` is not an absolute local `unix://` socket path that NemoClaw can write to the managed OpenShell gateway service environment.
+Remove the override to use Docker's default local socket:
+
+```bash
+unset DOCKER_HOST
+$$nemoclaw onboard
+```
+
+If your Docker daemon uses another local socket, set an absolute `unix://` path before you retry:
+
+```bash
+export DOCKER_HOST=unix:///var/run/docker.sock
+$$nemoclaw onboard
+```
+
+NemoClaw rejects TCP and SSH endpoints, relative socket paths, values that contain single quotes, and values that contain line breaks.
+Do not wrap the socket path in single quotes inside the variable value.
 
 ### macOS first-run failures
 
@@ -9573,6 +9666,31 @@ If the sandbox was intentionally deleted and you want a clean setup instead, run
 Create a snapshot first when the sandbox is reachable enough to back up state.
 For details, refer to [Create and Restore Snapshots](../manage-sandboxes/state-and-backups/create-and-restore-snapshots).
 </Warning>
+
+### Gateway Port Stays Bound After Destroying the Last Sandbox
+
+Destroying the final sandbox with `--cleanup-gateway` stops the packaged OpenShell gateway service before it reaps host gateway processes, so the gateway port is released.
+The service is stopped, not disabled or removed, and the next onboarding run starts it again.
+If the service cannot be stopped, `destroy` exits non-zero and prints the status command for the service.
+Stop the service yourself, then rerun `destroy`.
+
+On Apple Silicon macOS with Homebrew:
+
+```bash
+brew services stop openshell
+```
+
+On Linux, use the service name that matches the install. For package installs:
+
+```bash
+systemctl --user stop openshell-gateway
+```
+
+For tarball installs:
+
+```bash
+systemctl --user stop nemoclaw-openshell-gateway
+```
 
 <AgentOnly variant="openclaw,hermes">
 
@@ -11272,8 +11390,11 @@ If the command succeeds because the dashboard profile is missing, the dashboard 
 
 ### Shields Reports Drift for the Hermes Configuration Root
 
-The Hermes configuration root holds the agent's top-level runtime state, not only its configuration: `auth.json`, the drain request, and the temporary files that back every atomic `gateway_state.json` and `gateway.pid` replace are created directly in `/sandbox/.hermes`.
-Lockdown therefore moves that directory to `root:sandbox` mode `3770`, keeping the set-id and sticky bits, so the gateway can still manage its own runtime files while the sticky bit stops the sandbox identity from unlinking or renaming the sealed root-owned configuration.
+The Hermes configuration root holds the agent's top-level runtime state, not only its configuration.
+The configuration root stores `auth.json`, the drain request, and temporary files for atomic `gateway_state.json` and `gateway.pid` replacement.
+Lockdown moves that directory to `root:sandbox` mode `3770`, which preserves the set-group-ID and sticky bits.
+The gateway can still manage its runtime files.
+The sticky bit prevents the sandbox identity from unlinking or renaming sealed root-owned configuration.
 Run the following command to inspect a locked root:
 
 ```bash
@@ -13487,7 +13608,8 @@ The outgoing release restricted cookies, storage, clipboard, form values, and ne
 Because NemoClaw exposes the browser toolset, generated configuration now writes `browser.restrict_evaluate: true` to preserve that fail-closed posture; broadening page-context JavaScript evaluation requires a separate security decision.
 
 Hermes 0.19 changes the omitted gateway session-reset policy from `both` (daily and idle expiry) to `none`.
-Generated configuration now writes the complete outgoing policy—`mode: both`, 04:00 daily reset, 1,440-minute idle reset, notifications except on API server and webhook, and a 24-hour background-process age bound—so the upgrade does not silently make gateway sessions indefinitely durable or leave the remaining policy to mutable dependency defaults.
+Generated configuration now writes the complete outgoing policy: `mode: both`, 04:00 daily reset, 1,440-minute idle reset, notifications except on API server and webhook, and a 24-hour background-process age bound.
+This prevents the upgrade from silently making gateway sessions indefinitely durable or leaving the remaining policy to mutable dependency defaults.
 
 Hermes 0.19 also changes `display.show_reasoning` from `false` to `true`.
 Generated configuration now writes `display.show_reasoning: false` so internal reasoning is not newly disclosed through user-visible channel output.
@@ -14152,7 +14274,18 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
 
 - The #4434 compatibility-shim disposition is explicitly accepted for this OpenClaw 2026.6.10 PR only: `test/issue-4434-error-fields.test.ts` verifies 3/3 fields are present in the NemoClaw-patched runtime output and 3/3 fields are missing in the upstream-shaped `openclaw@2026.6.10` output. On the next OpenClaw bump that emits equivalent fields upstream, remove `scripts/patch-openclaw-issue-4434-diagnostics.mts` in the same change and keep the full live assertions.
 - The assembled-image and rebuilt-sandbox proof residual is explicitly accepted for this OpenClaw 2026.6.10 dependency bump only. The checked-in real-distribution harness binds the SRI-verified package to every reviewed patch and audit marker; production image workflows run the build-argument guard before assembling the final images; `network-policy` exercises the resulting OpenShell policy; and `messaging-providers`, `hermes-discord`, `channels-add-remove`, and both `channels-stop-start` variants exercise rebuilt sandboxes, installed messaging runtimes, and keyless registered-provider reuse without credential replacement. No single lane combines the final production image, a live `host.openshell.internal` SSRF-negative matrix, and every keyless custom-provider rebuild, so a cross-boundary packaging or wiring regression remains possible even though each boundary fails closed independently. Do not describe this as one combined end-to-end proof. Remove this acceptance when the canonical E2E matrix gains that assembled-image cross-product, or re-evaluate it on the next OpenClaw bump before retaining the same split proof.
-- The literal issue #2478 Local Ollama plus Telegram inbound recovery residual is explicitly accepted for this OpenClaw 2026.6.10 dependency bump only. `issue-2478-crash-loop-recovery` proves repeated gateway kill/respawn, guard-chain restoration, `inference.local` availability, and soak stability through a hermetic compatible endpoint; `messaging-providers` separately imports the installed Telegram `runtime-api.js`, sends through `sendMessageTelegram`, and verifies token rewrite plus fake Bot API capture. This does not reproduce `nemotron-3-super:120b` on Local Ollama or originate a Telegram inbound update after the crash, so agent/channel-specific inbound restart behavior remains a residual rather than proven equivalence. Do not claim the literal deployment scenario from these split lanes. Remove this acceptance when a stable CI fixture drives a Telegram inbound update through the recovered Local Ollama sandbox, or re-evaluate it on the next OpenClaw bump.
+- The literal issue #2478 Local Ollama plus Telegram inbound recovery residual is explicitly accepted for this OpenClaw 2026.6.10 dependency bump only.
+  `issue-2478-crash-loop-recovery` identity-checks and terminates one live gateway process before invoking the production `connect --probe-only` path, exercising PID 1's exit-driven respawn behavior.
+  The production command reports recovery and the test verifies that the terminated gateway process identity is replaced.
+  The test uses a hermetic compatible endpoint to verify guard-chain restoration, `inference.local` availability, and a recovered process identity that remains unchanged for 15 seconds.
+  `test/nemoclaw-start-guard-recovery.test.ts` runs the extracted production restoration helper five times against the same runtime state.
+  The deterministic test verifies identical restoration steps, fixed proxy environment content, read-only file modes, and one restoration warning.
+  `messaging-providers` imports the installed Telegram `runtime-api.js`, sends through `sendMessageTelegram`, and verifies token rewrite plus fake Bot API capture.
+  This does not reproduce `nemotron-3-super:120b` on Local Ollama or originate a Telegram inbound update after the crash.
+  The tests therefore do not prove agent-runtime and messaging-channel inbound restart behavior.
+  Do not claim the literal deployment scenario from these split tests.
+  Remove this acceptance when a stable CI fixture drives a Telegram inbound update through the recovered Local Ollama sandbox.
+  Otherwise, re-evaluate the residual on the next OpenClaw bump.
 - The transitive remediation closes the reviewed high-severity `tar`, `brace-expansion`, Axios, and Jaeger propagator findings without changing the OpenClaw version.
   The exact source shapes, replacement SRIs, tarball URLs, patched metadata, and provenance recipe fail closed on drift.
   The low `body-parser` and moderate Hono and `protobufjs` findings remain documented at the configured `high` threshold.
@@ -14428,9 +14561,41 @@ then performs its canonical silent local-pairing transaction and issues the
 stored device token. Once that credential exists, the patch automatically
 retains CLI identity on ordinary loopback shared-token calls; the upstream
 local-backend omission remains unchanged. This restores device-scope
-enforcement without moving the gateway credential into OpenClaw state. After
-bootstrap, list calls and every `devices approve` remove the gateway URL, port,
-and shared token so the bounded approval flow uses that device credential.
+enforcement without moving the gateway credential into OpenClaw state.
+After bootstrap, ordinary list and `devices approve` calls remove the gateway
+URL, port, and shared token so the approval flow uses the stored device
+credential.
+
+A restored clone has one bounded exception while its server pairing state
+exists but its client-auth state has not converged.
+The preflight opens the clone-owned pending, paired, and identity files through
+no-follow descriptors.
+It accepts only one CLI operator transition that exactly matches the device ID,
+public key, request ID, role, and allowed scopes.
+The pairing-only operator token remains in the clone-owned
+`devices/paired.json` until canonical rotation replaces it.
+The wrapper reads the previous token from the pinned descriptor for preflight
+and post-state comparison.
+The approval child independently reads the inherited descriptor and holds the
+token in memory only during the bounded pass.
+The child passes the token to the pinned loopback gateway.
+It removes shared gateway credentials and the configuration path, and it
+disables pathname-backed device-auth reads and writes.
+The live pairing list must match the descriptor-backed preflight before one
+canonical approval can run.
+OpenClaw reloads the state under its pairing lock, rotates the token, persists
+the paired state, broadcasts the change, and responds.
+NemoClaw then verifies the exact pending-to-paired transition and atomically
+writes the rotated token to the clone's `identity/device-auth.json` with mode
+`0600`.
+The wrapper and approval child keep the old token in memory only for the
+bounded pass.
+Any pre-approval identity, state, transport, or live-preflight mismatch
+prevents the approval call.
+A post-state mismatch reports failure and does not treat the client credential
+as synchronized.
+It does not roll back a canonical server transition that OpenClaw already
+persisted.
 
 ## Gateway Startup Migration Compatibility
 
@@ -15281,9 +15446,10 @@ Commits: `ed0026aa`, `0a25fdf5`, `5477e2f2`, `914da339`, `450685c7`, `45614a3f`.
   NemoClaw does not emit that field, but must parse its final Docker TOML and prove
   the intended loopback and Docker-bridge reachability instead of relying on that
   absence alone.
-- `450685c7` rejects leading/trailing whitespace in mount fields. NemoClaw does
-  not configure production driver mounts; the test-only EXDEV tmpfs mount is the
-  downstream consumer and remains a required no-impact regression.
+- `450685c7` rejects leading/trailing whitespace in mount fields.
+  NemoClaw does not configure production driver mounts for OpenClaw or Hermes.
+  LangChain Deep Agents Code supplies one bounded tmpfs mount for its managed MCP snapshot fallback.
+  The test-only EXDEV tmpfs mount remains a separate structured-tmpfs parsing regression.
 - The Helm SAN, MCP documentation, Kubernetes combined-topology, and removed raw
   `SandboxTemplate.volume_claim_templates` changes are not consumed by NemoClaw's
   Docker gateway or CLI integration. NemoClaw has no raw OpenShell protobuf client
@@ -15302,9 +15468,9 @@ dependency migration.
 
 Commits: `43bb0302`, `5f9bf9ce`, `6461677c`.
 
-- `43bb0302` changes Docker and Podman bind mounts to support SELinux relabeling,
-  explicit source checks, and Docker's legacy bind representation. Production
-  NemoClaw supplies no driver mounts; the EXDEV fixture remains the direct test.
+- `43bb0302` changes Docker and Podman bind mounts to support SELinux relabeling, explicit source checks, and Docker's legacy bind representation.
+  Production Deep Agents Code supplies a structured tmpfs mount, not a bind mount.
+  The EXDEV fixture remains a separate structured-tmpfs regression and does not exercise bind-mount relabeling.
 - `6461677c` adds numeric UID/GID policy identities and configurable Kubernetes
   and VM identities. NemoClaw's supported gateway configuration selects only the
   Docker driver; that driver does not inject the new UID/GID environment or
@@ -15572,7 +15738,7 @@ Commits: `80293213`, `392ad639`, `b4be33e5`, `21aaa895`, `3dee5570`.
 | `OS85-10` | Medium-high | Supervisor TLS identity variables are no longer child environment. Stale tests/comments can normalize a credential leak. | Assert absence from entrypoint, exec, and connect children and update the source-of-truth rationale. | Hermes and Deep Agents now reject all three variables; the stable entrypoint, exec, and connect probes require their absence, with execution for the PR SHA pending. |
 | `OS85-11` | Medium-high | Live `/proc/<pid>/exe` identity changes replacement-time policy behavior. | Prove old process survives replacement and a new altered process at the same path is denied. | The stable release proof runs both processes against the real proxy and requires old=200 before/after replacement, distinct live/path hashes, and new=403; the runtime result for the PR SHA is pending. |
 | `OS85-12` | Medium | OpenShell declares Docker 28.0+ while #6379 is on Docker 27 and NemoClaw marks DGX Spark tested. | Either validate and document a precise downstream exception from physical proof or raise the supported floor and preflight it. | Open product/platform decision. |
-| `OS85-13` | Low | Mount parsing/SELinux changes could affect the test-only tmpfs path. | Rerun the EXDEV tmpfs fixture and retain production no-mount evidence. | The stable release proof injects only the reviewed tmpfs config, requires Docker's structured tmpfs representation plus `noexec`/01777 at runtime, requires an empty remount after graceful gateway restart with the same container/config/auth and retained durable state, and requires another fresh remount after rebuild. The wrapper is disabled outside the explicit proof lane and production still supplies no driver mounts. Results for the PR SHA, Podman, and enforcing-SELinux remain open. |
+| `OS85-13` | Low | Mount parsing or SELinux changes could alter the production Deep Agents Code tmpfs path or the test-only EXDEV tmpfs path. | Require the exact production Deep Agents Code driver configuration and Landlock path. Verify the structured tmpfs type, mount point, options, mode, size, restart and rebuild lifecycle, anonymous-descriptor fallback, integrity binding, and empty mount residue. Rerun the separate EXDEV fixture. | The Deep Agents Code driver configuration declares one tmpfs at `/run/nemoclaw-dcode-mcp` in its Docker and Podman tables. The request sets a 1,048,576-byte limit, mode `01777`, and only the `noexec` option. The Docker/OpenShell path applies `nosuid` and `nodev` by default and rejects a driver request that supplies them explicitly. The Deep Agents Code policy grants Landlock read-write access to that exact path. The stable release proof consumes this production configuration and verifies Docker's structured tmpfs representation, observed `rw`, `noexec`, `nosuid`, and `nodev` options, mode, size, an empty remount after gateway restart, and a fresh remount after rebuild. Inside the real sandbox, the shipped runtime proof observes seccomp `EPERM` from sealed-memfd creation and injects `EOPNOTSUPP` only for its `O_TMPFILE` attempt in the configured `/tmp` anonymous directory. It then verifies that the shipped runtime validates and opens the actual production private tmpfs, preserves the anonymous unlinked read-only descriptor binding, and rejects same-size tampering. It reruns that platform contract after rebuild. The production mount must remain empty after each real Deep Agents Code tool call: initial, after bridge restart, after credential rotation, and after rebuild. Results for the PR SHA, Podman, and enforcing SELinux remain open. |
 | `OS85-14` | Low | Sanitized MCP tool names are newly present in logs. | Record the additive observability/privacy behavior; ensure no downstream parser assumes the old shape. | The stable release check requires the real `fake_echo` tool name and rejects argument/result canaries or an `arguments` field in JSON-RPC policy logs; the runtime result for the PR SHA is pending. |
 | `OS85-15` | High | The installer-hash workflow executes its checker and parser from the PR base SHA. One PR cannot safely teach that trusted base about a new release and consume the release; using the head checker would let reviewed code define its own trust rules. | First land archive safety, normalized full-script template validation, and multi-release trust while selectors remain `0.0.72`; prove the old base rejects a new release and the new base permits only structured release-data changes; then land the exact `0.0.85` manifest identities before refreshing this selector PR. | Base trust landed in #7069. #6778 and #6779 established base-owned structured manifest and sandbox-map validation; #7069 added only the three exact `0.0.85` release identities while retaining `0.0.72` and `0.0.82`. This selector PR must be based on that trusted state and pass the checker without relying on its head copy. |
 | `OS85-16` | High | Capability clearing now depends on `capctl 0.2.4` and `bitflags 1.3.2`, but upstream notices are unchanged and the consumed binaries have no published SBOM or attestation covering this dependency graph. | Bind crate checksums and source identities to the stable lock and binaries; review the unsafe syscall boundary and advisories; update notices/licenses; retain a generated SBOM and provenance for every consumed binary. | The stable lock, crate checksums, source identities, licenses, unsafe boundary, current RustSec absence, and SLSA-bound archives are recorded. Upstream still publishes no binary SBOM and its unchanged notices omit the new graph; that limitation remains explicit rather than being presented as complete attribution. |
@@ -15628,13 +15794,20 @@ NemoClaw work.
 
 ## Stable release selected-driver and mount proof boundary
 
-The same stable MCP job prepares a second bounded proof only
-when `NEMOCLAW_OPENSHELL_EXACT_MAIN_PROOF=1`. A PATH wrapper delegates every
-operation to the hash-pinned release CLI and changes only `openshell sandbox
-create`: it adds one reviewed `--driver-config-json` value containing a tmpfs at
-`/tmp/nemoclaw-exact-main-driver-config`. Duplicate driver config is rejected.
-The helper is inactive outside that explicit lane, and NemoClaw's production
-onboard path still supplies no driver mounts.
+The same stable MCP job prepares a second bounded proof only when `NEMOCLAW_OPENSHELL_EXACT_MAIN_PROOF=1`.
+A PATH wrapper delegates every operation to the hash-pinned release CLI without adding driver configuration.
+The production Deep Agents Code onboard plan supplies one reviewed `--driver-config-json` value.
+Its Docker and Podman tables each define a tmpfs at `/run/nemoclaw-dcode-mcp` with a 1,048,576-byte limit, mode `01777`, and only the `noexec` option.
+The Docker/OpenShell path applies `nosuid` and `nodev` by default and rejects a driver request that supplies them explicitly.
+OpenClaw and Hermes do not receive this mount.
+The Deep Agents Code policy grants Landlock read-write access to the exact mount path.
+
+The production Deep Agents Code runtime uses this tmpfs only as its final anonymous-snapshot location.
+The #8018 live regression proof observes seccomp `EPERM` from sealed memfd creation.
+It injects `EOPNOTSUPP` only for the shipped runtime's `O_TMPFILE` attempt in its configured `/tmp` anonymous directory.
+Before the runtime opens an anonymous file in the private path, it requires exactly one matching mount entry for the exact mount point, the tmpfs filesystem, mode, size bound, and `rw`, `noexec`, `nosuid`, and `nodev` mount options.
+The runtime keeps only an unlinked read-only descriptor.
+It binds child reads to the file descriptor, device, inode, size, and SHA-256 digest.
 
 The proof does not treat successful onboarding as evidence by itself. It:
 
@@ -15654,10 +15827,11 @@ The proof does not treat successful onboarding as evidence by itself. It:
    requires stable CLI sandbox listing over host mTLS, and requires a real
    sandbox exec through the supervisor relay. The container must mount its
    sandbox JWT and all three client-mTLS files read-only.
-4. Inspects the running Docker container. The test mount must be one structured
-   `Type=tmpfs` mount and must not appear in `HostConfig.Binds`, which is the
-   representation changed for SELinux-labelled bind mounts. Inside the sandbox,
-   `/proc/mounts` must report `tmpfs,noexec`, mode 01777, and a writable marker.
+4. Inspects the running Docker container.
+   The production Deep Agents Code mount must use one structured `Type=tmpfs` mount.
+   It must not appear in `HostConfig.Binds`, which is the representation changed for SELinux-labelled bind mounts.
+   Inside the sandbox, `/proc/mounts` must report `tmpfs` with `rw`, `noexec`, `nosuid`, and `nodev`.
+   The mount must have mode `01777`, expose no more than 1,048,576 bytes, and accept a writable marker.
 5. Stops and recovers the actual host OpenShell gateway through NemoClaw. A
    graceful gateway shutdown stops the managed Docker sandbox, and startup
    resumes that same container. The gateway PID must change, the rendered-config
@@ -15669,6 +15843,14 @@ The proof does not treat successful onboarding as evidence by itself. It:
    representation/options and no volatile marker, and the backed-up Deep Agents
    state marker must be restored. The new container identity plus the fresh tmpfs
    mount prove that the driver config was reapplied during rebuild.
+7. Executes the shipped Deep Agents Code runtime inside the real sandbox after onboarding and rebuild.
+   The proof requires seccomp to reject sealed-memfd creation with `EPERM`.
+   It injects `EOPNOTSUPP` only for the shipped runtime's `O_TMPFILE` attempt in its configured `/tmp` anonymous directory.
+   It then requires the shipped runtime to validate and open the actual production private tmpfs fallback.
+   The fallback must create an unlinked read-only descriptor whose binding reads the exact payload.
+   A same-size descriptor mutation must fail the SHA-256 integrity check.
+   Each platform-contract execution must leave the production mount empty.
+   The production mount must remain empty after each real Deep Agents Code tool call: initial, after bridge restart, after credential rotation, and after rebuild.
 
 The proof is intentionally Linux amd64 Docker-bridge evidence. It does not
 isolate Docker Desktop/Colima, WSL, DGX Spark's Docker 27 host-gateway route,
@@ -15677,6 +15859,10 @@ SELinux change applies to bind mounts; this fixture neither enables bind mounts
 nor requests `selinux_label`, so it proves that the consumed tmpfs path remains
 on the unaffected structured-mount branch, not that SELinux relabelling works.
 Those platform claims need their own real hosts.
+
+The live proof binds production mount delivery, fallback selection, descriptor integrity, and lifecycle evidence to the stable sandbox artifacts.
+Focused source tests separately reject stacked mount entries, other invalid private tmpfs states, and unrelated memfd failures.
+These tests keep fail-closed error classification covered without replacing the live platform result.
 
 Legacy upgrade is also separate. This stable release lane starts with a fresh
 gateway/config/database so every observed process can be tied to the release

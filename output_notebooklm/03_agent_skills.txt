@@ -1481,10 +1481,12 @@ Build the final Hermes image against the locally built base.
 Require the Dockerfile source-shape guards, wrapper help probes, patch smoke tests, generated-config checks, dependency audit, and installed-version checks to pass.
 
 Use BuildKit for the final image build.
-`agents/hermes/Dockerfile` uses executable heredocs for source and cross-identity runtime probes.
-Do not set `DOCKER_BUILDKIT=0` or accept a legacy-builder result as validation evidence:
-a legacy builder can pass an empty heredoc to the interpreter, silently skip the probe body, and
-either produce false-positive evidence or fail only at a later layer.
+`agents/hermes/Dockerfile` invokes the checked-in `image-build-probes.py` runner for source and
+cross-identity runtime probes so the supported OpenShell gateway builder executes the same
+assertions without Dockerfile heredoc support.
+Keep BuildKit as the canonical final-image validation path.
+A separate legacy-builder build can prove gateway compatibility only when its log shows every
+expected probe-runner command executing successfully; it does not replace the BuildKit result.
 Prefer the same buildx path used by repository workflows:
 
 ```bash
@@ -1494,7 +1496,7 @@ docker buildx build --load \
   -t <temporary-final-image> .
 ```
 
-Confirm the output reports each expected heredoc-backed probe as an executed BuildKit step.
+Confirm the output reports each expected probe-runner command as an executed BuildKit step.
 If `docker buildx` is not registered as a Docker CLI plugin, invoke the reviewed buildx executable
 directly rather than falling back to the legacy builder.
 
@@ -2607,11 +2609,39 @@ gh pr view <number> --json number,title,author,createdAt,additions,deletions,rev
 
 ## Step 4: Check for superseded PRs
 
-Flag a PR when its body contains one of these phrases:
+Run the comparator's canonical detector with the open candidate PR numbers:
 
-- `follow-up to #NNN` / `supersedes #NNN` / `replaces #NNN` / `folds in #NNN`
+```bash
+../nemoclaw-maintainer-pr-comparator/scripts/parse-supersession.sh <pr-number-1> <pr-number-2> ...
+```
 
-The phrase must name another open candidate PR. It indicates that one PR can include the other.
+It recognizes the comparator parser's case-insensitive statement families:
+
+- `supersed[a-z]*` before `#N`: `supersedes #N` points from the current PR to `#N`; `superseded by #N` points from `#N` to the current PR.
+- `replac[a-z]*` before `#N`: `replaces #N` points from the current PR to `#N`; `replaced by #N` points from `#N` to the current PR.
+- `clos[a-z]* in favor of` before `#N`: `closes in favor of #N` and `closed in favor of #N` point from `#N` to the current PR.
+- `fold[a-z]* in` before `#N`: `folds in #N` points from the current PR to `#N`; `folded into #N` points from `#N` to the current PR.
+
+The bracket expressions describe the parser grammar; they are not literal PR body text.
+A `follow-up to #N` statement is a related-PR signal, not a supersession declaration,
+unless one of these phrases also appears.
+
+Each supersession phrase must name another open candidate PR. It indicates that one PR can include the other.
+It records a relationship but does not prove that the target carries the source PR's work.
+
+When the target claims the source PR's full scope, compare their commits and diffs.
+If material code, tests, or documentation from another contributor remains in the target,
+apply the canonical policy in
+`../nemoclaw-maintainer-policies/references/workflow-policy.md`.
+
+This skill reports recommendations only.
+Do not recommend closing the source PR until another authorized workflow has:
+
+- completed any required transfer
+- verified the updated commits, attribution, and CI
+- rerun the comparator and selected the target
+- confirmed that the target contains the source's full scope and required contributor attribution
+- merged the selected target
 
 ## Step 5: Present results
 
@@ -2636,7 +2666,8 @@ For superseded PRs:
 ### Superseded PRs
 
 - #1416 supersedes/folds in #1392 (shell-quote sandboxName)
-  Consider closing #1392 if #1416 contains its full scope.
+  Keep #1392 open while an authorized workflow completes any required transfer, verifies the updated commits, attribution, and CI, and reruns the comparator.
+  After the updated verdict selects #1416 and #1416 merges, consider closing #1392 only if #1416 contains its full scope and preserves any required contributor attribution.
 ```
 
 ### Clean candidates
@@ -2908,6 +2939,8 @@ Tier 3 resolves ties. If no PR passes Tier 0, rank eligible PRs for salvage.
 ## Repo policy
 
 The defaults use NemoClaw conventions for CODEOWNERS, DCO, CodeRabbit, and `docs/`.
+Read the canonical superseded-PR attribution policy in
+`../nemoclaw-maintainer-policies/references/workflow-policy.md`.
 Edit `repo-policy.md` for another repository.
 
 ## Workflow
@@ -2918,7 +2951,7 @@ Copy this checklist into your response and check off each step:
 PR Comparison Progress:
 - [ ] Step 1: Parse issue (body + comments) for acceptance criteria
 - [ ] Step 2: Discover candidate PRs in the defined order
-- [ ] Step 3: Detect supersession (parse PR bodies)
+- [ ] Step 3: Detect supersession and classify transferred work
 - [ ] Step 4: Run Tier 0 gates per PR
 - [ ] Step 5: Run Tier 1 correctness checks per PR
 - [ ] Step 6: Run Tier 2 quality checks per PR
@@ -2945,14 +2978,32 @@ scripts/find-candidates.sh <issue-number>
 
 Applies a single default order with stop conditions.
 
-### Step 3: Detect supersession
+### Step 3: Detect supersession and transferred work
 
 ```bash
 scripts/parse-supersession.sh <pr-number-1> <pr-number-2> ...
 ```
 
-Parse these statements from each PR body: `supersedes #N`, `replaces #N`, `closes in favor of #N`, and `folds in #N`.
-Use supersession as the first tiebreaker.
+Parse the case-insensitive statement families implemented by `scripts/parse-supersession.sh`:
+
+- `supersed[a-z]*` before `#N`: `supersedes #N` points from the current PR to `#N`; `superseded by #N` points from `#N` to the current PR.
+- `replac[a-z]*` before `#N`: `replaces #N` points from the current PR to `#N`; `replaced by #N` points from `#N` to the current PR.
+- `clos[a-z]* in favor of` before `#N`: `closes in favor of #N` and `closed in favor of #N` point from `#N` to the current PR.
+- `fold[a-z]* in` before `#N`: `folds in #N` points from the current PR to `#N`; `folded into #N` points from `#N` to the current PR.
+
+The bracket expressions describe the parser grammar; they are not literal PR body text.
+A `follow-up to #N` statement is a related-PR signal, not a supersession declaration, unless one of these phrases also appears.
+These statements record a relationship.
+They do not rank a candidate or prove that its diff contains another contributor's work.
+
+For each declared or suspected replacement, compare the commits and diffs and classify the relationship:
+
+- `independent`: The PR implements the issue without carrying material code, tests, or documentation from another contributor.
+- `transferred`: The PR carries material work from another contributor.
+- `unclear`: The available evidence does not establish whether another contributor's work remains.
+
+For `transferred`, apply the canonical superseded-PR attribution policy before setting a winner or recommending that the source PR be closed.
+For `unclear`, leave `winner` null and request maintainer judgment.
 
 ### Step 4: Tier 0 gates
 
@@ -2990,6 +3041,7 @@ Apply the four model checks in `checks/tier-2-quality.md`.
 Compute the mode from the Tier 0 results. Do not accept a mode from the caller.
 In happy mode, set `winner` only to an eligible PR and set `closest_to_ready` to null.
 Leave `winner` null when the evidence does not support a merge recommendation.
+Do not set `winner` for a replacement with transferred work until the required attribution is present and verified.
 In degraded mode, set `winner` to null.
 Set `closest_to_ready` only to an open PR that passes contributor requirements.
 See `tiebreakers.md`.
