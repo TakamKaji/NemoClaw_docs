@@ -3058,7 +3058,7 @@ Use these details when your first-run path needs more control.
     The selector can include destinations such as GitHub, Jira, Slack, Telegram, or local inference.
     Press `r` to switch a selected preset between read-only and read-write when it supports both modes.
 
-    Use the final onboarding summary to verify that the sandbox gateway, dashboard port forward, and `inference.local` route are reachable.
+    Use the onboarding summary to verify that the sandbox gateway, dashboard port forward, and `inference.local` route are reachable.
     When web search is enabled, it also checks the selected provider configuration and sends a real search request through sandbox egress.
     Treat an unreachable route or HTTP 5xx response as a failed readiness check: onboarding marks the sandbox not ready and exits non-zero.
     Restore the configured endpoint or proxy, run `nemoclaw onboard --resume` to complete the retained onboarding session, then rerun `nemoclaw <sandbox-name> status` to verify the route.
@@ -3108,7 +3108,7 @@ Use these details when your first-run path needs more control.
 
     The wizard starts a background dashboard port forward and prints its URL in the ready summary.
     The default host port is `18789`.
-    When that port is occupied, NemoClaw uses the next free dashboard port, such as `18790`, and prints it in the final URL.
+    When that port is occupied, NemoClaw uses the next free dashboard port, such as `18790`, and includes the port in the URL.
     If the selected port becomes occupied after the sandbox build begins, onboarding rolls back the new sandbox and asks you to retry rather than print an unreachable URL.
     The installation transcript does not print the gateway token.
     Use `nemoclaw my-gpt-claw dashboard-url --quiet` to print the complete authenticated URL explicitly.
@@ -3763,6 +3763,9 @@ Use the error location to select the correct setting.
 
 The readiness timeout does not govern inference requests or provider validation.
 
+Set each value to a whole number of seconds; a fractional value is rounded.
+NemoClaw falls back to the default shown above for any value it cannot use, including a negative one — a negative budget is treated as an invalid setting rather than as a request to give up immediately.
+
 ## Increase the OpenClaw Request Timeout
 
 <AgentOnly variant="openclaw">
@@ -4118,7 +4121,9 @@ For those paths, use an HTTPS IP-literal endpoint with a certificate valid for t
 `$$nemoclaw inference set --endpoint-url <url>` on an already-onboarded sandbox supports a DNS-backed HTTPS custom endpoint through the HTTPS Pin Runtime adapter.
 After SSRF validation passes, NemoClaw starts a local reverse-proxy adapter on the host that terminates a pinned, SNI-correct outbound TLS connection to the real upstream hostname, re-validating that the resolved peer IP is still public.
 The sandbox, its OpenShell provider configuration and network policy, and the persisted sandbox registry only ever see the opaque local base `http://host.openshell.internal:<port>/route/<id>`.
-The real upstream hostname and path never reach the sandbox or the persisted registry; host recovery state stores only the opaque route ID, provider type, a non-secret token generation value, and timestamps.
+The real upstream hostname and path never reach the sandbox or the persisted registry.
+Host recovery state contains adapter process metadata, the source-subnet policy, opaque route IDs, provider types, non-secret token generation values, and timestamps.
+It contains no upstream URLs, pinned addresses, or credentials.
 Endpoint URLs containing userinfo, a query string, or a fragment are rejected rather than stripped or persisted.
 For an OpenAI-compatible endpoint entered as a bare origin, the adapter preserves the incoming `/v1` request path.
 For an endpoint with a path prefix, the adapter keeps forwarded requests beneath that prefix and rejects traversal-shaped paths.
@@ -4134,6 +4139,10 @@ NemoClaw refuses to expose the adapter when it cannot discover a valid bridge su
 Adapter reuse also requires an authenticated health proof for the same source-subnet policy, so a running process with a stale or different policy is replaced.
 After an adapter restart, routes other than the one that triggered recovery return a recovery-needed response until their original `inference set --endpoint-url` command is rerun.
 Switching away from a route or destroying its last sandbox reference revokes it; a scoped uninstall that leaves sibling gateways in place preserves the shared adapter and its remaining routes.
+Revocation has to authenticate the running adapter first, and the control-plane proof binds the source-subnet policy that adapter was started with, so NemoClaw records that policy in host recovery state when it starts or reuses the adapter and reads it back at revocation time.
+It never re-derives the policy from the current host: a bridge that has since been recreated or renumbered would produce a value the running adapter never used.
+An adapter started before NemoClaw recorded that policy cannot be authenticated for revocation, so the superseded route stays registered and `inference set` reports that its upstream credentials are still resident.
+Rerun the `inference set --endpoint-url` command that registered the route: that records the policy for the running adapter, and the next switch revokes cleanly.
 
 This support is specific to `inference set` on an already-onboarded sandbox.
 Hermes Provider setup, host-side `config set`, and a direct blueprint run still reject DNS-backed HTTPS URLs as described above.
@@ -7018,12 +7027,27 @@ $$nemoclaw my-assistant channels add whatsapp
 $$nemoclaw my-assistant channels add teams
 ```
 
+<AgentOnly variant="openclaw">
+Add experimental Google Chat through its interactive enrollment flow:
+
+```bash
+$$nemoclaw my-assistant channels add googlechat
+```
+
+Refer to [Set Up Google Chat](set-up-google-chat) before running the command.
+</AgentOnly>
+
 `channels add` accepts mixed-case input such as `Telegram`, then stores and prints the canonical lowercase name.
 It collects the inputs the channel needs, registers bridge providers with the OpenShell gateway when it captures tokens, records the channel in the sandbox registry, and asks whether to rebuild immediately.
 
 Telegram, Discord, Slack, and Microsoft Teams prompt for credentials and configuration.
 WeChat runs an interactive host-side QR scan.
 WhatsApp collects no token because pairing happens inside the rebuilt sandbox.
+
+<AgentOnly variant="openclaw">
+Google Chat prompts for a service-account JSON key and pauses while you configure its public webhook endpoint.
+It cannot be added non-interactively.
+</AgentOnly>
 
 ## Apply Policy and Rebuild
 
@@ -7216,7 +7240,8 @@ Endpoint hostnames must use lowercase RFC-style DNS labels without empty, leadin
 <AgentOnly variant="deepagents">
 Deep Agents Code supports at most 64 managed MCP servers in one sandbox.
 </AgentOnly>
-Endpoint paths must be literal and canonical, so NemoClaw rejects percent escapes, backslashes, semicolons, OpenShell glob metacharacters, and explicit port zero.
+Endpoint paths cannot contain percent escapes, backslashes, semicolons, or OpenShell glob metacharacters.
+Endpoint URLs cannot use port `0`.
 
 NemoClaw resolves public hostnames before registration, rejects private, local, and special-use targets, and pins the resolved addresses in the generated policy.
 OpenShell re-resolves the hostname for each new connection, requires every current answer to match the pinned `allowed_ips`, and connects to the validated socket addresses.
@@ -7498,12 +7523,19 @@ content:
   type: "how_to"
 agent-variants: ["openclaw", "hermes"]
 ---
+
 Enable channels during onboarding when you are creating or recreating a sandbox.
 
 ## Use the Interactive Picker
 
 When the wizard reaches **Messaging channels**, it lists Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams when the selected agent supports them.
 Press a channel number to toggle it on or off, then press **Enter** when done.
+
+<AgentOnly variant="openclaw">
+The OpenClaw picker also lists experimental Google Chat.
+Google Chat enrollment is interactive because you must set and confirm the public HTTP endpoint in Google Cloud Console.
+Refer to [Set Up Google Chat](set-up-google-chat) before selecting it.
+</AgentOnly>
 
 If you select no channels, pressing **Enter** skips messaging setup.
 If a token-based channel token is not already in the environment or credential store, the wizard prompts for it and saves it.
@@ -7544,6 +7576,11 @@ The quotes keep the export from triggering a redirection or syntax error when yo
 This release does not support non-interactive WeChat configuration because the iLink QR handshake requires a human to scan the QR on a paired phone.
 Run `$$nemoclaw onboard` interactively when you want to enable WeChat.
 For non-interactive WhatsApp selection, set `WHATSAPP_ALLOWED_IDS` to a nonempty comma-separated sender list.
+
+<AgentOnly variant="openclaw">
+Google Chat also requires interactive enrollment.
+Supported non-interactive onboarding skips it, because the Google Cloud Console endpoint and app principal steps need an operator.
+</AgentOnly>
 
 ## Run Onboarding
 
@@ -7611,7 +7648,7 @@ For built-in OpenClaw and Hermes controllers, a successful `recover` or `gateway
 After the settle window, NemoClaw sends one read-only authenticated `probe` through the same controller before it declares success.
 
 The controller rechecks the exact managed child, listener, HTTP health, and required auxiliary processes from inside the gateway network namespace without restarting the gateway.
-A failed managed probe is authoritative and cannot be overridden by an outer-namespace HTTP response.
+A failed managed probe cannot be overridden by an outer-namespace HTTP response.
 
 Custom agents that recover through an SSH script do not use this controller probe and continue to poll ordinary gateway health.
 
@@ -8167,6 +8204,11 @@ Rebuild the sandbox after the update so the image reflects the current channel s
 For WeChat, the cached-token shortcut applies.
 Remove WeChat first when you intend to acquire a fresh account through a new QR scan.
 
+<AgentOnly variant="openclaw">
+For Google Chat, re-add the channel and paste the replacement service-account JSON.
+NemoClaw updates the gateway-side refresh material, and the sandbox continues to receive only gateway-minted access tokens.
+</AgentOnly>
+
 For detailed token rotation procedures, refer to [Credential Rotation](../../security/credential-rotation).
 
 ## Remove a Channel
@@ -8181,6 +8223,12 @@ $$nemoclaw my-assistant channels remove teams
 
 `channels remove wechat` clears the bot token, deletes the `<sandbox>-wechat-bridge` provider, and removes `wechat` from the enabled-channel set.
 The next rebuild omits WeChat configuration and per-account state files.
+
+<AgentOnly variant="openclaw">
+`channels remove googlechat` detaches and deletes the `<sandbox>-googlechat-bridge` provider before the rebuild removes Google Chat configuration and the matching policy preset.
+It also stops the dedicated cloudflared process and webhook proxy for that sandbox.
+If endpoint teardown fails, the command exits nonzero without changing the channel credentials, bridge provider, policy preset, or durable messaging plan so you can fix the host service and retry removal.
+</AgentOnly>
 
 For in-sandbox QR-paired channels such as WhatsApp, `channels remove` destructively clears the session directory before rebuild so stale auth files do not reconnect the channel.
 
@@ -8221,6 +8269,12 @@ For WeChat, `channels stop wechat` followed by rebuild keeps the per-account sta
 </AgentOnly>
 A later `channels start wechat` plus rebuild revives the bridge against the same iLink account without a fresh QR scan.
 The bot token remains in the OpenShell provider across the stop and start cycle.
+
+<AgentOnly variant="openclaw">
+Google Chat stop and start cycles also preserve the bridge provider and its gateway-side refresh material.
+They preserve the dedicated public webhook endpoint so the Google Cloud configuration can keep the same URL.
+The next rebuild reuses that provider without requiring the service-account JSON again.
+</AgentOnly>
 
 When `channels start` re-enables a channel, NemoClaw reapplies the matching built-in policy preset before rebuild.
 If policy restoration fails, the command keeps the channel disabled and exits without rebuilding into a partially active state.
@@ -8284,9 +8338,9 @@ Full stop preserves a shared gateway and fails closed without releasing its port
 # SPDX-License-Identifier: Apache-2.0
 title: "Choose Messaging Channels"
 sidebar-title: "Choose Messaging Channels"
-description: "Compare the supported Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams messaging paths."
+description: "Compare the supported messaging paths, including experimental Google Chat for OpenClaw."
 description-agent: "Compares supported and experimental messaging channels, their credential or pairing requirements, and their NemoClaw runtime boundaries. Use when choosing a channel for OpenClaw or Hermes."
-keywords: ["nemoclaw messaging channels", "telegram", "discord", "slack", "wechat", "whatsapp", "microsoft teams"]
+keywords: ["nemoclaw messaging channels", "telegram", "discord", "slack", "google chat", "wechat", "whatsapp", "microsoft teams"]
 content:
   type: "concept"
 skill:
@@ -8294,6 +8348,7 @@ skill:
 agent-variants: ["openclaw", "hermes"]
 ---
 NemoClaw supports Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams for OpenClaw and Hermes sandboxes.
+Google Chat is available for OpenClaw sandboxes only.
 OpenShell-managed processes and gateway resources carry channel traffic.
 
 For token-based channels, NemoClaw registers credentials with OpenShell providers.
@@ -8305,10 +8360,10 @@ Microsoft Teams uses Bot Framework credentials plus a public HTTPS webhook that 
 NemoClaw writes the selected channel configuration into the sandbox image and keeps runtime delivery under OpenShell control.
 
 <Warning title="Experimental Channels">
-WeChat, WhatsApp, and Microsoft Teams are experimental.
+Google Chat, WeChat, WhatsApp, and Microsoft Teams are experimental.
 WeChat and WhatsApp rely on QR-based pairing flows that are more fragile than token-based bots.
 
-Microsoft Teams requires an externally reachable webhook path that depends on your host networking setup.
+Google Chat and Microsoft Teams require externally reachable webhook paths that depend on your host networking setup.
 Interfaces, defaults, and supported features can change, and NVIDIA does not recommend these channels for production use.
 </Warning>
 
@@ -8322,6 +8377,11 @@ Interfaces, defaults, and supported features can change, and NVIDIA does not rec
 | WeChat | Host-side QR scan | DM allowlist | [Set Up WeChat](set-up-wechat) |
 | WhatsApp | In-sandbox QR pairing | Hermes sender allowlist and non-interactive channel selection | [Set Up WhatsApp](set-up-whatsapp) |
 | Microsoft Teams | `MSTEAMS_APP_ID`, `MSTEAMS_APP_PASSWORD`, `MSTEAMS_TENANT_ID` | User allowlist, webhook port, mention mode | [Set Up Microsoft Teams](set-up-microsoft-teams) |
+
+<AgentOnly variant="openclaw">
+Google Chat requires a service-account JSON key and a public HTTPS endpoint for the OpenClaw webhook.
+Refer to [Set Up Google Chat](set-up-google-chat) for the interactive tunnel, audience, and account-principal flow.
+</AgentOnly>
 
 ## Prepare the Host and Policy
 
@@ -8559,7 +8619,8 @@ If every state directory fails, NemoClaw stops before deleting the original sand
 NemoClaw restores any entries captured in the partial backup; if nothing usable was captured, it recreates the sandbox from recorded registry metadata without restoring prior sandbox state.
 Use this recovery path only when losing the state that could not be backed up is acceptable.
 When a sandbox with managed MCP servers cannot run a pre-mutation no-op, explicit `--force` uses its complete registry entries plus the exact live generated policies and provider identities to preserve MCP intent without scrubbing the unreachable in-sandbox adapter.
-Every bridge entry must record an explicit adapter that matches the sandbox's recorded agent, and the registered policy must be the canonical generated policy for that adapter, server name, URL endpoint, and current resolved-address pins.
+Every bridge entry must record the adapter for the sandbox's recorded agent.
+The registered policy must match the policy NemoClaw generates for that adapter, server name, endpoint URL, and resolved addresses.
 NemoClaw rechecks that read-only snapshot immediately before deletion and stops if the target, registry, policy, provider, or recorded gateway changed.
 NemoClaw sends the delete request and every deletion-confirmation lookup to the sandbox's exact recorded gateway.
 Across every rebuild path, NemoClaw does not attempt to stop the local NIM through the delete attempt, and cleanup is attempted on a best-effort basis only after deletion is positively confirmed.
@@ -9171,6 +9232,193 @@ export DISCORD_REQUIRE_MENTION=1
 
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 If the bot logs in but delivery fails, refer to [Discord bot logs in, but the channel still does not work](../../reference/troubleshooting#discord-bot-logs-in-but-the-channel-still-does-not-work).
+
+
+========================================
+[FILE: docs/manage-sandboxes/set-up-google-chat.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Set Up Google Chat"
+sidebar-title: "Set Up Google Chat"
+description: "Configure the experimental Google Chat webhook, service account, access controls, and OpenShell credential boundary for OpenClaw."
+description-agent: "Explains the experimental OpenClaw-only Google Chat setup, including its interactive public webhook flow, service-account key, audience, DM allowlist, personal-account principal discovery, and gateway-minted outbound token. Use before enabling Google Chat."
+keywords: ["nemoclaw google chat", "google chat api bot", "google chat webhook", "google chat service account"]
+content:
+  type: "how_to"
+agent-variants: ["openclaw"]
+---
+Google Chat support is experimental and available only for OpenClaw sandboxes.
+It receives events at `/googlechat` on the OpenClaw dashboard port and sends replies through the Google Chat API.
+
+<Warning title="Webhook Only">
+The automatic public endpoint accepts only `POST /googlechat` and denies dashboard, health, WebSocket, and other control paths.
+Continue to open the Control UI through `http://127.0.0.1:18789`; the Google Chat URL is not a dashboard URL.
+</Warning>
+
+## Prepare the Google Cloud Configuration
+
+Prepare the Google Cloud resources before you enable the channel.
+
+- Enable the Google Chat API and configure the Chat app that the sandbox will run.
+- Create a service account and download a JSON key. The JSON must contain
+  non-empty `client_email` and `private_key` string fields.
+- Minify the service-account JSON to one line before you paste it at the `GOOGLECHAT_SERVICE_ACCOUNT` prompt.
+- Choose an HTTP endpoint connection in **Google Chat API** > **Configuration** > **Connection settings**.
+
+Keep the JSON key available on the trusted host during enrollment.
+Do not copy it into the sandbox or its OpenClaw configuration.
+
+## Prepare the Public Webhook
+
+The default `app-url` audience flow starts a dedicated cloudflared service in front of a loopback-only webhook proxy.
+The proxy forwards only `POST /googlechat` to OpenClaw and limits webhook request bodies to 1 MiB.
+It is separate from `nemoclaw tunnel start`, which remains the explicit full-dashboard tunnel command.
+Install `cloudflared` on the host before enrollment when you do not already have a public endpoint.
+
+When the dedicated Google Chat tunnel is not running, NemoClaw starts it and prints the exact HTTPS endpoint ending in `/googlechat`.
+Copy that complete URL into the Google Chat API HTTP endpoint field without adding a trailing slash, then confirm the prompt.
+NemoClaw stops the dedicated tunnel and webhook proxy if you do not confirm the endpoint or if enrollment fails before confirmation.
+
+If a later enrollment step fails after you confirm the endpoint, stop the public endpoint from the host:
+
+```bash
+nemoclaw my-assistant channels remove googlechat
+```
+
+Replace `my-assistant` with your sandbox name.
+The command attempts endpoint teardown even when interrupted enrollment left no Google Chat registry record.
+If the command reports that it could not stop the tunnel, correct the host service and run the command again before retrying enrollment.
+A removal that completes without cleanup warnings stops the dedicated tunnel and webhook proxy, removes any partial bridge provider and policy preset, and removes Google Chat from the durable messaging plan.
+
+If `GOOGLECHAT_AUDIENCE` already contains the public webhook URL, NemoClaw uses it and does not start or change cloudflared.
+Do not point the public tunnel directly at the OpenClaw dashboard on `127.0.0.1:18789`.
+Put a route-restricted proxy between the public tunnel and OpenClaw.
+
+Before enrollment, run this check from the trusted host:
+
+```bash
+(
+  set -eu
+  webhook_origin="$(
+    node -e '
+      try {
+        const url = new URL(process.argv[1]);
+        if (url.protocol !== "https:" || url.pathname !== "/googlechat") process.exit(1);
+        process.stdout.write(url.origin);
+      } catch {
+        process.exit(1);
+      }
+    ' "${GOOGLECHAT_AUDIENCE:?Set GOOGLECHAT_AUDIENCE first.}"
+  )"
+
+  check_denied_route() {
+    label="$1"
+    shift
+    status="$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' "$@" || true)"
+    if [ "$status" != "404" ]; then
+      printf '%s failed route restriction: HTTP %s\n' "$label" "${status:-no-status}" >&2
+      exit 1
+    fi
+    printf '%s denied: HTTP 404\n' "$label"
+  }
+
+  check_denied_route "Control UI" "$webhook_origin/"
+  check_denied_route "Health route" "$webhook_origin/health"
+  check_denied_route "GET /googlechat" "$GOOGLECHAT_AUDIENCE"
+  check_denied_route "WebSocket route" \
+    --http1.1 \
+    --header 'Connection: Upgrade' \
+    --header 'Upgrade: websocket' \
+    --header 'Sec-WebSocket-Key: MDAwMDAwMDAwMDAwMDAwMA==' \
+    --header 'Sec-WebSocket-Version: 13' \
+    "$webhook_origin/ws"
+)
+```
+
+Expected output:
+
+```text
+Control UI denied: HTTP 404
+Health route denied: HTTP 404
+GET /googlechat denied: HTTP 404
+WebSocket route denied: HTTP 404
+```
+
+The automatic NemoClaw proxy returns `HTTP 404` for all four checks.
+Accept an operator-managed endpoint only when all four checks print `HTTP 404`.
+Do not enroll Google Chat if a check returns another status or no status.
+
+Google Chat enrollment always requires an interactive terminal.
+Supported non-interactive onboarding skips the channel, because the Console endpoint and app principal steps need an operator.
+
+## Configure Access
+
+Leave `GOOGLECHAT_ALLOWED_USERS` empty to use OpenClaw's manual DM pairing flow.
+To use an allowlist, set it to comma-separated Google Chat user IDs such as `users/123456789`, not email addresses.
+Google Chat email addresses do not match this ID-based allowlist.
+
+Google Workspace accounts do not need `GOOGLECHAT_APP_PRINCIPAL`.
+Leave that prompt empty unless you use a personal or standalone Google account.
+
+## Enable Google Chat
+
+For a new sandbox, run `nemoclaw onboard` and select Google Chat in the messaging picker.
+For an existing OpenClaw sandbox, run:
+
+```bash
+nemoclaw my-assistant channels add googlechat
+```
+
+Follow the prompts to confirm the public endpoint, paste the service-account JSON, configure access, and rebuild the sandbox.
+NemoClaw applies the `googlechat` network policy preset and registers a sandbox-scoped `<sandbox>-googlechat-bridge` provider with OpenShell.
+
+OpenShell uses the service-account key as gateway-side refresh material to mint short-lived tokens with the `chat.bot` scope.
+NemoClaw passes the private key to the OpenShell command through an ephemeral child-process environment value, not through a command-line argument.
+The service-account private key does not enter the sandbox, and the OpenShell proxy inserts the minted bearer token into allowed requests to `chat.googleapis.com`.
+The Google Chat policy does not rewrite request bodies with credentials.
+
+The channel policy permits Node.js to read the Google Chat REST API and to create, update, or delete messages under the `/v1/spaces/` tree.
+It also permits Node.js GET requests to any path on `www.googleapis.com` because the Google authentication library controls the public certificate URL used to verify inbound event tokens.
+
+## Complete Personal Account Discovery
+
+Personal or standalone Google accounts need the add-on's numeric app principal.
+This value is a Google-assigned numeric ID, not an email address.
+
+If you do not know the value, leave `GOOGLECHAT_APP_PRINCIPAL` empty during the first enrollment, then start the rebuilt sandbox and follow these steps:
+
+1. Watch the OpenClaw logs for the discovery message.
+
+   ```bash
+   nemoclaw my-assistant logs --follow | grep "unexpected add-on principal"
+   ```
+
+2. Send one direct message to the bot.
+   The bot does not reply during this discovery attempt.
+
+3. Copy the numeric value from `unexpected add-on principal: <value>`.
+
+4. Re-add the channel with the value and accept the rebuild prompt.
+
+   ```bash
+   GOOGLECHAT_APP_PRINCIPAL="<numeric-id>" nemoclaw my-assistant channels add googlechat
+   ```
+
+The re-add flow prompts for the service-account JSON again when it is not already present in the current host environment.
+
+## Verify the Channel
+
+After the rebuild, send a direct message from an allowed or paired account and confirm that OpenClaw replies.
+If the webhook returns an error, verify that the public endpoint still ends in `/googlechat`, the dedicated tunnel and webhook proxy are running, and the Google Chat API configuration contains the exact same URL.
+
+Use the host-side `channels stop`, `channels start`, and `channels remove` commands to manage the integration.
+`channels stop googlechat` leaves the dedicated endpoint running so `channels start googlechat` can keep the same Google Cloud endpoint URL.
+`channels remove googlechat` and `nemoclaw <name> destroy` stop the dedicated cloudflared process and webhook proxy.
+`nemoclaw tunnel stop` does not stop the dedicated Google Chat endpoint; it controls the separate full-dashboard tunnel.
+Refer to [Manage Messaging Channels](manage-messaging-channels) for lifecycle behavior.
 
 
 ========================================

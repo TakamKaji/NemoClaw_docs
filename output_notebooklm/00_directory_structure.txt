@@ -490,6 +490,7 @@
 │   │   ├── run-sandboxes.mdx
 │   │   ├── runtime-controls.mdx
 │   │   ├── set-up-discord.mdx
+│   │   ├── set-up-google-chat.mdx
 │   │   ├── set-up-microsoft-teams.mdx
 │   │   ├── set-up-slack.mdx
 │   │   ├── set-up-telegram.mdx
@@ -3265,4 +3266,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-264 directories, 3002 files
+264 directories, 3003 files

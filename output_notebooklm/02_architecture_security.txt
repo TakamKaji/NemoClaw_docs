@@ -1767,7 +1767,7 @@ Preview the endpoints before applying:
 $$nemoclaw my-assistant policy add outlook --dry-run
 ```
 
-NemoClaw generates the preview from the exact preset policy YAML that `policy add` would apply.
+NemoClaw generates the preview from the preset policy YAML that `policy add` would apply.
 It lists hosts, ports, access, protocol, TLS, and enforcement settings, HTTP methods and paths, and the binary allowlist.
 
 Apply the preset:
@@ -3934,6 +3934,8 @@ Use `--no-sandbox-gpu`, `--no-gpu`, or `NEMOCLAW_SANDBOX_GPU=0` when you want to
 
 List all registered sandboxes with their model, provider, and policy presets.
 Pass `--json` for machine-readable output that includes a `schemaVersion`, the default sandbox, recovery metadata, and the sandbox inventory.
+Each sandbox row reports `activeSessionCount` as a nonnegative integer when the SSH-session probe is available and `null` when it is unavailable.
+The row does not include the former derived `connected` boolean.
 Sandboxes with an active SSH session are marked with a `●` indicator so you can tell at a glance which sandbox you are already connected to in another terminal.
 <AgentOnly variant="openclaw,hermes">
 When a sandbox has a recorded dashboard port, the output includes its local dashboard URL.
@@ -4504,7 +4506,7 @@ When sandbox GPU passthrough is enabled, the `Sandbox GPU` line includes the las
 It reports `(CUDA verified)`, `(CUDA unverified)`, or `(last CUDA proof failed: <label>)` so automation and operators can distinguish configured GPU passthrough from proven CUDA access.
 Failed proofs include remediation guidance for the detected platform.
 
-A `Connected` line reports whether the sandbox has any active SSH sessions and, if so, how many.
+An `SSH sessions` line reports how many active SSH sessions the sandbox has, or `none`; the line is omitted when the session probe is unavailable.
 <AgentOnly variant="openclaw,hermes">
 The sandbox list in the status output includes the dashboard port suffix for sandboxes with a recorded dashboard port.
 </AgentOnly>
@@ -4874,7 +4876,12 @@ NemoClaw preserves the per-gateway PID file and runtime marker so you can inspec
 Stop only the listener that matches the target gateway, then rerun `destroy` to converge cleanup.
 When the default-port gateway runs under the packaged OpenShell gateway service, gateway cleanup stops that service before it reaps host processes, so the gateway port is released instead of being rebound by the service manager.
 The service is stopped, not disabled or removed, and the next onboarding run starts it again.
-If the service cannot be stopped, `destroy` exits non-zero after sandbox and registry deletion, prints the status command for the service, and skips gateway and volume removal.
+On headless Linux, the packaged service can exist while its `systemd` user manager is unavailable and the gateway runs through the standalone fallback.
+For this recognized manager-unavailable failure only, `destroy` uses the per-gateway PID file when the service is not enabled for automatic activation.
+If the recorded PID is live, its command line must match the exact gateway name and port before `destroy` stops it.
+If the recorded process has exited, `destroy` continues only after it verifies that the gateway port is free.
+If a live PID does not prove gateway ownership or the port remains occupied, `destroy` exits non-zero and preserves the runtime evidence for inspection.
+For any other service stop failure, `destroy` exits non-zero after sandbox and registry deletion, prints the status command for the service, and skips gateway and volume removal.
 If the OpenShell gateway is unreachable and the sandbox has no managed MCP ownership state, `--force` removes only NemoClaw's local registry entry and local artifacts.
 Gateway-side deletion remains unconfirmed, shared host-service and gateway teardown are skipped, and the sandbox and retained volume may still exist if the gateway returns.
 Start the gateway with `$$nemoclaw <name> status` and retry destroy when you need a confirmed deletion.
@@ -5877,7 +5884,8 @@ If the backup produced nothing usable, it continues from recorded registry metad
 Use this recovery path only when losing the state that could not be backed up is acceptable.
 For a sandbox with managed MCP servers, `--force` probes sandbox execution before MCP teardown.
 If that no-op cannot run, NemoClaw requires complete bridge entries and exact live policy and provider identities, without trying an in-sandbox adapter scrub or changing MCP ownership state.
-Each bridge must carry an explicit adapter matching the sandbox's recorded agent, and the registered policy must equal the canonical generated policy for that adapter, server name, URL endpoint, and current resolved-address pins.
+Each bridge must record the adapter for the sandbox's recorded agent.
+The registered policy must match the policy NemoClaw generates for that adapter, server name, endpoint URL, and resolved addresses.
 It rechecks the registry, recorded gateway, resolved targets, live generated policies, and provider identities immediately before deletion; incomplete adds, drift, or ambiguous ownership stop before deletion.
 NemoClaw sends the delete request and every deletion-confirmation lookup to the sandbox's exact recorded gateway.
 Across every rebuild path, NemoClaw does not attempt to stop local NIM until sandbox deletion is positively confirmed, then attempts NIM cleanup on a best-effort basis.
@@ -6254,7 +6262,7 @@ For gateway-based messaging agents, it also reports messaging overlap warnings.
 </AgentOnly>
 Use `$$nemoclaw <name> status` when you need one sandbox's live health and recovery guidance.
 Pass `--json` for machine-readable output with registered sandboxes, service state, inference routes, and health details.
-For each listed sandbox, the text output includes the configured inference provider and model plus whether an active SSH session is connected.
+For each listed sandbox, the text output includes the configured inference provider and model plus the number of active SSH sessions when the session probe is available.
 Host-service PID lookup honors `NEMOCLAW_SANDBOX_NAME`, then `NEMOCLAW_SANDBOX`, then `SANDBOX_NAME`, then the registry default.
 
 ```bash
@@ -6355,7 +6363,7 @@ Use `--no-verify` only when OpenShell cannot verify the provider at switch time 
 When switching to `compatible-endpoint` or `compatible-anthropic-endpoint` from a different provider family, pass `--endpoint-url` with the trusted custom provider URL and, except for the Hermes case below, `--inference-api` with its API family so NemoClaw can persist a complete route identity for rebuild and shared-gateway checks.
 For a Hermes `compatible-anthropic-endpoint` target, `--inference-api` may be omitted because NemoClaw deterministically selects `openai-completions`; an explicit different API family is rejected.
 NemoClaw rejects loopback, link-local, private, and internal endpoint addresses, including public hostnames that resolve to a private address.
-For a same-provider model change, pass `--endpoint-url` with the exact canonical endpoint URL that the target sandbox registry identifies as onboarding-established.
+For a same-provider model change, pass `--endpoint-url` with the endpoint URL recorded during onboarding for the target sandbox.
 Missing or `inference set` provenance and every different URL remain subject to the full address validation above.
 For public HTTP URLs, NemoClaw stores the validated IP address to prevent DNS rebinding.
 For a DNS-backed HTTPS URL, NemoClaw routes the endpoint through a local HTTPS Pin Runtime adapter that terminates a pinned, SNI-correct outbound connection to the real upstream hostname; the sandbox and the persisted registry only ever see a local `host.openshell.internal` route, never the real hostname.
@@ -6970,32 +6978,32 @@ Set them before running `$$nemoclaw onboard`.
 <AgentOnly variant="openclaw">
 
 Set `NEMOCLAW_SANDBOX_BASE_IMAGE_REF` to an OpenClaw sandbox-base tag or digest to override base-image resolution during onboarding.
-Remote overrides must use the official NVIDIA sandbox-base repository and resolve to an immutable repository digest.
-Local bases are accepted only when NemoClaw builds and pins them during the current operation; a local image reference supplied through this environment variable is rejected because it has no trusted build capability.
+Remote overrides must use the official NVIDIA sandbox-base repository and resolve to a repository digest.
+NemoClaw accepts local bases only when it builds and pins them during onboarding; a local image reference supplied through this environment variable is rejected because it has no trusted build capability.
 
 </AgentOnly>
 
 <AgentOnly variant="deepagents">
 
 Set `NEMOCLAW_LANGCHAIN_DEEPAGENTS_CODE_SANDBOX_BASE_IMAGE_REF` to a LangChain Deep Agents Code sandbox-base tag or digest to override base-image resolution during onboarding.
-NemoClaw requires environment overrides to use the official remote repository and resolve to an immutable repository digest, then validates the requested image against the manifest-required `deepagents-code` package version before using it.
-Local bases are accepted only when NemoClaw builds and pins them during the current operation.
+NemoClaw requires environment overrides to use the official remote repository and resolve to a repository digest, then validates the requested image against the manifest-required `deepagents-code` package version before using it.
+NemoClaw accepts local bases only when it builds and pins them during onboarding.
 
 </AgentOnly>
 
 <AgentOnly variant="hermes">
 
 Set `NEMOCLAW_HERMES_SANDBOX_BASE_IMAGE_REF` to a Hermes sandbox-base tag or digest to override base-image resolution during onboarding.
-NemoClaw requires environment overrides to use the official remote repository and resolve to an immutable repository digest, validates the requested image for the required MCP runtime, and keeps the final image bound to that trusted base.
-Local bases are accepted only when NemoClaw builds and pins them during the current operation.
+NemoClaw requires environment overrides to use the official remote repository and resolve to a repository digest, validates the requested image for the required MCP runtime, and keeps the final image bound to that trusted base.
+NemoClaw accepts local bases only when it builds and pins them during onboarding.
 
 </AgentOnly>
 
 ### Onboard Profiling Traces
 
 Set `NEMOCLAW_TRACE=1` before `$$nemoclaw onboard` to write an OpenTelemetry-style JSON trace for the run.
-When no explicit path is provided, NemoClaw writes a timestamped file under `.e2e/traces/` in the current working directory.
-Use `NEMOCLAW_TRACE_DIR` to choose the output directory, or `NEMOCLAW_TRACE_FILE` to choose the exact output file.
+If you do not set a trace path, NemoClaw writes a timestamped file under `.e2e/traces/` in the current working directory.
+Use `NEMOCLAW_TRACE_DIR` to choose the output directory, or `NEMOCLAW_TRACE_FILE` to choose the output file.
 
 ```bash
 NEMOCLAW_TRACE=1 $$nemoclaw onboard
@@ -8180,7 +8188,7 @@ keywords: ["nemoclaw platform support", "nemoclaw launch claims", "nemoclaw supp
 content:
   type: "reference"
 ---
-This page is the canonical reference for what NemoClaw supports today.
+This page lists NemoClaw's platform support.
 Any documentation, demo, blog post, sales conversation, or support reply that describes a NemoClaw capability should match the entries below.
 
 The tables on this page are generated from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoClaw/blob/main/ci/platform-matrix.json).
@@ -10069,7 +10077,8 @@ The tool's own stdout/stderr bytes and its exit code are left unchanged. The bre
 The first interactive `$$nemoclaw <name> connect` shell also prints a one-line reminder of this denial signature and the `logs` command below.
 The reminder is shown once per top-level interactive session, and only when all of these hold: an egress proxy is configured, the shell is interactive with a terminal attached to stderr, and it is a top-level shell (not a nested subshell or pane).
 Suppress it with `NEMOCLAW_NO_POLICY_HINT=1`.
-On OpenShell 0.0.44 or newer the reminder names your real sandbox; on older OpenShell it shows `<name>` as a placeholder — run `$$nemoclaw list` to see your sandbox names.
+The reminder names the sandbox when NemoClaw receives a valid sandbox name during sandbox creation.
+If no valid name is available, it shows `<name>`; run `$$nemoclaw list` to see your sandbox names.
 If the reported sandbox name contains characters that are not valid in a sandbox name (uppercase letters, underscores, control characters, and similar) or exceeds 63 characters, the reminder shows the `<name>` placeholder for safety rather than echoing the untrusted value.
 The reminder is intentionally proactive: the denial itself is surfaced by the OpenShell proxy, so the `curl`/`git` error text is left unchanged and the reminder points you to the logs instead.
 
@@ -13526,7 +13535,7 @@ Before merge, the reviewed PR head must still pass:
 
 - normal commit hooks and required GitHub checks;
 - automated review with no unresolved actionable finding;
-- documentation writer review tied to the final pushed head.
+- documentation writer review.
 
 No live E2E, sandbox build, migration, rollback, compatibility shim, or changelog entry is required because the dependency is not part of a supported runtime or user-visible product behavior.
 
@@ -13558,7 +13567,7 @@ The final image also replaces the published `python-multipart==0.0.27` lock reso
 The base image overlays checksum-pinned Node.js `24.18.1` archives for both supported architectures and installs exact uv `0.11.33`; build-time assertions reject version drift before Hermes is installed.
 
 The source-pin commit must publish a fresh multi-platform Hermes base image before the final Dockerfile can name its immutable digest.
-The PR is not approval-ready until the pinned final image and required live E2E gates pass on the exact PR head.
+The PR is not approval-ready until the pinned final image and required live E2E gates pass.
 
 ## Reviewed identities
 
@@ -13676,7 +13685,7 @@ NemoClaw uses plain `gateway run` plus its host-owned managed stop/start recover
 Completing the upstream relocation requires a separate exact-source audit and runtime matrix for every explicit consumer rather than extending this dependency upgrade's claim.
 
 The target MCP tool names use the `mcp__server__tool` shape.
-Progressive disclosure and the managed MCP bridge therefore require exact-head runtime proof rather than inference from the image build.
+Progressive disclosure and the managed MCP bridge therefore require runtime proof rather than inference from the image build.
 New optional upstream secret sources are not enabled by NemoClaw.
 The wrapper recognizes the reviewed `--safe-mode` CLI flag without adding a new sandbox-generated environment variable or broadening NemoClaw's environment allowlist.
 
@@ -13725,7 +13734,7 @@ Artifact scanning must therefore inspect the assembled image and record the down
 
 | ID | Severity | Disposition | Evidence and remaining gate |
 | --- | --- | --- | --- |
-| `HERMES-1` | High | Pin and test | The verified target tag, commit, source SHA-256, CalVer-to-semver mapping, registry cross-check, and producer runs are recorded, while final source-pin coherence remains an exact-head test. |
+| `HERMES-1` | High | Pin and test | The verified target tag, commit, source SHA-256, CalVer-to-semver mapping, registry cross-check, and producer runs are recorded, while final source-pin coherence still needs a test. |
 | `HERMES-2` | High | Migrate and test | `approvals.mode` is explicitly `manual`, and generated-config tests reject inheritance of smart authorization. |
 | `HERMES-3` | High | Migrate and test | Generated configuration and the doctor hash contract use schema 33 before runtime startup. |
 | `HERMES-4` | High | Migrate and test | Wrapper routing covers `console`, `--no-restore-cwd`, and `--safe-mode`; it preserves profile selectors, bare continue, and unquoted multi-word names against Hermes' exact coalescing boundaries across all four continue/resume spellings, and recognizes and explicitly rejects `--usage-file` only when the resumed one-shot append workaround would otherwise discard the report. The final image compares the wrapper's private session-name boundary AST to the pinned upstream coalescer instead of deriving it from public help. Unknown future versions remain guarded. |
@@ -13736,7 +13745,7 @@ Artifact scanning must therefore inspect the assembled image and record the down
 | `HERMES-9` | High | Pin and test | The selected Python delta adds no advisory regression, and the affected multipart parser is replaced with attested `0.0.32` plus hash and runtime probes. |
 | `HERMES-10` | High | Pin and test | The exact-source patch updates Hermes metadata and its frozen lock together, selects `cryptography==48.0.1`, `mcp==1.28.1`, `Pillow==12.3.0`, `starlette==1.3.1`, and `tornado==6.5.7`, and fails the image build on dependency inconsistency or installed-version drift. The base image separately checksum-pins Node.js `24.18.1` and asserts uv `0.11.33`. |
 | `HERMES-11` | High | Migrate, test, and runtime-proof | Root npm audit reports zero production findings and the WhatsApp bridge removes its current critical, high, and medium advisory entries, while both architectures still require native bridge and message-path evidence. |
-| `HERMES-12` | High | Pin and runtime-proof | Trusted workflow run `30411365314` published the exact source commit as amd64 and arm64 manifests under OCI index `sha256:c4aee5c9b087840da6e1eb2127fef9f4a2eab0862992008d1741dc09f632422e`. The final Dockerfile pins that digest. Before the cron ledger relocation, the pinned arm64 final image passed all 62 BuildKit steps, including installed-version, patch, config, and cross-identity SQLite probes. The exact PR head must build the three added relocation layers and changed cron probe before protected runtime E2E. |
+| `HERMES-12` | High | Pin and runtime-proof | Trusted workflow run `30411365314` published the exact source commit as amd64 and arm64 manifests under OCI index `sha256:c4aee5c9b087840da6e1eb2127fef9f4a2eab0862992008d1741dc09f632422e`. The final Dockerfile pins that digest. Before the cron ledger relocation, the pinned arm64 final image passed all 62 BuildKit steps, including installed-version, patch, config, and cross-identity SQLite probes. The head commit must build the three added relocation layers and changed cron probe before protected runtime E2E. |
 | `HERMES-13` | Medium | Document bounded residual | Static `state_files` entries online-back up the default profile only. Cron or Discord ledgers created by a process launched under `profiles/<name>` remain in the raw `profiles` tar capture and can be inconsistent during a concurrent snapshot. Dynamic profile-local SQLite discovery is generic snapshot work outside this upgrade PR. |
 | `HERMES-14` | High | Migrate and test | The browser evaluation denylist changed from default-on to opt-in. Generated configuration explicitly writes `browser.restrict_evaluate: true`, including when managed browser-gateway settings are merged, so the upgrade does not broaden page-context access. |
 | `HERMES-15` | Medium | Migrate and test | The omitted gateway session-reset policy changed from bounded daily and idle expiry to no automatic reset. Generated configuration explicitly writes the complete outgoing reset and notification policy to preserve the retention bound without inheriting mutable dependency defaults. |
@@ -13750,7 +13759,7 @@ Artifact scanning must therefore inspect the assembled image and record the down
 Unresolved upgrade-created high-impact concerns: `0`.
 One Medium upgrade-created instance of the pre-existing named-profile raw-capture limitation and one inherited Medium direct-runtime-consumer limitation remain explicitly accepted for this upgrade scope.
 
-The remaining exact-head gates are repository CI, automated review, documentation review, security review, and protected Hermes E2E.
+The remaining gates are repository CI, automated review, documentation review, security review, and protected Hermes E2E.
 The exact-source dependency patch and its residual audit record require security review before merge.
 
 ## Verification and remaining gates
@@ -13767,13 +13776,13 @@ Completed local evidence:
 - trusted amd64 and arm64 branch-image publication plus immutable OCI-index inspection; and
 - a 62-step arm64 final-image build from the pinned pre-relocation branch digest, including private wrapper-boundary and cross-identity SQLite probes.
 
-Before merge, the exact PR head must still pass:
+Before merge, these checks must pass:
 
 - the final-image build, including the cron ledger relocation and changed cross-identity probe;
 - managed MCP discovery and invocation;
 - messaging, environment-secret, restart, snapshot, rebuild, and rollback E2E paths;
 - normal repository checks with no unresolved actionable automated-review finding; and
-- documentation-writer and security-review receipts tied to the final pushed head.
+- documentation-writer and security-review receipts for the head commit.
 
 
 ========================================
