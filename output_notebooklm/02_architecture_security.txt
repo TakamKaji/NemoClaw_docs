@@ -2484,12 +2484,14 @@ Onboarding validates and reuses a healthy selected service.
 It enables or restarts the service when startup or verified runtime drift requires it, then checks gateway health.
 The marked service generates the local OpenShell mTLS bundle and reads `$XDG_CONFIG_HOME/openshell/gateway.env`, or `~/.config/openshell/gateway.env` when `XDG_CONFIG_HOME` is not absolute.
 NemoClaw preserves unrelated environment entries, accepts `DOCKER_HOST` only for an absolute local `unix://` socket, and refuses foreign or symlinked managed files.
-The standalone Linux process is used only when the systemd user manager is unavailable; after a service is selected, startup or health failure stops onboarding.
+If the selected systemd user service fails inspection, startup, or its health check, NemoClaw prints its `journalctl` log command and attempts the standalone fallback.
 
 On Apple Silicon macOS, Homebrew makes the official OpenShell formula authoritative.
 The installer stages the formula and onboarding starts its `openshell` service.
-When Homebrew is present, a missing formula, a formula from another tap, a service-start failure, or a health failure stops onboarding.
-Only a host without Homebrew uses the standalone macOS gateway fallback.
+If the service fails inspection, startup, or its health check, NemoClaw prints the formula log command and attempts the standalone fallback.
+A host without Homebrew, or with no installed OpenShell formula, also uses the standalone macOS gateway.
+On both platforms, standalone startup requires exclusive ownership of the gateway port.
+Managed-service trust failures and unsafe environment configuration remain hard failures.
 
 NemoClaw-managed gateways on custom ports remain detached and separate from the default service.
 An externally supervised gateway can use any matching configured port; its declared supervisor retains lifecycle authority.
@@ -3908,7 +3910,10 @@ On ordinary native Linux, the compatibility path uses an available NVIDIA CDI sp
 On Docker Desktop WSL, the compatibility path skips CDI and tries Docker `--gpus all` before the NVIDIA runtime.
 On Jetson/Tegra hosts, the compatibility path uses the NVIDIA runtime and adds eligible host group IDs for the supported GPU device nodes.
 These include selected `/dev/nvmap`, `/dev/nvhost-*`, and `/dev/nvgpu/igpu0/*` nodes plus real `/dev/dri/renderD*` character devices.
-If the compatibility attempt fails, onboarding keeps its diagnostics and the failed sandbox in place and prints a manual cleanup command.
+After compatibility recreation starts, onboarding keeps the pre-patch container as a rollback backup until the replacement passes the Ready, GPU, and applicable local-inference checks.
+If a later check fails, onboarding prints failure diagnostics and attempts to restore the pre-patch container.
+If rollback fails, onboarding reports that the pre-patch container was not restored and prints container-cleanup guidance.
+GPU-proof diagnostics are captured before rollback and can print that guidance before the final container state is known, so inspect the sandbox and its labeled Docker containers before running a deletion command.
 
 Prerequisites:
 
@@ -4255,6 +4260,15 @@ $$nemoclaw my-assistant shields down --timeout 5m --reason "maintenance"
 If `shields up` reports that the config remains unlocked or drifted, confirm that the sandbox is running and ready, then retry `$$nemoclaw <name> shields up`.
 If the retry still fails, rebuild a known-good baseline with `$$nemoclaw <name> rebuild --yes`.
 
+<AgentOnly variant="deepagents">
+
+A `CRITICAL` Deep Agents config-lock failure is not an ordinary unlocked or drifted result.
+The retry and rebuild guidance above does not apply to a `CRITICAL` Deep Agents config-lock diagnostic.
+Do not retry `shields up` or attempt an in-sandbox repair.
+Follow [Deep Agents Config Lock Failure Recovery](troubleshooting#deep-agents-config-lock-failure-recovery) to restore a trusted snapshot or recreate the sandbox before retrying.
+
+</AgentOnly>
+
 Host-side config and inference writes, snapshot mutation, sandbox destruction, and shields transitions serialize per sandbox.
 When a timed shields-down window reaches its deadline, auto-restore can interrupt the exact process tree holding that transition and restore lockdown.
 Retry an interrupted command in a new shields-down window.
@@ -4516,7 +4530,8 @@ When OpenShell reports an active policy version, the displayed YAML `version` li
 If the sandbox is running an outdated agent version, the output includes an `Update` line with the available version and a `$$nemoclaw <name> rebuild` hint.
 
 <AgentOnly variant="openclaw,hermes">
-When other sandboxes have the same messaging channel enabled (Telegram, Discord, or Slack) with the same bot token, the output includes a cross-sandbox overlap warning so you can resolve the conflict before messages start dropping.
+When NemoClaw detects a messaging overlap between sandboxes in the selected OpenShell gateway's sandbox registry, the output includes a cross-sandbox overlap warning.
+The command cannot report overlaps in an independent OpenShell gateway's registry.
 The command also tails `/tmp/gateway.log` inside the default sandbox and flags Telegram `409 Conflict` errors that indicate a duplicate consumer for the bot token.
 </AgentOnly>
 
@@ -4602,7 +4617,7 @@ The rebuild reuses the existing sandbox name and preserved manifest-defined stat
 Run a focused health check for one sandbox and the host services it depends on.
 The command checks the local CLI build, Docker daemon, OpenShell CLI, NemoClaw gateway container, gateway port mapping, live sandbox state, inference route, configured-provider model invocation, Ollama reachability, and the cloudflared tunnel state.
 <AgentOnly variant="openclaw,hermes">
-For gateway-based agents, it also reports messaging channel conflicts.
+For gateway-based agents, it also reports messaging channel conflicts within the selected OpenShell gateway's sandbox registry.
 </AgentOnly>
 
 `doctor` also checks whether the sandbox registry contains the metadata required for snapshot, rebuild, upgrade, recovery, and reboot.
@@ -5194,6 +5209,9 @@ $$nemoclaw my-assistant channels add telegram
 | `--force` | Add the channel despite a credential conflict, shared-resource conflict, or incomplete required check. This flag is the only conflict override. |
 
 Slack requires both `SLACK_BOT_TOKEN` (bot user OAuth) and `SLACK_APP_TOKEN` (app-level Socket Mode token); the command prompts for each in turn.
+The conflict check compares only sandboxes in the selected OpenShell gateway's sandbox registry.
+It cannot detect Slack token reuse across independent OpenShell gateways.
+Run only one active Slack sandbox on each OpenShell gateway, and use distinct Slack bot and app tokens across gateways.
 Optional Slack allowlists come from `SLACK_ALLOWED_USERS` and `SLACK_ALLOWED_CHANNELS` at rebuild time.
 Telegram and Discord mention mode default to `1` when no environment, session, or saved state value exists for that setting.
 Discord applies that default only when a server ID is configured.
@@ -5900,7 +5918,8 @@ Before backup or deletion, `rebuild` also refuses an incomplete MCP destroy tran
 It also refuses a pending baseline exclusion transaction before opening a shields-down window, starting backup, or deleting the sandbox, and prints the exact `policy exclude` or `policy restore` command to rerun.
 For a prepared-only transaction, the redacted diagnostic points to `$$nemoclaw <name> mcp remove <server> --force` when the sandbox is still live.
 For a pending or both-marker transaction, it points to `$$nemoclaw <name> destroy` because the registry records that OpenShell deletion was already confirmed.
-Before backup or deletion, rebuild checks the staged messaging configuration for credentials or channel resources already used by another registered sandbox.
+Before backup or deletion, rebuild checks the staged messaging configuration against other sandboxes in the selected OpenShell gateway's sandbox registry.
+A rebuild cannot detect messaging conflicts in an independent OpenShell gateway's registry.
 A conflict aborts with the original sandbox registered and intact so you can resolve the conflict before retrying.
 After OpenShell accepts the sandbox deletion, `rebuild` waits until OpenShell explicitly reports that the old sandbox is absent.
 Only then can NemoClaw perform any required local registry removal and begin creating the replacement.
@@ -6258,7 +6277,7 @@ Supervisor-owned agent runtime processes remain managed inside their sandbox.
 Show the global sandbox list and the status of host auxiliary services (for example cloudflared).
 This command is host-wide. It summarizes registered sandboxes, the default sandbox's live inference route, gateway health, and host services.
 <AgentOnly variant="openclaw,hermes">
-For gateway-based messaging agents, it also reports messaging overlap warnings.
+For gateway-based messaging agents, it also reports messaging overlap warnings within the selected OpenShell gateway's sandbox registry.
 </AgentOnly>
 Use `$$nemoclaw <name> status` when you need one sandbox's live health and recovery guidance.
 Pass `--json` for machine-readable output with registered sandboxes, service state, inference routes, and health details.
@@ -8436,7 +8455,7 @@ Consumers can ignore fields that they do not recognize within major version 1.
 Use stable capability and finding IDs instead of parsing human summaries.
 Treat bounded evidence as diagnostic context unless an observation, capability, or finding references that evidence ID.
 
-## Verify the report producer
+## Verify the Report Producer
 
 Schema version `1.1.0` adds a required immutable identity for the CLI build that produced the report.
 The identity is present for `supported`, `incompatible`, and `inconclusive` reports.
@@ -8613,6 +8632,28 @@ Use `nemo-deepagents <name> mcp ...` for servers that need OpenShell credential 
 <AgentOnly variant="hermes">
 If a Hermes sandbox is alive but its gateway is not running after a supervisor or container restart, run `$$nemoclaw <sandbox> recover` before retrying the MCP command.
 Recovery re-establishes the managed service lifecycle, API forwarding, and the exit-75 reload loop used for transactional MCP configuration changes.
+</AgentOnly>
+
+<AgentOnly variant="openclaw">
+
+## Remote MCP Tools Are Missing for One Agent Turn
+
+If a remote Streamable HTTP MCP server times out or resets while its tools are being loaded, NemoClaw retries that startup once with a fresh connection before the agent turn continues.
+A successful retry loads the expected tools in the same turn, so no new session is needed.
+
+If the retry also ends in a classified transient transport failure, the sandbox log records a temporary MCP transport failure and states that credentials and configuration were not rejected.
+Read that line before rotating a credential:
+
+```bash
+$$nemoclaw <sandbox> logs --tail 100
+```
+
+NemoClaw does not retry an authentication, authorization, TLS-validation, network-policy, or invalid-configuration failure inside a turn, because repeating the same request cannot succeed.
+A refused or unreachable endpoint is also not retried inside a turn; check the endpoint and its egress policy instead.
+
+A catalog that contains a server diagnostic is not cached for the session.
+NemoClaw rebuilds the catalog on the next agent turn and contacts the affected server again, so a brief upstream outage clears on its own and a repaired credential or policy takes effect without a new session.
+A catalog without server diagnostics is cached and reused as usual.
 </AgentOnly>
 
 ## Policy or Provider Ownership Drifted
@@ -8802,9 +8843,10 @@ docker info
 The managed default gateway service accepts `DOCKER_HOST` only as an absolute local `unix://` socket path.
 It rejects remote endpoints and relative socket paths before service startup.
 
-### Onboarding reports `invalid_docker_host`
+### Onboarding Reports an Invalid Docker Host
 
 The `invalid_docker_host` advisory means that `DOCKER_HOST` is not an absolute local `unix://` socket path that NemoClaw can write to the managed OpenShell gateway service environment.
+NemoClaw does not use the standalone gateway fallback when this validation fails.
 Remove the override to use Docker's default local socket:
 
 ```bash
@@ -9331,6 +9373,11 @@ Sandbox names must be lowercase, start with a letter, contain only letters, numb
 The CLI rejects names that do not match these rules.
 It prints a `Try: <suggested-slug>` recovery line whenever it can derive a valid lowercase, hyphen-separated form from the input, so passing `--name MyAssistant` reports `Try: myassistant` and you can rerun with the suggested slug.
 
+The CLI writes the rejected value as a quoted preview instead of raw input.
+The preview reads at most the first 80 UTF-16 code units from the input and escapes each code unit outside printable ASCII as `\uXXXX`.
+Escaping can make the preview longer than 80 output characters.
+This prevents a rejected name from injecting control sequences into terminal or CI output.
+
 Names that collide with global CLI commands are also rejected.
 Reserved names include `onboard`, `list`, `deploy`, `setup`, `start`, `stop`, `status`, `debug`, `uninstall`, `credentials`, and `help`.
 Using a reserved name would cause the CLI to route to the global command instead of the sandbox.
@@ -9599,14 +9646,26 @@ Follow these steps to reconnect.
    brew services restart openshell
    ```
 
-   If Homebrew is present but `openshell` is missing or comes from another tap, rerun the NemoClaw installer.
-   Onboarding does not use the standalone fallback while Homebrew is present.
+   During onboarding, NemoClaw uses the standalone fallback when the `openshell` formula is missing.
+   If the installed service fails inspection, startup, or its health check, NemoClaw prints this log command:
+
+   ```bash
+   tail -n 200 "$(brew --prefix)/var/log/openshell/openshell-gateway.out.log" "$(brew --prefix)/var/log/openshell/openshell-gateway.err.log"
+   ```
+
+   Rerun the NemoClaw installer to restore the managed service for later onboarding runs.
 
    On Linux package installs, inspect and restart the upstream service.
 
    ```bash
    systemctl --user status openshell-gateway
    systemctl --user restart openshell-gateway
+   ```
+
+   If the service fails inspection, startup, or its health check, NemoClaw prints this log command:
+
+   ```bash
+   journalctl --user --unit openshell-gateway --no-pager --lines=200
    ```
 
    On Linux tarball installs, inspect and restart the marked NemoClaw service.
@@ -9616,8 +9675,23 @@ Follow these steps to reconnect.
    systemctl --user restart nemoclaw-openshell-gateway
    ```
 
+   If the service fails inspection, startup, or its health check, NemoClaw prints this log command:
+
+   ```bash
+   journalctl --user --unit nemoclaw-openshell-gateway --no-pager --lines=200
+   ```
+
    The tarball unit is under `$XDG_CONFIG_HOME/systemd/user`, or `~/.config/systemd/user` when `XDG_CONFIG_HOME` is not absolute.
    It starts with your user session; NemoClaw does not enable lingering.
+   If a managed service fails inspection, startup, or its health check, NemoClaw attempts the standalone fallback on either platform.
+   The standalone gateway starts only after NemoClaw verifies exclusive ownership of the gateway port.
+   The fallback does not bypass managed-service trust validation or unsafe environment configuration.
+   These conditions remain hard failures:
+
+   - Homebrew formula identity query, metadata, or official-tap validation errors
+   - Foreign or symlinked systemd units, or an untrusted systemd executable identity
+   - An invalid `DOCKER_HOST` or a symlinked service environment file
+
    Without Homebrew on macOS, or without a reachable systemd user manager on Linux, continue with the standalone recovery step below.
 
 1. Check sandbox state.
@@ -9897,6 +9971,69 @@ Run `openshell sandbox list` on the host to check the underlying sandbox state.
 <AgentOnly variant="deepagents">
 
 ## Deep Agents
+
+### Deep Agents Config Lock Failure Recovery
+
+A `CRITICAL` Deep Agents config-lock diagnostic can report `fail-closed containment=`, `rollback failed`, or that the lock rollback could not restore the trusted posture.
+A containment result identifies one of two confirmed postures or an incomplete containment attempt.
+A `rollback failed` result or lock-rollback diagnostic does not confirm containment.
+Both rollback diagnostics mean NemoClaw could not restore or confirm the original trusted posture.
+
+- **Config-root posture** (`fail-closed containment=config-root`) means NemoClaw installed fresh `0444 root:root` config and hash inodes.
+  NemoClaw also confirmed `0500 root:root` on `/sandbox/.deepagents` and `1775 root:sandbox` on `/sandbox`.
+- **Sandbox-parent posture** (`fail-closed containment=sandbox-parent`) means NemoClaw confirmed `0700 root:root` on `/sandbox`.
+  NemoClaw uses this posture when it cannot confirm the complete config-root posture.
+- `fail-closed containment=incomplete` means NemoClaw could not confirm either complete posture.
+
+Preserve the complete `CRITICAL` diagnostic.
+Do not retry `shields up`.
+Do not run `chmod`, `chown`, or another repair inside the sandbox.
+A confirmed containment posture removes the sandbox identity's access to the Deep Agents configuration.
+An incomplete containment result, a `rollback failed` result, or a lock-rollback diagnostic does not establish a trustworthy boundary from which to accept the current bytes.
+An ordinary `rebuild` cannot turn the current state into a trustworthy snapshot.
+
+If you have a trusted host-side snapshot from before the failure, list the snapshots and record its selector:
+
+```bash
+$$nemoclaw <name> snapshot list
+```
+
+<Warning>
+Destroying the sandbox permanently discards state newer than the selected snapshot.
+Confirm that the trusted host-side snapshot exists before you destroy the sandbox.
+</Warning>
+
+Destroy the sandbox, re-onboard the same name from trusted host configuration, and restore the snapshot:
+
+```bash
+$$nemoclaw <name> destroy
+$$nemoclaw onboard --name <name> --agent dcode
+$$nemoclaw <name> snapshot restore <selector>
+```
+
+For snapshot contents and selector rules, refer to [Create and Restore Snapshots](../manage-sandboxes/state-and-backups/create-and-restore-snapshots).
+
+If no trusted snapshot exists and you do not need to preserve the current state, recreate the sandbox from host-side onboarding configuration.
+
+<Warning>
+This recreation permanently discards the current sandbox state.
+Continue only if you accept that loss.
+</Warning>
+
+```bash
+$$nemoclaw <name> destroy
+$$nemoclaw onboard --name <name> --agent dcode
+```
+
+After either recovery path, verify the recreated sandbox from the host:
+
+```bash
+$$nemoclaw <name> status
+$$nemoclaw <name> shields status
+```
+
+Continue only when `status` identifies the expected Deep Agents sandbox and `shields status` returns without a `CRITICAL` or corrupt-state diagnostic.
+Then retry the original `shields up` operation.
 
 ### `dcode status` reports a stale inference route
 
@@ -10664,7 +10801,9 @@ Check the gateway logs and blocked-request output with `openshell term`, and loo
 
 ### Messaging bridge appears running but no messages arrive
 
-Bot tokens for Telegram (`getUpdates`), Discord (gateway), and Slack (Socket Mode) only allow one active consumer per token. If two NemoClaw sandboxes are configured with the same bot token, each one kicks the other off its polling connection and neither delivers messages. `$$nemoclaw status` still reports the bridge as running because the gateway process itself is alive.
+Telegram `getUpdates` allows only one active poller per bot token.
+Reusing Discord or Slack credentials can create competing gateway or Socket Mode sessions and unreliable message delivery.
+`$$nemoclaw status` can still report a bridge as running because the gateway process itself is alive.
 
 For Telegram group chats, first check BotFather privacy mode.
 New Telegram bots default to privacy mode enabled, which prevents group messages from reaching `getUpdates` even when the user mentions the bot.
@@ -10694,10 +10833,13 @@ A repeating line like the following confirms the conflict:
 ```
 
 To fix, run `$$nemoclaw <other-sandbox> destroy` on whichever sandbox should stop polling, or rerun onboarding on it with the channel disabled.
-The same fail-closed policy applies to every supported messaging channel.
-Onboarding, rebuild, and `channels add` abort on a conflict or an incomplete required check, including unavailable credential hashes.
+NemoClaw checks only the sandboxes in the selected OpenShell gateway's sandbox registry.
+It cannot detect or prevent Slack credential reuse across independent OpenShell gateways.
+Run only one active Slack sandbox on each OpenShell gateway.
+Use distinct Slack bot and app tokens for Slack sandboxes on different OpenShell gateways.
+Within the selected registry, onboarding, rebuild, and `channels add` abort on a conflict or an incomplete required check, including unavailable credential hashes.
 Only `channels add <channel> --force` can accept the duplicate-consumer or shared-resource risk.
-Sandboxes created before these checks were added may still be in a conflict loop.
+Sandboxes created before these checks were added, or managed by independent gateways, may still have a conflict without a NemoClaw warning.
 
 </AgentOnly>
 
@@ -11136,7 +11278,7 @@ Identify the matching path before applying the recovery guidance.
 | --- | --- | --- |
 | Native `--gpu` is rejected, host runtime evidence identifies GPU injection failure, or an explicit driver proof fails and host configuration confirms no GPU attachment | Ordinary Linux native attempt | The default native-only route stops. Retry with `NEMOCLAW_DOCKER_GPU_PATCH=fallback` only if you explicitly accept one bounded compatibility retry, or use `=1` to select compatibility before creation. |
 | `Cleanup could not be proven safe` | Native-to-compatibility handoff | Run the printed sandbox deletion command, verify both the gateway row and OpenShell-managed Docker containers labeled for that sandbox are absent, then rerun onboarding. |
-| The patched container exits or the compatibility attempt fails | Compatibility recreation | Inspect the saved diagnostics, repair the NVIDIA Container Toolkit/CDI configuration, clean up the failed sandbox, and rerun onboarding. |
+| The patched container exits or the compatibility attempt fails | Compatibility recreation | Inspect the saved diagnostics and the rollback outcome, then repair the NVIDIA Container Toolkit/CDI configuration. Keep the sandbox when the pre-patch container was restored; delete it only after inspection confirms restoration failed. Then rerun onboarding. |
 | A recreated container inherits only a loopback DNS stub and no usable upstream | Compatibility DNS fallback | Repair the host's `systemd-resolved` upstream configuration, then rerun onboarding. |
 
 For bridge-networked compatibility recreation without an explicit container DNS setting, NemoClaw selects a usable IPv4 upstream from `systemd-resolved` and probes that exact `--dns` path before it stops the original container.
@@ -11182,20 +11324,26 @@ Use `NEMOCLAW_DOCKER_GPU_PATCH=0` only for troubleshooting because it bypasses t
 
 #### Common compatibility-path recovery
 
-If the compatibility attempt fails on any host, onboarding leaves the failed sandbox and diagnostic bundle in place so you can inspect the OpenShell and Docker state.
+After compatibility recreation starts, onboarding keeps the pre-patch container as a rollback backup until the replacement passes the Ready, direct GPU, and applicable local-inference checks.
+If a later check fails, onboarding prints failure diagnostics and attempts to restore the pre-patch container before it exits.
+When rollback succeeds, the pre-patch sandbox remains available.
+When rollback fails, onboarding reports that the pre-patch container was not restored and prints container-cleanup guidance.
+GPU-proof diagnostics are captured before rollback and can print that guidance before the final container state is known.
+Inspect the sandbox and its labeled Docker containers before running a deletion command.
 
 <Note>
 Starting with NemoClaw v0.0.43, the standard installer handles the `/proc/<pid>/task/<tid>/comm` permission case during this patch path.
 If an older release fails direct GPU proof with that path and `Permission denied`, upgrade NemoClaw and rerun onboarding.
 </Note>
 
-The output includes a cleanup command such as:
+When inspection confirms that the failed sandbox remains, delete it with a command such as:
 
 ```bash
 openshell sandbox delete <sandbox-name>
 ```
 
-Fix the NVIDIA Container Toolkit or CDI configuration reported in the diagnostics, clean up the failed sandbox, then rerun onboarding.
+Fix the NVIDIA Container Toolkit or CDI configuration reported in the diagnostics.
+Run the deletion command only after confirming that the pre-patch sandbox was not restored, then rerun onboarding.
 If you do not need GPU access inside the sandbox, rerun with `--no-sandbox-gpu`.
 
 If sandbox creation fails with `CDI device injection failed: unresolvable CDI devices nvidia.com/gpu=all`, the OpenShell gateway tried `docker create --device nvidia.com/gpu=all` and Docker could not resolve the CDI spec.
@@ -13557,13 +13705,16 @@ No live E2E, sandbox build, migration, rollback, compatibility shim, or changelo
 
 Review date: 2026-07-30
 
+Issue `#8087` review date: August 2, 2026.
+
 ## Decision
 
 Pin the NemoClaw Hermes runtime to the published, non-draft, non-prerelease `v2026.7.20` release, whose package version is `0.19.0`.
 This replaces `v2026.7.1` and covers all three adjacent stable release ranges, including the four-component `v2026.7.7.2` tag.
 
 The upgrade is acceptable only with the downstream migrations recorded in this review.
-NemoClaw preserves manual command approval instead of inheriting Hermes 0.19's new smart-approval default, emits configuration schema 33, recognizes the new one-shot flags and `console` subcommand, and backs up the new default-profile cron and Discord recovery SQLite ledgers online.
+NemoClaw preserves manual command approval instead of inheriting Hermes 0.19's new smart-approval default and emits configuration schema 33.
+It uses a versioned CLI adapter for the two required translations, passes unrelated commands through, and backs up the new default-profile cron and Discord recovery SQLite ledgers online.
 Named-profile copies remain inside the raw `profiles` directory capture under the existing generic snapshot limitation; this bounded residual is recorded rather than described as online backup.
 The gateway-runtime-metadata, session-preview, Langfuse-placeholder, managed-light-skin, provider-routing, and resumed-one-shot workarounds remain necessary against the target source and retain exact-shape guards.
 
@@ -13641,8 +13792,19 @@ The image build creates a real fresh named profile, proves it remains config-les
 Hermes configuration schema moves from 32 to 33.
 The final image runs `hermes doctor --fix` before writing NemoClaw's generated configuration, so the generator and its hash contract now emit schema 33 directly.
 
-The target CLI adds the `console` subcommand, the value flag `--usage-file`, and the boolean flag `--no-restore-cwd`; this migration also closes the wrapper's pre-existing `--safe-mode` allowlist gap. Hermes 0.19 writes `--usage-file` reports only on its native one-shot path, so the NemoClaw wrapper rejects the narrower resumed/continued one-shot combination that it must translate to `chat --query`; accepting that combination would silently omit the requested report.
-The resumed-one-shot wrapper now recognizes those boundaries, global profile selectors, bare continue, and Hermes' exact preprocessing boundary set for unquoted multi-word session names across all four continue/resume spellings before translating session arguments, and still fails closed for an unknown future shape.
+The versioned CLI adapter records two managed command forms:
+
+- top-level resumed or continued one-shot invocations that NemoClaw translates to `chat --query`; and
+- invocations that combine separate provider and model flags.
+
+All other commands pass through without a duplicate upstream subcommand inventory.
+The image build validates each managed option against Hermes' machine-readable preparse, top-level, and `chat` parser metadata.
+Public help probes remain runtime evidence for the owned forms, not the compatibility authority.
+The wrapper parses each managed invocation once and verifies that the installed CLI is Hermes 0.19.0 before translation.
+Hermes 0.19 writes `--usage-file` reports only on its native one-shot path.
+The wrapper rejects a resumed or continued one-shot invocation with `--usage-file` because translation would omit the report.
+The wrapper also rejects separate provider and model flags after an unquoted multi-word session name because a later positional can be an upstream command.
+An invalid adapter, an unknown adapter version, or a Hermes CLI version mismatch fails closed before a translated command runs.
 
 The target source still contains all six session-list queries whose preview must reflect the latest resumed or continued one-shot turn.
 The session-preview patch remains exact-count guarded.
@@ -13729,6 +13891,17 @@ The WhatsApp bridge moves Baileys from a Git commit dependency to integrity-boun
 This removes both Git resolutions and improves reproducibility.
 The current RC9 bridge graph reports one critical, three high, two medium, and one low affected package entry.
 The RC13 transition removes the critical `GHSA-qvv5-jq5g-4cgg` protocol-message spoof and state-corruption exposure plus every high and medium entry, leaving only one low `body-parser` finding in the target bridge.
+NemoClaw's issue `#8087` patch adds the following integrity-bound production graph so the Baileys socket and fetch paths use the injected `HTTPS_PROXY`.
+
+| Package | Integrity | Declared license |
+| --- | --- | --- |
+| `https-proxy-agent@7.0.6` | `sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==` | MIT |
+| `agent-base@7.1.4` | `sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==` | MIT |
+| `debug@4.4.3` | `sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==` | MIT |
+| `ms@2.1.3` | `sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==` | MIT |
+
+The patched bridge production audit reports zero high or critical findings and retains the unrelated low `body-parser` finding.
+The added packages declare MIT in the patched lock, so the downstream patch adds no restrictive license.
 The `sharp` move from `0.34.5` to `0.35.3` and the native bridge still require amd64 and arm64 pairing, send, and receive proof.
 
 No new copyleft or restrictive license enters the selected graph.
@@ -13743,7 +13916,7 @@ Artifact scanning must therefore inspect the assembled image and record the down
 | `HERMES-1` | High | Pin and test | The verified target tag, commit, source SHA-256, CalVer-to-semver mapping, registry cross-check, and producer runs are recorded, while final source-pin coherence still needs a test. |
 | `HERMES-2` | High | Migrate and test | `approvals.mode` is explicitly `manual`, and generated-config tests reject inheritance of smart authorization. |
 | `HERMES-3` | High | Migrate and test | Generated configuration and the doctor hash contract use schema 33 before runtime startup. |
-| `HERMES-4` | High | Migrate and test | Wrapper routing covers `console`, `--no-restore-cwd`, and `--safe-mode`; it preserves profile selectors, bare continue, and unquoted multi-word names against Hermes' exact coalescing boundaries across all four continue/resume spellings, and recognizes and explicitly rejects `--usage-file` only when the resumed one-shot append workaround would otherwise discard the report. The final image compares the wrapper's private session-name boundary AST to the pinned upstream coalescer instead of deriving it from public help. Unknown future versions remain guarded. |
+| `HERMES-4` | High | Migrate and test | The versioned adapter owns only top-level resumed or continued one-shot translation and separate provider and model composition. The image build validates its managed options against Hermes' machine-readable preparse, top-level, and `chat` parser metadata; public help remains runtime evidence. The wrapper reads session-name command boundaries from Hermes' installed coalescer source instead of copying its private set, parses a managed invocation once, rejects the unsupported `--usage-file` combination and ambiguous unquoted multi-word session names, and verifies Hermes 0.19.0 before translation. Unrelated commands pass through without a subcommand inventory. Each translation records its upstream source-fix constraint and removal condition. Invalid adapters, unknown adapter versions, incompatible upstream coalescer source shapes, and upstream version mismatches fail closed. |
 | `HERMES-5` | Medium | Guard and test | Every retained compatibility patch was compared with target source, retargeted, hash-bound, and exercised by a focused regression or image smoke probe. |
 | `HERMES-6` | High | Migrate, guard, test, and runtime-proof | Default-profile cron and Discord ledgers use online SQLite backup with nested-parent tests. The cron execution ledger is exact-source relocated to `runtime/cron-executions.db`, and Hermes quick snapshots follow the same path. The `cron` directory remains `root:sandbox` mode `0755` during Shields up, and its cron job definitions remain non-writable to the `sandbox` group. Descriptor-safe startup repair maintains only the writable runtime and gateway parents as `gateway:sandbox` `2770`. Gateway-to-sandbox-to-gateway image probes cover both ledgers; cron's live source is group-readable `0640` and its restored replacement is `0660`, while Discord additionally needs its guarded `0660` upstream chmod patch. Managed restart and rebuild persistence remain live E2E gates. |
 | `HERMES-7` | High | Test and runtime-proof | The target's `mcp__server__tool` names are compatible by source inspection, while managed-tool discovery and invocation remain a live E2E gate. |
@@ -13751,7 +13924,7 @@ Artifact scanning must therefore inspect the assembled image and record the down
 | `HERMES-9` | High | Pin and test | The selected Python delta adds no advisory regression, and the affected multipart parser is replaced with attested `0.0.32` plus hash and runtime probes. |
 | `HERMES-10` | High | Pin and test | The exact-source patch updates Hermes metadata and its frozen lock together, selects `cryptography==48.0.1`, `mcp==1.28.1`, `Pillow==12.3.0`, `starlette==1.3.1`, and `tornado==6.5.7`, and fails the image build on dependency inconsistency or installed-version drift. The base image separately checksum-pins Node.js `24.18.1` and asserts uv `0.11.33`. |
 | `HERMES-11` | High | Migrate, test, and runtime-proof | Root npm audit reports zero production findings and the WhatsApp bridge removes its current critical, high, and medium advisory entries, while both architectures still require native bridge and message-path evidence. |
-| `HERMES-12` | High | Pin and runtime-proof | Trusted workflow run `30411365314` published the exact source commit as amd64 and arm64 manifests under OCI index `sha256:c4aee5c9b087840da6e1eb2127fef9f4a2eab0862992008d1741dc09f632422e`. The final Dockerfile pins that digest. Before the cron ledger relocation, the pinned arm64 final image passed all 62 BuildKit steps, including installed-version, patch, config, and cross-identity SQLite probes. The head commit must build the three added relocation layers and changed cron probe before protected runtime E2E. |
+| `HERMES-12` | High | Pin and runtime-proof | Trusted workflow run `30779271312`, attempt 1, built source commit `340c47857596e7cc347541a0b32fe9e24f201bcd` and published amd64 digest `sha256:faf96b115049c2ae3e7c10be66ae4916cd05ff72900ef5b0642f9f90b6dd834d` plus arm64 digest `sha256:61a7356020832392692347d2510fe8817c8a9f3ff3d5c050fbcec6182787eb4d` under OCI index `sha256:956c3d0c812ee6caa56f3b6e307819925d920604adcf73c4a9e6229788967634`. The final Dockerfile pins that index. Both base-image builds passed the exact-source patch guard, locked bridge install, bridge-to-Baileys option assertions, and the controlled-proxy WebSocket `CONNECT` regression; live final-image WhatsApp evidence remains under `HERMES-22`. |
 | `HERMES-13` | Medium | Document bounded residual | Static `state_files` entries online-back up the default profile only. Cron or Discord ledgers created by a process launched under `profiles/<name>` remain in the raw `profiles` tar capture and can be inconsistent during a concurrent snapshot. Dynamic profile-local SQLite discovery is generic snapshot work outside this upgrade PR. |
 | `HERMES-14` | High | Migrate and test | The browser evaluation denylist changed from default-on to opt-in. Generated configuration explicitly writes `browser.restrict_evaluate: true`, including when managed browser-gateway settings are merged, so the upgrade does not broaden page-context access. |
 | `HERMES-15` | Medium | Migrate and test | The omitted gateway session-reset policy changed from bounded daily and idle expiry to no automatic reset. Generated configuration explicitly writes the complete outgoing reset and notification policy to preserve the retention bound without inheriting mutable dependency defaults. |
@@ -13761,6 +13934,7 @@ Artifact scanning must therefore inspect the assembled image and record the down
 | `HERMES-19` | High | Migrate and test | The dashboard has an isolated `HERMES_HOME`, so its allowlisted routing and policy mirror is a startup security boundary. A missing gateway config remains a benign cold-start no-op, while malformed, non-mapping, unreadable, or routing-free source config and invalid existing dashboard config fail startup without changing stale dashboard bytes. Sanitized errors never include raw PyYAML parser context or credential-bearing source lines. |
 | `HERMES-20` | High | Retarget, guard, test, and runtime-proof | Base SHA `fa96c91f` adds a Hermes 0.18 gateway-runtime-metadata patch whose central helper shape does not match Hermes 0.19. The retargeted exact-source guard preserves `_get_process_hermes_home()` while moving the managed default gateway's central PID, lock, and status helpers below `runtime`, hash-binds the patcher, and adds unit and final-image probes. The managed-gateway restart E2E remains the PR SHA runtime gate. |
 | `HERMES-21` | Medium | Document inherited bounded residual | The base workaround does not retarget direct upstream `--replace` cleanup, planned-stop/takeover markers, named-profile and multiplexer readers, service/boot/web/Windows consumers, or upstream backup and Docker paths. With Shields up, those direct paths can fail or observe stale state, but the same limitation exists on base SHA `fa96c91f`; the 0.19 selector retarget adds no regression to NemoClaw's supported host-managed default-gateway lifecycle. A complete relocation needs separate exact-source patches and runtime proof for every explicit consumer. |
+| `HERMES-22` | High | Patch, pin, test, and runtime-proof | Issue `#8087` showed that the Hermes WhatsApp WebSocket ignored the injected `HTTPS_PROXY`, attempted direct DNS resolution, and failed before OpenShell produced an Open Cybersecurity Schema Framework (OCSF) record. NemoClaw exact-source patches both Baileys proxy fields, locks the added proxy dependency graph, and fails the base-image build when the patch drifts, a bridge-level `makeWASocket` mock does not receive the same proxy agent as `agent` and `fetchAgent`, or the pinned Baileys WebSocket transport does not send a `CONNECT web.whatsapp.com:443` request to a controlled HTTPS proxy. The mock also proves that both options remain unset without `HTTPS_PROXY`. The exact PR head still requires live Hermes WhatsApp E2E evidence for QR pairing, connected status, and audited WebSocket traffic through the OpenShell proxy. |
 
 Unresolved upgrade-created high-impact concerns: `0`.
 One Medium upgrade-created instance of the pre-existing named-profile raw-capture limitation and one inherited Medium direct-runtime-consumer limitation remain explicitly accepted for this upgrade scope.
@@ -13778,6 +13952,7 @@ Completed local evidence:
 - target source comparison for configuration, wrapper, patches, state, MCP, messaging, and secret boundaries;
 - focused generated-config, wrapper, patch, default-profile state-manifest, and skill contract tests;
 - Python 3.13 multipart compatibility probes;
+- a controlled-proxy regression proving the bridge-provided agent carries the pinned Baileys WebSocket `CONNECT` request;
 - a no-cache arm64 Hermes base-image build;
 - trusted amd64 and arm64 branch-image publication plus immutable OCI-index inspection; and
 - a 62-step arm64 final-image build from the pinned pre-relocation branch digest, including private wrapper-boundary and cross-identity SQLite probes.
@@ -14332,6 +14507,8 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
 
 Review date: 2026-07-21
 
+Last updated: 2026-08-03
+
 ## Decision
 
 Pin the production OpenClaw runtime and matching official plugins to the
@@ -14344,10 +14521,16 @@ the exact plugin graph reports no vulnerabilities after that update.
 
 The production OpenClaw install uses the authoritative committed lock at
 `agents/openclaw/openclaw-runtime/package-lock.json`, with SHA-256
-`82489f62febb12da52833c0b1f7f6969f7e21a098c565ef1f91342b1e5e32d88`.
+`759b31779f40867f35f15065b582eb1d3efb8fddb1fe43c207507c905fa2a421`.
 NemoClaw derives that lock from the SRI-verified `openclaw@2026.7.1` archive
-after replacing the reviewed affected `brace-expansion@5.0.7` and
-`fast-uri@3.1.2` resolutions with `5.0.8` and `3.1.4`.
+after applying the reviewed dependency remediation.
+The remediation replaces `brace-expansion@5.0.7` with `5.0.9`.
+It also replaces `fast-uri@3.1.2` with `3.1.5` and `ip-address@10.2.0` with
+`10.3.1` in the OpenClaw core graph.
+The same reviewed `undici@8.10.0` replacement applies to the OpenClaw core
+dependency and the Discord manifest, shrinkwrap, and bundled package tree.
+The committed mcporter lock also selects `fast-uri@3.1.5` and
+`ip-address@10.3.1`.
 Image builds verify the lock digest and installed production graph before they
 expose the OpenClaw binary.
 
@@ -14366,12 +14549,14 @@ whose amd64 config reports Node `22.23.1`.
 - `openclaw@2026.7.1`
   - `sha512-ge/Xss99CHAjPL/ikmH/UFoiOrjcxDB4sW3y9mhyCD+dYW3wzV7TKbAVdkrXFgAG2d2BjpJofP97zUZ+umxo8g==`
   - `https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1.tgz`
+  - remediated package tree: `sha512-ugtX/U1jNS+ZlZqEXa+Y9nN+wlhPxeZJrx6tJZFLcGspWPFhsC5qOjTkzBbOda9lEZF6TWKt6wU9m9p2tidqdQ==`
 - `@openclaw/diagnostics-otel@2026.7.1`
   - `sha512-XXhMifYWTgoR6yFN4T3JkHxdPvQCe8k1cNZjVIgXNmk1svCdBWuALfQQicmpemlmWwauIQuHYgBURY6k63e+rw==`
 - `@openclaw/brave-plugin@2026.7.1`
   - `sha512-7Z+GZ/6K6a8LlkTsWVnAZ1hv8EarORzHQvFHD7ekcg033FGJOXYPEZSbvvE3qR9vM+vnoZplNjMZ7vFMRcvQgw==`
 - `@openclaw/discord@2026.7.1`
   - `sha512-tZfdC1YA8oVLvc2BK1w0F6rUljS5ugCOp2uWe0vPsbG1fbzVVIO4V32RoqZznGHe5u2R9u4n1aV5Z/qa1m2oFg==`
+  - remediated package tree: `sha512-w+F8FrRl0wPd0EN2RnLyu6yfixel7BT8Iex4wLLQDvfIac8rLhuksNpFU4uZa8W9wXgh47hguq0F9NSN0BZfOQ==`
 - `@openclaw/slack@2026.7.1`
   - `sha512-dwVGEVCmoTQrOIeZaSCIOPg8pT7hB883QQEXdp9EZUDzTGuvSc+KxH2iERSOV/59hROQctYdcobGn/vdB1H4XA==`
   - remediated package tree: `sha512-4ThnsNS+yBlFSkTaQn2xosxrDu1s0vrxcqka5QqFj+8dCEaTa9JVLRgNniYV/QNhO53wc7a2R5oQFElzYspT2w==`
@@ -14388,23 +14573,51 @@ whose amd64 config reports Node `22.23.1`.
 - `tar@7.5.20` (NemoClaw plugin direct dependency)
   - `sha512-9FcyK4PA6+WbzlTM9WhQm6vB5W7cP7dUiPsv1g7YDwEQnQ1CGpK3MGlKk/ITVWMk05kHZuBhmVhiv8LZoy/PFQ==`
   - `https://registry.npmjs.org/tar/-/tar-7.5.20.tgz`
-- `brace-expansion@5.0.8` (OpenClaw locked-runtime remediation)
-  - `sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg==`
-  - `https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz`
-- `fast-uri@3.1.4` (OpenClaw and mcporter locked-runtime remediation)
-  - `sha512-8JnbkQ4juDyvYs4mgFGQqg4yCYtFDtUtmp2QIQq11ZZe5CFQ5wcqm1rqDgAh/QdMySuBnPzMUiJUNZG5N/AiQw==`
-  - `https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.4.tgz`
+- `brace-expansion@5.0.9` (OpenClaw locked-runtime remediation)
+  - `sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==`
+  - `https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz`
+- `fast-uri@3.1.5` (OpenClaw and mcporter locked-runtime remediation)
+  - `sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==`
+  - `https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.5.tgz`
+  - `BSD-3-Clause`; no dependencies
+- `undici@8.10.0` (OpenClaw core and Discord remediation)
+  - `sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==`
+  - `https://registry.npmjs.org/undici/-/undici-8.10.0.tgz`
+  - `MIT`; no dependencies; Node `>=22.19.0`
+- `ip-address@10.3.1` (OpenClaw and mcporter locked-runtime remediation)
+  - `sha512-1e9d3kb97NHJTIJDZW9rKqW2h6+dFa50Dy0fpPSMQp2ADje5gvKsXmdiK6dwY5t76TaTt5+P5N1Y/LoToIxP6g==`
+  - `https://registry.npmjs.org/ip-address/-/ip-address-10.3.1.tgz`
+  - `MIT`; no dependencies; Node `>= 12`
+  - annotated source tag commit: `be7e626c0d49fccb518899f520a3fb64ee189741`; unsigned tag
+- `mcporter@0.7.3` committed runtime lock
+  - SHA-256: `962dee34f6b0a493521d1619d1cf030e2630cbdfce8bf0598217202f57078793`
+
+`fast-uri@3.1.5` has a valid npm registry signature and no registry attestation.
+`undici@8.10.0` has a valid npm registry signature and SLSA provenance.
+`ip-address@10.3.1` has two valid npm registry signatures and SLSA provenance.
 
 ## Audit result and temporary dependency remediations
 
 The reviewed audit materializes three production-compatible boundaries: the
 remediated reviewed-archive graph, the committed OpenClaw runtime lock, and the
-committed mcporter runtime lock. A real registry-backed run reports `0` high
-and `0` critical vulnerabilities for all three boundaries, and npm registry
-signature verification passes for both locked graphs. The critical `tar`
-finding that blocked the previous pin and the high Jaeger,
-`brace-expansion`, and `fast-uri` findings are gone. Lower-severity findings
-remain visible below the configured `high` threshold.
+committed mcporter runtime lock.
+The final registry-backed audit completed successfully under Node `22.23.1`.
+Its exact results are:
+
+- Reviewed archive graph: `info=0`, `low=0`, `moderate=6`, `high=0`,
+  `critical=0`, `clean`.
+- OpenClaw locked runtime: `info=0`, `low=0`, `moderate=7`, `high=0`,
+  `critical=0`, `clean`.
+- mcporter runtime: `info=0`, `low=0`, `moderate=1`, `high=0`, `critical=0`,
+  `clean`.
+
+Registry signature checks completed within the successful audit.
+The critical `tar` finding that blocked the previous pin and the high Jaeger,
+`brace-expansion`, `fast-uri`, `undici`, and `ip-address` findings are gone.
+All three post-remediation boundaries report `0` high and `0` critical
+findings.
+Lower-severity findings remain visible below the configured `high`
+threshold.
 
 The independently installed `nemoclaw/` plugin graph reports `0`
 vulnerabilities after resolving its direct `tar` dependency to `7.5.20`.
@@ -14421,28 +14634,91 @@ major-version compatibility boundary.
 
 OpenClaw's `minimatch@10.2.5` edge originally resolved
 `brace-expansion@5.0.7`, which is affected by `GHSA-mh99-v99m-4gvg`.
-The reviewed OpenClaw remediation selects `5.0.8`, retains the declared
+The initial remediation selected `5.0.8` for that advisory.
+`GHSA-rgw5-rvv9-x895` affects `brace-expansion` versions `>=4.0.0 <5.0.9`,
+and `5.0.9` fixes the advisory.
+The current OpenClaw remediation selects `5.0.9`, retains the declared
 `balanced-match@^4.0.2` dependency shape, and fails if the upstream shrinkwrap
 or replacement archive identity changes.
 
 The AJV graphs in OpenClaw and mcporter request `fast-uri@^3.0.1`.
 The reviewed upstream OpenClaw shrinkwrap resolves `3.1.2`, and
 `GHSA-v2hh-gcrm-f6hx` affects releases through `3.1.3`.
-Both committed runtime locks select the first compatible release outside that
-range, `3.1.4`. Image assembly reports lower-severity findings and blocks
-unaccepted high or critical findings through the empty-by-default audit
-exception registry. Signature verification and the exact committed locks
-remain mandatory.
+The initial remediation selected `3.1.4` for that advisory.
+The high-severity `GHSA-7p8r-x3mc-p8w7` later affected that release.
+Both committed runtime locks now select reviewed `3.1.5`.
+
+The OpenClaw core package manifest and shrinkwrap directly pin `undici@8.5.0`.
+The published `@openclaw/discord@2026.7.1` archive also pins that version in
+its package manifest and shrinkwrap.
+Discord lists `undici` in `bundledDependencies` and contains bundled
+`node_modules/undici@8.5.0`.
+`GHSA-8xcm-r25x-g524` and `GHSA-4cwx-7wf7-3272` affect releases
+`>=8.0.0 <8.9.0`.
+The current remediation selects the same reviewed `8.10.0` archive for both
+packages.
+The replacement retains the no-dependency package shape and Node `>=22.19.0`
+engine requirement.
+For Discord, the remediation fails closed unless the manifest, shrinkwrap, and
+bundled package identities match the reviewed `undici@8.5.0` boundary.
+It updates the manifest and shrinkwrap and replaces the complete bundled
+package tree with the verified `undici@8.10.0` archive.
+
+The upstream `undici@8.10.0` release CI reported one flaky Node 24 failure in
+`test/http2-request-never-settles.js`: 1,502 tests passed, and one failed.
+The Node 22 `no-intl` and `no-ssl` jobs, type checks, lint, fuzz, release, and
+Scorecard jobs passed.
+NemoClaw's focused remediation and locked-install tests, audit validation,
+registry-signature verification, and provenance verification provide
+compensating evidence for the reviewed archive.
+
+Undici 8.10.0 forwards plain HTTP targets through a configured HTTP or HTTPS proxy by default.
+It sends an HTTP/1.1 absolute-form request target unless `proxyTunnel` is enabled.
+Undici 8.5.0 used CONNECT by default for the same target.
+NemoClaw's managed image registry requests use HTTPS, so they continue to use CONNECT.
+The proxy fixture returns `200` for an ordinary HTTP request and `502` for CONNECT.
+It verifies the body, method, host, and full target URL for forwarding.
+
+The OpenClaw core and mcporter graphs resolve `express-rate-limit@8.5.2` and
+its declared `ip-address@^10.2.0` dependency to affected `10.2.0`.
+The high-severity `GHSA-mwp4-54f8-5fhr` affects releases through `10.3.0`
+because leading-zero IPv4 inputs can cross SSRF and trust boundaries through
+decimal or octal interpretation differences.
+Version `10.3.1` also contains the fixes for `GHSA-4xrf-jv44-h6hh` and
+`GHSA-22jq-vg5j-6vgg`.
+Both committed locks select the first release outside all three affected
+boundaries, `10.3.1`, while preserving the declared `^10.2.0` consumer range.
+
+The full non-shallow `v10.2.0..v10.3.1` source range was reviewed.
+The change adds correct host-only classification and rejects leading-zero IPv4
+inputs.
+The annotated `v10.3.1` tag resolves to commit
+`be7e626c0d49fccb518899f520a3fb64ee189741` and is unsigned.
+Release check `30150298200` succeeded.
+Its trusted OpenID Connect (OIDC) publish workflow ran `npm ci` and `npm test`
+before publication.
+The focused repository tests pass 103/103, and the bundle-specific unit suite
+passes 16/16.
+Both committed locks report no problems through `npm ls`.
+`npm run build:cli`, `npm run typecheck:cli`, and
+`npm run checks:repository` pass.
+
+Image assembly reports lower-severity findings and blocks high or critical
+findings unless they match the empty-by-default audit exception registry.
+Signature verification and the exact committed locks remain mandatory.
 
 The OpenClaw audit first applies the same fail-closed remediation to the
 SRI-verified reviewed archive, then independently installs and verifies the
 committed lock. The audit configuration pins the official npm registry origin,
 package identity, tarball URL, SRI, and lock SHA-256. It rejects repository
 path escapes, lock drift, registry-origin drift, or an installed graph that
-does not match the lock before evaluating advisories. Remove the two OpenClaw
-core replacements only after a supported OpenClaw archive publishes both
-corrected transitive resolutions and the regenerated lock, installed-graph
-verification, audit, and signature checks all pass.
+does not match the lock before evaluating advisories. Remove the OpenClaw core
+replacements only after a supported OpenClaw archive publishes every corrected
+dependency identity and the regenerated lock, installed-graph verification,
+audit, and signature checks all pass.
+Remove the Discord `undici` replacement only after a supported Discord plugin
+archive publishes the corrected identity in its manifest, shrinkwrap, and
+bundled package tree and passes the same audit, signature, and runtime checks.
 
 The published Slack and Microsoft Teams plugin archives bundle `axios@1.16.0`.
 That version is in the affected range for the newly disclosed Axios
@@ -14489,12 +14765,17 @@ The child-process probe confirms these results:
 `scripts/lib/openclaw-npm-remediation.mts` verifies each original package and
 replacement package identities before it writes the archive. It rejects an
 upstream graph that no longer resolves the reviewed Axios, Jaeger,
-`brace-expansion`, or `fast-uri` source versions and dependency shapes. It then
-verifies the deterministic remediated package-tree integrity before
-installation or lock generation. This canonical tree digest is independent of
-npm-generated tar metadata, which can vary between npm patch releases without
-changing package contents. The production plugin installer, OpenClaw lock
-workflow, and `reviewed-npm-audit` use this same function.
+`brace-expansion`, `fast-uri`, `undici`, or `ip-address` source versions and
+dependency shapes.
+For Discord, it requires the package manifest dependency and
+`bundledDependencies`, shrinkwrap, and bundled package tree to retain the
+reviewed `undici@8.5.0` identities before replacement.
+It then verifies the deterministic remediated package-tree integrity before
+installation or lock generation.
+This canonical tree digest is independent of npm-generated tar metadata, which
+can vary between npm patch releases without changing package contents.
+The production plugin installer, OpenClaw lock workflow, and
+`reviewed-npm-audit` use this same function.
 The tree hash opens each regular file without following symbolic links and
 validates the opened descriptor before it reads the content. This keeps the
 metadata and content checks bound to the same file.
@@ -14611,6 +14892,48 @@ A post-state mismatch reports failure and does not treat the client credential
 as synchronized.
 It does not roll back a canonical server transition that OpenClaw already
 persisted.
+
+## Transient Remote MCP Startup Recovery
+
+`scripts/patch-openclaw-mcp-reliability.mts` is a version-scoped, fail-closed compatibility patch for issue #7958.
+In `2026.7.1`, the compiled `bundle-mcp` session runtime turns one failed remote server startup into an empty tool set plus catalog diagnostics, caches that degraded catalog for the whole session, and never retries.
+A single transient Streamable HTTP reset or MCP request timeout therefore removes an expected integration until the user starts a new session, and the agent can report the integration or its credentials as unavailable.
+
+The patch identifies its target by the `"openclaw-bundle-mcp"` client identity and requires each rewritten anchor to appear exactly once.
+An unrecognized compiled shape fails the image build instead of silently skipping and forces review before the patch can be updated or removed.
+`--audit` re-verifies the applied state.
+
+Reviewed behavior:
+
+- One retry, and only one, for a server *startup* failure on a `streamable-http` transport.
+  A refresh failure on an already-connected session is not retried.
+- The retry uses a fresh transport from the upstream `resolveMcpTransport` factory after 120 to 299 ms of jitter, and caps its connection timeout at 10,000 ms so a dead server cannot double an agent run's worst-case latency.
+  If fresh transport construction fails, the first diagnostic is preserved and NemoClaw does not claim that a retry occurred.
+- Classification is a fail-closed allowlist over a bounded `cause` chain: MCP request timeout (`-32001`), the OpenClaw connect-timeout message, undici and POSIX in-flight transport codes, and reset/disconnect-before-headers text.
+  A truncated or cyclic cause chain is unclassifiable and is not retried.
+  A blocked-code and blocked-text pass runs first, so authentication, authorization, OAuth token rejection, TLS and certificate validation, SSRF and policy denial, and invalid configuration are never retried.
+  A refused, unreachable, or unresolvable destination is deliberately excluded from the allowlist.
+  An OpenShell L4 policy denial reaches the MCP client as a refused connection, so retrying refusals would risk retrying policy denials.
+- An exhausted retry keeps the upstream diagnostic and appends a temporary-transport statement that states that credentials and configuration were not rejected, so the agent does not report missing credentials for a transport failure.
+  That statement is added only when the *surviving* failure is itself transient.
+  A retry that reaches the server and is then rejected with HTTP 401, a TLS error, or a policy denial keeps its own diagnostic.
+- A catalog carrying a server diagnostic is not retained as the session's stable catalog.
+  It is dropped at the next agent run boundary, in `acquireLease()` and only while the runtime is idle.
+  Upstream fills `catalog.diagnostics` only from a per-server start or refresh failure and omits the key when no server produced a diagnostic, so a non-empty array is the degraded case and a healthy catalog is still reused.
+  A credential, TLS, policy, or configuration rejection keeps its own diagnostic and is still never retried inside a run, but its catalog is not sticky either, so a repaired credential is picked up on the next agent run instead of requiring a new session.
+  Scoping the drop to a run boundary rather than to every `getCatalog()` call is deliberate.
+  `getCatalog()` is also the pre-flight for every `callTool`, `listResources`, `readResource`, `listPrompts`, and `getPrompt`, so dropping it on every call would rebuild the catalog per tool call and turn one unreachable optional server into a per-call reconnect cost.
+  Optional MCP servers stay best-effort.
+- The patch does not bypass or weaken credential, SSRF, OAuth, or network-policy enforcement.
+
+A first version of this patch was rejected during review on two counts, both now covered by tests.
+It retried an OpenShell L4 policy denial because undici reports it as `TypeError: fetch failed`, and it reported a retry that ended in HTTP 401 as a temporary transport failure that had not rejected credentials.
+
+Coverage: `test/openclaw-mcp-reliability-patch.test.ts` pins the compiled preimage, patch idempotence, fail-closed rejection of an unrecognized shape, the classification table, and the retry and diagnostic behavior of the injected runtime.
+`test/helpers/openclaw-real-mcp-start-retry-proof.ts` runs inside the `NEMOCLAW_REAL_OPENCLAW_DIST_HARNESS=1` harness and drives the real patched runtime against a controlled Streamable HTTP MCP server for three scenarios: first exchange resets then succeeds, every exchange resets, and a persistent 401.
+The proof asserts that the rejected-credential scenario is contacted once per run, with no retry inside a run.
+
+Removal criterion: drop this patch when the reviewed OpenClaw release provides equivalent bounded startup retry, negative-catalog invalidation, and temporary-transport failure attribution.
 
 ## Gateway Startup Migration Compatibility
 
@@ -15945,12 +16268,14 @@ restart/rebuild, and cleanup without a conditional skip or expected failure.
 
 Date: 2026-07-25
 
+Last updated: 2026-08-03
+
 ## Scope
 
 This review covers the sandbox dependency changes that:
 
 - standardize the OpenClaw, Hermes, and Deep Agents Code base images on fixed Debian `libexpat1=2.8.2-1`, `libjq1=1.8.2-1`, `jq=1.8.2-1`, `vim-common=2:9.2.0782-1`, and `vim-tiny=2:9.2.0782-1` packages, with the reviewed `libonig5=6.9.9-1+b1` jq runtime dependency;
-- replace the `brace-expansion@5.0.7` copy inside the reviewed `npm@11.18.0` package with `brace-expansion@5.0.8`; and
+- replace the `brace-expansion@5.0.7` copy inside the reviewed `npm@11.18.0` package with `brace-expansion@5.0.9`; and
 - verify the security-relevant dual-life module versions shipped by the checksum-pinned Perl 5.44.0 build.
 
 The OpenClaw base image retains its existing reviewed jq and Expat identities, while the Hermes and Deep Agents Code base images move to the same package boundary.
@@ -15965,7 +16290,7 @@ These changes preserve the existing supported image behavior and do not create a
 | Oniguruma | Distro-selected jq runtime dependency | All managed images: `libonig5=6.9.9-1+b1` | Debian Snapshot `20260724T000000Z` and architecture-specific SHA-256 values below |
 | Expat | OpenClaw: `2.8.2-1`; Hermes and Deep Agents Code: distro-selected package | All managed images: `libexpat1=2.8.2-1` | Debian Snapshot `20260724T000000Z` and architecture-specific SHA-256 values below |
 | npm | `npm@11.18.0` | unchanged | Existing reviewed npm archive and integrity |
-| npm private `brace-expansion` | `5.0.7` | `5.0.8` | Registry tarball and SHA-512 integrity below |
+| npm private `brace-expansion` | `5.0.7` | `5.0.9` | Registry tarball and SHA-512 integrity below |
 | Perl | `5.44.0-1nemoclaw1` | unchanged | Existing CPAN archive SHA-256 and complete upstream test suite |
 
 The fixed Vim source package is later than every reviewed 9.2 patch boundary.
@@ -15984,9 +16309,9 @@ The immutable Debian package SHA-256 values are:
 
 The reviewed npm replacement is:
 
-- version: `brace-expansion@5.0.8`;
-- integrity: `sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg==`; and
-- tarball: `https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz`.
+- version: `brace-expansion@5.0.9`;
+- integrity: `sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==`; and
+- tarball: `https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz`.
 
 ## Contract audit
 
@@ -16019,14 +16344,17 @@ The final reviewed dependency set and range evidence is:
 | `libjq1` | `1.7.1-6+deb13u2..1.8.2-1` | `1.8.2-1` | exact dpkg identity and matching `jq` runtime |
 | `jq` | `1.7.1-6+deb13u2..1.8.2-1` | `1.8.2-1` | exact dpkg identity, `jq-1.8.2`, and a JSON expression probe |
 | `vim-common` and `vim-tiny` | `2:9.1.1230-2..2:9.2.0782-1` | `2:9.2.0782-1` | exact dpkg identities and Vim 9.2 runtime probe |
-| npm private `brace-expansion` | `5.0.7..5.0.8` | `5.0.8` | complete-tree identity, dependency-shape, SRI, rollback, and npm/npx ordering guards |
+| npm private `brace-expansion` | `>=4.0.0 <5.0.9` | `5.0.9` | complete-tree identity, dependency-shape, SRI, rollback, and npm/npx ordering guards |
 | Perl and reviewed dual-life modules | Perl `5.43.10..5.44.0`; `HTTP::Tiny < 0.095`; `IO::Compress < 2.223` | Perl `5.44.0`; `HTTP::Tiny 0.096`; `IO::Compress 2.223`; component identities listed below | native package identity and direct interpreter/module version probes |
 
 ### Bundled npm package compatibility
 
 The npm release remains `11.18.0`.
 Its private dependency tree contains one top-level `brace-expansion@5.0.7` package with the existing `balanced-match@^4.0.2` contract.
-The replacement `5.0.8` package preserves that dependency contract, and its Node engine floor is compatible with the Node 22 and Node 24 base images.
+The initial replacement selected `5.0.8` to address `GHSA-mh99-v99m-4gvg`.
+`GHSA-rgw5-rvv9-x895` affects versions `>=4.0.0 <5.0.9`, and `5.0.9` fixes the advisory.
+The current `5.0.9` replacement preserves the dependency contract and declares `engines.node` as `20 || >=22`.
+This engine range includes the Node 22 and Node 24 base images.
 
 The replacement helper:
 
@@ -16078,7 +16406,7 @@ The core interpreter version check also remains the binding for core-language fi
 
 ### DEP-2 affected package inside npm's private tree
 
-- Range: `brace-expansion 5.0.7..5.0.8`
+- Range: `brace-expansion >=4.0.0 <5.0.9`
 - Surface: transitive bundled npm dependency
 - Severity: high
 - Confidence: high
@@ -16116,7 +16444,7 @@ The core interpreter version check also remains the binding for core-language fi
 
 Remove the Debian snapshot override only when the supported Debian suite publishes packages at or beyond every reviewed fix boundary and the replacements pass the same amd64 and arm64 package and runtime checks for all managed base images.
 
-Remove the private brace-expansion helper only when every pinned Node base installs a reviewed npm release whose complete private tree contains no brace-expansion version below 5.0.8.
+Remove the private brace-expansion helper only when every pinned Node base installs a reviewed npm release whose complete private tree contains no brace-expansion version below 5.0.9.
 Updating the npm archive without revisiting this helper must fail the image contract.
 
 ## Verification

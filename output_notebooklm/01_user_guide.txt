@@ -6394,6 +6394,23 @@ Compatible endpoint validation sends a real inference request because many proxi
 For an OpenAI-compatible endpoint, a reasoning model that returns only reasoning content can receive a retry with a larger response budget before NemoClaw reports failure.
 Route, configuration, and authentication failures still fail immediately.
 
+During one onboarding invocation, NemoClaw can reuse one successful Chat Completions validation instead of sending the same immediate host-side request.
+Reuse requires all these inputs to match:
+
+- The public endpoint URL.
+- The model ID.
+- The authentication mode.
+- Whether tool calling is required.
+- The validated DNS IP address set.
+
+Trailing endpoint slashes, duplicate IP addresses, and IP address order do not prevent reuse.
+NemoClaw sends another validation request in any of these cases:
+
+- Any listed input differs after NemoClaw normalizes the endpoint URL and IP address set, including when the DNS IP address set changes.
+- The endpoint URL contains embedded credentials, a query string, or a fragment.
+- Validation uses custom headers.
+- The endpoint is an operator-trusted private endpoint.
+
 An endpoint that is reachable only through `http://host.openshell.internal:<port>` cannot receive the host-side API probe.
 Verify that route from inside the sandbox after onboarding.
 
@@ -6882,16 +6899,26 @@ Restore the configured endpoint or proxy, run `$$nemoclaw onboard --resume` to c
 
 ## Understand Local Provider Post-Ready Checks
 
-For local Ollama and vLLM on Docker GPU sandboxes using the compatibility route, onboarding performs an additional check after the sandbox becomes ready.
+For local Ollama, local vLLM, and local NVIDIA NIM on Docker GPU sandboxes using the compatibility route, onboarding performs an additional check after the sandbox becomes ready.
+Local NIM uses the `vllm-local` route, so it receives the same reversible post-ready check as local vLLM.
 It requests `https://inference.local/v1/models` from inside the sandbox and accepts only a 2xx response.
-When this check fails, onboarding reports the endpoint and local-provider recovery steps before the first agent prompt.
+If this check fails after compatibility recreation, onboarding prints failure diagnostics and attempts to restore the pre-patch container before it exits.
+If that rollback fails, onboarding reports that the pre-patch container was not restored and prints container-cleanup guidance.
+The local-provider failure output includes the endpoint and recovery steps before the first agent prompt.
+GPU-proof diagnostics are captured before rollback and can also print cleanup guidance before the final container state is known, so inspect the sandbox and its labeled Docker containers before running a deletion command.
 
-NVIDIA NIM and other compatible endpoints receive their provider validation during onboarding but do not receive this local-provider post-ready check.
+Remote NVIDIA NIM and other compatible endpoints receive their provider validation during onboarding but do not receive this local-provider post-ready check.
 For those routes, continue to the final route check, then use the status command and a short agent request after onboarding.
 
 ## Understand Final Route Checks
 
 When onboarding prints a dashboard summary, it first requests `https://inference.local/v1/models` from inside the sandbox after policy and process recovery.
+<AgentOnly variant="openclaw,hermes">
+Each attempt allows 2 seconds for the route to return an HTTP response.
+</AgentOnly>
+<AgentOnly variant="openclaw">
+For OpenClaw, this leaves time for client overhead before its 2.5-second provider preflight stops.
+</AgentOnly>
 A transport failure or HTTP 5xx response leaves the onboarding session retryable at final verification instead of completing it.
 After restoring the route, resume onboarding to run the check again without rebuilding a healthy sandbox.
 
@@ -8297,15 +8324,20 @@ If policy restoration fails, the command keeps the channel disabled and exits wi
 
 ## Avoid Cross-Sandbox Conflicts
 
+<Warning title="Conflict Detection Scope">
+NemoClaw checks only the sandboxes recorded in the selected OpenShell gateway's sandbox registry.
+It cannot detect or prevent Slack credential reuse across independent OpenShell gateways.
+</Warning>
+
 Use distinct credentials and resources for each active messaging sandbox.
 Follow these channel-specific rules:
 
 - Use a distinct iLink `accountId` for each WeChat sandbox.
-- Use distinct bot and Socket Mode app tokens for each Slack sandbox.
-- Use a different gateway for each Slack sandbox.
+- Run only one active Slack sandbox on each OpenShell gateway.
+- Use distinct bot and Socket Mode app tokens across OpenShell gateways.
 - Use a different local webhook port for each Microsoft Teams sandbox.
 
-When you onboard, rebuild, or add a channel, the command aborts on a conflict or an incomplete required check.
+When you onboard, rebuild, or add a channel, the command aborts on a conflict or an incomplete required check within the selected OpenShell gateway's sandbox registry.
 Legacy entries without credential hashes count as incomplete.
 An unreadable messaging registry also causes onboarding and rebuild to abort.
 Onboarding and rebuild have no conflict override.
@@ -8317,7 +8349,7 @@ Rerun `channels add <channel>` with the intended token to refresh stored non-sec
 Before a rebuild, NemoClaw checks the messaging plan before backup or deletion.
 A conflict leaves the original sandbox intact.
 Resolve any conflict, then rerun the operation.
-`$$nemoclaw status` reports cross-sandbox overlaps.
+`$$nemoclaw status` reports cross-sandbox overlaps within the selected OpenShell gateway's sandbox registry.
 
 ## Stop All Delivery
 
@@ -8412,6 +8444,8 @@ Do not run `openclaw channels add` or `openclaw channels remove` inside the sand
 </AgentOnly>
 <AgentOnly variant="hermes">
 Use host-side `$$nemoclaw <sandbox> channels` commands.
+Select a home channel with Hermes `/sethome` inside a chat.
+NemoClaw preserves that selection when the sandbox rebuilds.
 Do not mutate messaging configuration directly inside the sandbox because NemoClaw generates `/sandbox/.hermes/.env` and Hermes config at image build time, and changes inside the running container do not persist across rebuilds.
 </AgentOnly>
 
@@ -8615,6 +8649,10 @@ The rerun takes one of these actions:
 An accepted replacement is not deleted again.
 The command reports `Sandbox '<name>' already holds the replacement from the interrupted rebuild.` and preserves the state backup path when one exists.
 Pass `--verbose` to include the replacement identifier, OpenShell gateway, and journal phase in rebuild diagnostics.
+
+After the sandbox registry proves the journaled replacement identity and generation, NemoClaw removes an obsolete source image that it owns.
+It retains the image when the source is shared or the registered replacement reuses it.
+If image removal fails, NemoClaw keeps the accepted replacement and tells you to run `$$nemoclaw gc` for cleanup.
 
 NemoClaw fails closed when the selected gateway, replacement settings, durable source registry fields, or live source or target identity no longer matches the journal.
 The error names the sandbox and the mismatch that stopped recovery.
@@ -9508,7 +9546,7 @@ Continue with [Enable Channels During Onboarding](enable-channels-during-onboard
 title: "Set Up Slack"
 sidebar-title: "Set Up Slack"
 description: "Prepare Slack Socket Mode credentials and user or channel allowlists for NemoClaw."
-description-agent: "Explains Slack bot and app token validation, allowlists, mention behavior, rich Hermes rendering, and duplicate Socket Mode detection. Use before enabling Slack."
+description-agent: "Explains Slack bot and app token validation, allowlists, mention behavior, rich Hermes rendering, and selected-gateway Socket Mode conflict checks. Use before enabling Slack."
 keywords: ["nemoclaw slack", "slack socket mode", "slack app token", "slack allowlist"]
 content:
   type: "how_to"
@@ -9523,6 +9561,7 @@ Use `SLACK_APP_TOKEN` for the app-level Socket Mode token that begins with `xapp
 
 NemoClaw validates both tokens before it saves Slack credentials or enables the channel.
 This validation calls the live Slack APIs `auth.test` and `apps.connections.open`, so the tokens must belong to a real Slack app.
+These probes confirm token validity but do not report whether another Socket Mode connection uses the Slack app.
 
 If Slack rejects the tokens, NemoClaw skips the Slack channel and does not apply the `slack` network policy preset.
 When Slack is skipped, the preset does not appear as applied in `$$nemoclaw <name> policy list`.
@@ -9550,9 +9589,14 @@ This uses the existing Slack credentials and does not require additional scopes 
 
 ## Avoid Duplicate Socket Mode Sessions
 
-The [cross-sandbox conflict policy](manage-messaging-channels) applies to Slack.
-Use different bot tokens, app tokens, and gateways for each active Slack sandbox.
-Onboarding, rebuild, and `channels add slack` abort on a conflict.
+<Warning title="Conflict Detection Scope">
+NemoClaw checks for another active Slack sandbox only in the selected OpenShell gateway's sandbox registry.
+It cannot detect or prevent Slack credential reuse across independent OpenShell gateways.
+</Warning>
+
+Run only one active Slack sandbox on each OpenShell gateway.
+Use distinct bot and app tokens for Slack sandboxes on different OpenShell gateways.
+Onboarding, rebuild, and `channels add slack` abort when they detect a conflict in the selected OpenShell gateway's sandbox registry.
 Onboarding and rebuild have no override.
 For `channels add slack` only, pass `--force` to accept the conflict risk.
 
