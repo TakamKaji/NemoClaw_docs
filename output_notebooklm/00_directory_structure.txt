@@ -5,6 +5,7 @@
 │       │   ├── controlled-words.md
 │       │   ├── documentation-writing-review.md
 │       │   ├── git-github-hard-stop.md
+│       │   ├── implementation-discovery.md
 │       │   └── pr-follow-up.md
 │       ├── nemoclaw-contributor-create-pr
 │       │   └── SKILL.md
@@ -20,19 +21,13 @@
 │       │   │   └── openai.yaml
 │       │   ├── references
 │       │   │   ├── contract-audit.md
+│       │   │   ├── hermes.md
 │       │   │   └── release-ledger.md
 │       │   └── scripts
+│       │       ├── collect-hermes-release-supplement.py
 │       │       └── collect-release-ledger.py
 │       ├── nemoclaw-contributor-update-docs
 │       │   └── SKILL.md
-│       ├── nemoclaw-contributor-update-hermes
-│       │   ├── SKILL.md
-│       │   ├── agents
-│       │   │   └── openai.yaml
-│       │   ├── references
-│       │   │   └── hermes-contract-map.md
-│       │   └── scripts
-│       │       └── collect-hermes-release-supplement.py
 │       ├── nemoclaw-maintainer-cross-issue-sweep
 │       │   ├── SKILL.md
 │       │   ├── checks
@@ -421,6 +416,8 @@
 │   │   ├── 2026-07-29.mdx
 │   │   ├── 2026-07-30.mdx
 │   │   ├── 2026-07-31.mdx
+│   │   ├── 2026-08-03.mdx
+│   │   ├── 2026-08-04.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -460,6 +457,7 @@
 │   │   ├── set-up-ollama.mdx
 │   │   ├── set-up-openai-compatible-endpoint.mdx
 │   │   ├── set-up-sub-agent.mdx
+│   │   ├── set-up-vllm-on-two-dgx-sparks.mdx
 │   │   ├── set-up-vllm-on-two-dgx-stations.mdx
 │   │   ├── set-up-vllm.mdx
 │   │   ├── switch-models.mdx
@@ -3266,4 +3264,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-264 directories, 3003 files
+260 directories, 3005 files
