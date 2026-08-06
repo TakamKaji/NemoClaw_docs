@@ -2,11 +2,13 @@
 ├── .agents
 │   └── skills
 │       ├── _shared
+│       │   ├── code-change-considerations.md
 │       │   ├── controlled-words.md
 │       │   ├── documentation-writing-review.md
 │       │   ├── git-github-hard-stop.md
 │       │   ├── implementation-discovery.md
-│       │   └── pr-follow-up.md
+│       │   ├── pr-follow-up.md
+│       │   └── security-rubric.md
 │       ├── nemoclaw-contributor-create-pr
 │       │   └── SKILL.md
 │       ├── nemoclaw-contributor-onboard
@@ -15,6 +17,12 @@
 │       │       └── openai.yaml
 │       ├── nemoclaw-contributor-onboard-messaging-channel
 │       │   └── SKILL.md
+│       ├── nemoclaw-contributor-plan-issue
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── evals
+│       │       └── evals.json
 │       ├── nemoclaw-contributor-update-dependencies
 │       │   ├── SKILL.md
 │       │   ├── agents
@@ -418,6 +426,7 @@
 │   │   ├── 2026-07-31.mdx
 │   │   ├── 2026-08-03.mdx
 │   │   ├── 2026-08-04.mdx
+│   │   ├── 2026-08-05.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3264,4 +3273,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-260 directories, 3005 files
+263 directories, 3011 files
