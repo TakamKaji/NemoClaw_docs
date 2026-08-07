@@ -11,6 +11,12 @@
 │       │   └── security-rubric.md
 │       ├── nemoclaw-contributor-create-pr
 │       │   └── SKILL.md
+│       ├── nemoclaw-contributor-implement-issue
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── evals
+│       │       └── evals.json
 │       ├── nemoclaw-contributor-onboard
 │       │   ├── SKILL.md
 │       │   └── agents
@@ -427,6 +433,7 @@
 │   │   ├── 2026-08-03.mdx
 │   │   ├── 2026-08-04.mdx
 │   │   ├── 2026-08-05.mdx
+│   │   ├── 2026-08-06.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3273,4 +3280,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-263 directories, 3011 files
+266 directories, 3015 files

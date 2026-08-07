@@ -3659,7 +3659,7 @@ After you select a provider class, [Choose a Model](choose-model) to compare cur
 title: "Choose a Local Inference Server"
 sidebar-title: "Choose a Local Server"
 description: "Compare operator-run servers and managed runtime profiles before choosing local inference for NemoClaw."
-description-agent: "Compares NemoClaw local inference options. Use when choosing Ollama, vLLM, llama.cpp, NVIDIA NIM, or a fixed local model profile."
+description-agent: "Compares NemoClaw local inference options. Use when choosing Ollama, vLLM, llama.cpp, NVIDIA NIM, or a fixed vLLM profile."
 keywords: ["nemoclaw local inference", "ollama vllm llama.cpp nim", "local inference server"]
 content:
   type: "concept"
@@ -3678,7 +3678,8 @@ OpenShell intercepts that traffic and forwards it to the local endpoint configur
 | Ollama | You want the default local option and want NemoClaw to install, start, or use Ollama on supported hosts. | Appears when Ollama is installed or running, and the wizard can offer installation on supported hosts. | Ollama through the managed local route. |
 | Existing vLLM | You already run vLLM on `localhost:8000`. | Appears when NemoClaw detects the server. | `/v1/chat/completions`. |
 | Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station, while generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
-| Fixed local model profile | You need one catalog-selected model and serving runtime combination. | Requires the dedicated installer flag on DGX Spark and does not appear in the provider menu. | `/v1/chat/completions`. |
+| Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Requires the dedicated installer flag on DGX Spark and does not appear in the provider menu. | `/v1/chat/completions`. |
+| Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Appears on a qualified DGX Spark host and supports explicit non-interactive selection. | `/v1/chat/completions`. |
 | NVIDIA NIM | You want NemoClaw to pull and manage a validated NIM container on a NIM-capable NVIDIA GPU. | Experimental and requires `NEMOCLAW_EXPERIMENTAL=1`. | `/v1/chat/completions`. |
 </AgentOnly>
 
@@ -3687,7 +3688,8 @@ OpenShell intercepts that traffic and forwards it to the local endpoint configur
 |---|---|---|---|
 | Existing vLLM | You already run vLLM on `localhost:8000`. | Appears when NemoClaw detects the server. | `/v1/chat/completions`. |
 | Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station, while generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
-| Fixed local model profile | You need one catalog-selected model and serving runtime combination. | Requires the dedicated installer flag on DGX Spark and does not appear in the provider menu. | `/v1/chat/completions`. |
+| Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Requires the dedicated installer flag on DGX Spark and does not appear in the provider menu. | `/v1/chat/completions`. |
+| Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Appears on a qualified DGX Spark host and supports explicit non-interactive selection. | `/v1/chat/completions`. |
 | NVIDIA NIM | You want NemoClaw to pull and manage a validated NIM container on a NIM-capable NVIDIA GPU. | Experimental and requires `NEMOCLAW_EXPERIMENTAL=1`. | `/v1/chat/completions`. |
 </AgentOnly>
 
@@ -3716,16 +3718,16 @@ NemoClaw forces the Chat Completions API path because the vLLM Responses endpoin
 
 Refer to [Set Up vLLM](set-up-vllm).
 
-## Install a Fixed Local Model Profile
+## Install a Fixed vLLM Profile
 
-Use this feature-gated path to install one catalog-selected model-and-runtime combination for vLLM or llama.cpp.
+Use this feature-gated path to install the fixed catalog-selected vLLM model and runtime combination.
 The installer does not accept a provider or model override for this profile.
 
 Before you start, confirm these prerequisites:
 
 - Use a DGX Spark host with Linux on Arm64.
 - Confirm that Docker, the NVIDIA Container Toolkit, and the NVIDIA GPU driver are operational.
-- Stop any server that already uses port `8000` for vLLM or port `8081` for llama.cpp.
+- Stop any server that already uses port `8000`.
 - Allow capacity for container images, model artifacts, and same-filesystem download staging.
 - Export `HF_TOKEN` only if the configured artifact source requires Hugging Face authentication.
 
@@ -3737,8 +3739,6 @@ The installer downloads a pinned container image and a fixed catalog model from 
 It runs the remaining onboarding steps non-interactively and can recreate the named sandbox when its recorded inference route differs.
 The runtime stores an owner-only bearer API key and model artifacts on the host.
 </Warning>
-
-Select vLLM:
 
 ```bash
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
@@ -3756,43 +3756,18 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
   bash -s -- --local-model-runtime=vllm
 ```
 
-Select llama.cpp:
-
-```bash
-curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
-<AgentOnly variant="openclaw">
-  NEMOCLAW_AGENT=openclaw \
-</AgentOnly>
-<AgentOnly variant="hermes">
-  NEMOCLAW_AGENT=hermes \
-</AgentOnly>
-<AgentOnly variant="deepagents">
-  NEMOCLAW_AGENT=langchain-deepagents-code \
-</AgentOnly>
-  NEMOCLAW_SANDBOX_NAME=my-assistant \
-  NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
-  bash -s -- --local-model-runtime=llama-cpp
-```
-
-The flag enables the dedicated profile gate, disables Express selection, and selects the matching catalog recipe.
+The flag enables the dedicated vLLM profile gate, disables Express selection, and selects the matching catalog recipe.
 Do not combine this path with `NEMOCLAW_PROVIDER` or `NEMOCLAW_MODEL`.
-The vLLM profile rejects `NEMOCLAW_VLLM_MODEL`, `NEMOCLAW_VLLM_PORT`, and `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` before installation.
+The profile rejects `NEMOCLAW_VLLM_MODEL`, `NEMOCLAW_VLLM_PORT`, and `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` before installation.
 
-The vLLM choice performs these actions:
+The profile performs these actions:
 
 - Uses the pinned runtime image and fixed serving command from the catalog.
 - Stores model files in the host Hugging Face cache.
 - Publishes the authenticated server only on `127.0.0.1:8000`.
 - Reuses the owner-only host-global managed-vLLM API key.
 
-The llama.cpp choice performs these actions:
-
-- Downloads one exact GGUF artifact over HTTPS.
-- Verifies the declared size and SHA-256 digest before cache publication or launch.
-- Stores the verified artifact in an owner-only content-addressed cache.
-- Publishes the authenticated server only on `127.0.0.1:8081` through a dedicated internal Docker network.
-
-After either runtime passes its readiness check, onboarding registers the provider and routes sandbox traffic through `inference.local`.
+After the runtime passes its readiness check, onboarding registers the provider and routes sandbox traffic through `inference.local`.
 
 Verify the sandbox route:
 
@@ -3804,30 +3779,114 @@ $$nemoclaw my-assistant doctor
 Accept the result when `status` reports the inference route as `reachable` and `doctor` exits with status `0`.
 Route reachability does not by itself establish successful model invocation.
 
-Verify the loopback publication for the selected runtime:
+Verify the loopback publication:
 
 ```bash
 docker port nemoclaw-vllm
-docker port nemoclaw-llama-cpp
 ```
 
-Run only the command for the selected runtime.
-The vLLM result must contain `127.0.0.1:8000`.
-The llama.cpp result must contain `127.0.0.1:8081`.
+The result must contain `127.0.0.1:8000`.
 
 If installation stops after a model download, rerun the same installer command.
 The runtime reuses only an artifact that passes its recorded identity checks.
-If Docker reports a container-name or network-name conflict, inspect the resource labels before removing anything.
+If Docker reports a container-name conflict, inspect the resource labels before removing anything.
 Do not remove a resource that lacks the NemoClaw ownership label for this profile.
-Refer to [Host Files and State](../../reference/host-files-and-state) before deleting a credential or cached artifact.
+Refer to [Host Files and State](../../reference/host-files-and-state) before deleting a credential or shared cached artifact.
 
 When you intend to remove the entire NemoClaw installation, run `$$nemoclaw uninstall`.
-Full uninstall verifies the exact managed container and network ownership before it removes those resources and deletes their state.
-It preserves the managed llama.cpp model cache by default and preserves the shared Hugging Face cache used by vLLM.
-Add `--delete-models` only when you also accept deletion of the managed llama.cpp cache and NemoClaw-pulled Ollama models.
+Full uninstall verifies exact managed container ownership before it removes the runtime and its state.
+It preserves the shared Hugging Face cache used by vLLM.
+Add `--delete-models` only when you also accept deletion of NemoClaw-pulled Ollama models.
 If cleanup reports an ownership or Docker error, leave the state files in place, resolve the reported resource, and rerun uninstall.
-After a successful full uninstall, `docker container inspect` must report no object for the selected managed container name.
-For llama.cpp, `docker network inspect nemoclaw-llama-cpp-internal` must also report no object.
+After a successful full uninstall, `docker container inspect nemoclaw-vllm` must report no object.
+
+## Install Managed llama.cpp on DGX Spark
+
+Use this experimental path when you want NemoClaw to manage one declarative llama.cpp recipe on one DGX Spark.
+The default recipe serves NVIDIA Nemotron 3 Nano 30B-A3B through the OpenAI Chat Completions API.
+
+<Note>
+This path is an experimental implementation.
+It does not establish a supported agent, model, and runtime tuple until the protected qualification and activation gates pass.
+</Note>
+
+Before you start, confirm these prerequisites:
+
+- Use a DGX Spark host with Linux on Arm64.
+- Confirm that Docker and the NVIDIA Container Toolkit are operational.
+- Confirm that NVIDIA Container Device Interface support is healthy.
+- Use NVIDIA driver version `580.65.06` or later.
+- Stop any process that uses host port `8081`.
+- Allow capacity for the pinned images, the GGUF file, and same-filesystem download staging.
+- Export `HF_TOKEN` only when the YAML-declared Hugging Face source requires authentication.
+
+NemoClaw uses `HF_TOKEN` only while it acquires the model.
+It does not write the value to managed llama.cpp state, the receipt, the serving container environment, or the sandbox registry.
+Run `unset HF_TOKEN` after onboarding when no other process needs it.
+
+<Warning>
+When the exact artifacts are not already present, onboarding pulls digest-pinned images from external registries and acquires the YAML-declared GGUF file through the standard Hugging Face cache.
+It reuses locally present pinned images and a cached GGUF only after their exact identities verify.
+It creates an owner-only API key, a host-loopback listener on port `8081`, and a Docker internal network.
+Only one managed llama.cpp runtime can exist per Docker authority, regardless of the owning OpenShell gateway or sandbox.
+</Warning>
+
+Run interactive onboarding on the DGX Spark and select **NVIDIA Nemotron with managed llama.cpp (DGX Spark)**:
+
+```bash
+$$nemoclaw onboard
+```
+
+For non-interactive onboarding, select the repository-owned recipe explicitly:
+
+```bash
+NEMOCLAW_PROVIDER=install-llama-cpp \
+NEMOCLAW_LLAMACPP_RECIPE=llama-cpp.nemotron-3-nano-30b-a3b.spark-single.v1 \
+NEMOCLAW_SANDBOX_NAME=my-assistant \
+  $$nemoclaw onboard --non-interactive --yes-i-accept-third-party-software
+```
+
+When `NEMOCLAW_LLAMACPP_RECIPE` is unset, NemoClaw selects the one shipped managed llama.cpp recipe.
+Do not set `NEMOCLAW_MODEL` for this path.
+The recipe owns the exact model file, revision, digest, image, launch settings, readiness probes, and disabled surfaces.
+
+Onboarding performs these actions:
+
+- Resolves the recipe against a fresh DGX Spark readiness report.
+- Reuses locally present pinned downloader, runtime, and probe images, and pulls only the missing digest-pinned images declared by the recipe.
+- Reuses a verified GGUF from the shared `~/.cache/huggingface/` cache, or acquires the exact file through the existing Hugging Face mechanism when it is absent or invalid.
+- Verifies the GGUF size and SHA-256 digest before it starts the runtime.
+- Runs the authenticated container as the current non-root user with one NVIDIA GPU and no CPU fallback.
+- Publishes port `8081` on `127.0.0.1` and connects the container to a Docker internal network.
+- Registers `llama-cpp-local` and routes agent traffic through `https://inference.local/v1`.
+
+The runtime cannot download a model and has no egress on its internal Docker network.
+The recipe disables the Web UI, slot inspection, server tools, agent mode, Model Context Protocol proxy, router, and multimodal projection.
+The API key enters the container through an owner-only read-only file, not a process argument.
+
+Verify the managed runtime and sandbox route:
+
+```bash
+$$nemoclaw my-assistant status
+$$nemoclaw my-assistant doctor
+docker port nemoclaw-llama-cpp
+```
+
+Accept the result when `status` reports `Managed llama.cpp: running`, the inference route is `reachable`, and `doctor` exits with status `0`.
+The Docker port output must contain `127.0.0.1:8081`.
+These checks do not establish agent and model qualification.
+
+If onboarding stops, rerun the same provider and recipe selection.
+NemoClaw resumes only the exact persisted Docker authority, image, recipe, model digest, network, and runtime identity.
+It reconciles an unfinished create journal before it starts a new runtime: phases before `receipt-prepared` are rolled back and retired, while `receipt-prepared` is finalized.
+
+If `status` reports `stopped` or `preparing`, rerun the same onboarding selection to resume the runtime.
+If it reports `absent`, `conflict`, or `unknown`, inspect the reported identity or Docker-authority error before retrying.
+Do not remove a same-name container or network unless its labels and identifiers match the persisted ownership state.
+
+`$$nemoclaw my-assistant destroy` removes the exact managed llama.cpp container, internal network, API key, and gateway-scoped ownership state after OpenShell confirms sandbox deletion.
+It preserves `~/.cache/huggingface/` because other applications can use that cache.
+If exact cleanup fails, NemoClaw preserves the sandbox registry entry and ownership state for a retry.
 
 ## Choose NVIDIA NIM
 
@@ -4197,8 +4256,8 @@ keywords: ["nemoclaw context window", "nemoclaw max tokens", "model limits"]
 content:
   type: "how_to"
 ---
-Configure model limits before onboarding so NemoClaw can bake them into the sandbox image.
-Changing a build-time model limit on an existing sandbox requires fresh recreation.
+Configure explicit model limits before onboarding so NemoClaw can bake them into the sandbox image.
+Changing an explicit build-time model limit on an existing sandbox requires fresh recreation.
 
 ## Set OpenClaw Limits
 
@@ -4240,6 +4299,8 @@ $$nemoclaw onboard
 
 When onboarding resolves a valid value, NemoClaw writes it as `model.context_length` in `/sandbox/.hermes/config.yaml`.
 For non-Ollama endpoints, the field remains unset when no explicit or probed value is available so Hermes can auto-detect it from the endpoint.
+During `inference set`, NemoClaw recomputes the context window for the target model.
+It writes `model.context_length` when it resolves a value and omits the field when Hermes must use endpoint auto-discovery.
 When NemoClaw starts Local Ollama on macOS or Linux, it requests at least `64000` tokens.
 Fresh onboarding then verifies the loaded model's actual `context_length` through `/api/ps`.
 Resumed onboarding and sandbox rebuilds warm the exact recorded Ollama model and repeat this verification before reusing its route.
@@ -4279,7 +4340,7 @@ Use this recreation path for Deep Agents context-window or maximum-token changes
 ## Related Topics
 
 - [Configure Inference Timeouts](configure-inference-timeouts) for request, validation, and readiness budgets.
-- [Switch Models](switch-models) to change the model without changing model limits.
+- [Switch Models](switch-models) to change the selected model.
 
 
 ========================================
@@ -4325,9 +4386,13 @@ Configure the provider credential separately instead of putting it in the endpoi
 Managed provider defaults that do not provide an explicit custom endpoint through these paths are unaffected.
 
 Custom endpoint onboarding has one narrower operator-controlled exception for corporate inference gateways.
-Set `NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS` to a comma-separated list of exact hostnames or IP literals to admit an endpoint on RFC1918, CGNAT, or IPv6 ULA space.
+Set `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` to a comma-separated list of exact hostnames or IP literals to admit an endpoint on RFC1918, carrier-grade network address translation (CGNAT), or IPv6 unique local address space.
 NemoClaw still resolves DNS, pins the validation connection, and rejects wildcard or suffix matches, link-local metadata, reserved destinations, and resolver failures.
 This allowlist does not relax direct blueprint, `config set`, or unrelated persisted-URL validation.
+
+`NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS` remains an inference-only compatibility alias.
+Inference onboarding combines exact entries from the generic variable and the compatibility alias.
+New configurations should use `NEMOCLAW_TRUSTED_PRIVATE_HOSTS`.
 
 After onboarding records an admitted custom endpoint, `inference set` accepts that same canonical URL for a model change without resolving it again.
 The registry must record onboarding as the endpoint source, and the supplied URL must match exactly after normalization.
@@ -4829,7 +4894,7 @@ When importing a completed row from an issue comment, preserve the exact commit 
 | OpenClaw primary agent | Local vLLM | Any model from `VLLM_MODELS`. | Managed `inference.local` route to the host vLLM server. | `not-yet-run` | Add vLLM serve flags, model id, and trajectory evidence before changing state. | Record parser flags, reasoning parser, and tool-call parser behavior. | Add one row per audited vLLM model id. | `src/lib/inference/vllm-models.ts`, `src/lib/inference/config.ts`. |
 | OpenClaw primary agent | Other OpenAI-compatible endpoint | User-selected `custom-model` or another configured model id. | Managed `inference.local` route to the compatible endpoint. | `not-yet-run` | Add endpoint class and trajectory evidence before changing state. | Record endpoint API path forcing and store/streaming assumptions. | Add one row per endpoint class that is validated. | `src/lib/inference/config.ts`. |
 | OpenClaw primary agent | Other Anthropic-compatible endpoint | User-selected `custom-anthropic-model` or another configured model id. | `anthropic` route when supported, otherwise managed compatible route. | `not-yet-run` | Add endpoint class and trajectory evidence before changing state. | Record native Anthropic Messages or compatible-route transport behavior. | Add one row per endpoint class that is validated. | `src/lib/inference/config.ts`. |
-| Hermes sandbox API | Hermes Provider | Default `moonshotai/kimi-k2.6` or any model from `HERMES_PROVIDER_MODEL_OPTIONS`. | Hermes Provider route through NemoClaw managed inference. | `not-yet-run` | Add Hermes session, request dump, logs, and local API evidence before changing state. | Generated config uses native `tools.tool_search.enabled: on` with snake-case 5/20 limits; core tools stay direct while deferred MCP and non-core plugin tools use structured search, describe, and call. | Verify a deferred-tool trajectory and keep it separate from OpenClaw `mode: tools` evidence. | `agents/hermes/config/hermes-config.ts`, `test/generate-hermes-config.test.ts`. |
+| Hermes sandbox API | Hermes Provider | Default `moonshotai/kimi-k2.6` or any model from `HERMES_PROVIDER_MODEL_OPTIONS`. | Hermes Provider route through NemoClaw managed inference. | `not-yet-run` | Add Hermes session, request dump, logs, and local API evidence before changing state. | Generated config uses native `tools.tool_search.enabled: on` with snake-case 5/20 limits; core tools stay direct while deferred MCP and non-core plugin tools use structured search, describe, and call. | Verify a deferred-tool trajectory and keep it separate from OpenClaw `mode: tools` evidence. | `agents/hermes/config/managed-policy.ts`, `test/generate-hermes-config.test.ts`. |
 | Deep Agents interactive `dcode` | NVIDIA Endpoints | `nvidia/nemotron-3-ultra-550b-a55b` | Managed `inference.local` OpenAI-compatible Chat Completions with `use_responses_api = false`. | `not-yet-run` | Add separate default-disabled and thread-opt-in terminal transcripts, host status output, reset evidence, and route evidence before changing state. | The managed Ultra profile preserves required nonempty tool-call content and rejects the observed literal `[content]` execute placeholder before shell dispatch; optional `thread-opt-in` remains a per-thread approval affordance. | Verify a terminal task with approval prompts intact, then separately verify explicit thread activation, reset behavior, policy enforcement, placeholder rejection, and no provider credential in sandbox-visible files. | `agents/langchain-deepagents-code/generate-config.ts`, `agents/langchain-deepagents-code/profile-plugin`, `docs/get-started/quickstart-langchain-deepagents-code`. |
 | Deep Agents headless `dcode -n` | NVIDIA Endpoints | `nvidia/nemotron-3-ultra-550b-a55b` | Managed `inference.local` OpenAI-compatible Chat Completions with `use_responses_api = false`. | `not-yet-run` | Add headless command transcript and status output before changing state. | Headless mode uses the managed Ultra profile, preserves required nonempty tool-call content, rejects the observed literal `[content]` execute placeholder, has no approval UI, and auto-approves non-shell tools while managed shell execution remains disabled. | Verify a bounded non-shell task, placeholder rejection, and the approval boundary separately from interactive evidence. | `agents/langchain-deepagents-code/dcode-wrapper.sh`, `agents/langchain-deepagents-code/profile-plugin`, `docs/security/best-practices`. |
 
@@ -5176,7 +5241,7 @@ NemoClaw detects Ollama on the host and can install, start, or upgrade it on sup
 
 ## Install or Upgrade Ollama
 
-If Ollama is installed but not started, NemoClaw starts it for you.
+During onboarding, if Ollama is installed but not started, NemoClaw starts it for you.
 On macOS and Linux, the wizard can offer to install Ollama when it is not present.
 
 When either the Ollama CLI or running daemon is below the minimum version for the starter models, currently `0.7.0`, the wizard displays an explicit **Upgrade Ollama** entry.
@@ -5205,7 +5270,22 @@ Set `NEMOCLAW_OLLAMA_INSTALL_MODE=system` or `NEMOCLAW_OLLAMA_INSTALL_MODE=user`
 
 The user-local mode downloads and extracts the Ollama release to `${HOME}/.local`, then starts `${HOME}/.local/bin/ollama serve` once.
 It does not configure a systemd service, create the `ollama` system user, or install CUDA drivers.
-Restart the daemon manually after a reboot.
+For ordinary user-local installs, restart the daemon manually after a reboot.
+
+<AgentOnly variant="openclaw">
+For a sandbox created with the portable experimental profile, `$$nemoclaw <name> connect --probe-only` and `$$nemoclaw <name> recover` can restart the user-local daemon that NemoClaw installed.
+Before it decides whether to start Ollama, recovery probes `http://127.0.0.1:11434/api/tags`.
+If the API is unhealthy, recovery starts Ollama only when the sandbox records `ollama-local` and a valid ownership receipt names the fixed regular executable.
+NemoClaw releases that predate this receipt do not claim an existing executable after an upgrade.
+To authorize recovery for a previous NemoClaw user-local install, first verify that `${HOME}/.local/bin/ollama` is the executable you want NemoClaw to manage, then run `NEMOCLAW_PORTABLE_OLLAMA_REENROLL=1 nemoclaw <name> recover` once.
+The command rejects a symlink or non-executable file before it records ownership.
+It refuses to launch a duplicate when another `ollama` process exists but the API is unhealthy.
+After it launches the daemon, it waits up to 30 seconds for `/api/tags` to return valid JSON with a `models` array.
+Recovery then verifies the authenticated proxy and requires HTTP 2xx from the sandbox `inference.local/v1/models` route.
+If Ollama does not become healthy within 30 seconds, the command identifies the exact receipt-bound executable and its `serve` argument, then tells you to retry recovery.
+The command exits non-zero with recovery guidance when startup or route validation fails.
+It does not start, stop, or replace a system service or another user-managed Ollama daemon.
+</AgentOnly>
 
 NemoClaw prints a `PATH` hint when `${HOME}/.local/bin` is missing from your `PATH`.
 Add `export PATH="${HOME}/.local/bin:$PATH"` to your shell profile if you want to invoke `ollama` directly.
@@ -5540,7 +5620,8 @@ NEMOCLAW_PROVIDER=custom \
 | `NEMOCLAW_MODEL` | Model ID reported by the server. |
 | `NEMOCLAW_COMPATIBLE_AUTH_MODE` | Set to `none` to explicitly select no authentication for an HTTP endpoint using `localhost`, `127.0.0.1`, or `[::1]` and port `8000`, `11434`, or `11435`. |
 | `NEMOCLAW_REASONING` | Enables reasoning-only validation with the case-insensitive true values `true`, `1`, `yes`, and `y`. |
-| `NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS` | Optional comma-separated exact hostnames or IP literals for operator-owned private inference endpoints. Wildcards are not supported. |
+| `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` | Optional comma-separated exact hostnames or IP literals for operator-owned private endpoints. Wildcards are not supported. |
+| `NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS` | Inference-only compatibility alias for `NEMOCLAW_TRUSTED_PRIVATE_HOSTS`. Inference onboarding combines entries from both variables. |
 | `COMPATIBLE_API_KEY` | Endpoint API key. Required unless loopback no-auth mode is selected. |
 
 <AgentOnly variant="openclaw">
@@ -5558,7 +5639,7 @@ Private and reserved addresses are blocked by default.
 To use an inference gateway on a trusted corporate network, list only its exact host and keep the endpoint URL on that host:
 
 ```bash
-NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS=llm.corp.example \
+NEMOCLAW_TRUSTED_PRIVATE_HOSTS=llm.corp.example \
   NEMOCLAW_PROVIDER=custom \
   NEMOCLAW_ENDPOINT_URL=https://llm.corp.example/v1 \
   NEMOCLAW_MODEL=your-model \
@@ -5567,7 +5648,7 @@ NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS=llm.corp.example \
 ```
 
 NemoClaw still resolves the host before probing and pins the probe to the resolved address.
-Only RFC1918, CGNAT, and IPv6 ULA destinations can be admitted; link-local metadata and other reserved ranges remain blocked.
+Only RFC1918, carrier-grade network address translation (CGNAT), and IPv6 unique local address (ULA) destinations can be admitted; link-local metadata and other reserved ranges remain blocked.
 An unlisted private host, a hostname suffix match, or a DNS failure also remains blocked.
 
 ## Related Topics
@@ -5994,13 +6075,6 @@ The explicit target still must match the exact reciprocal rail topology.
 
 ## Understand the Distributed Runtime
 
-The compiled managed inference catalog reads cluster size, profile selection, artifacts, runtime resources, serving arguments, preparation, and readiness checks from preset and recipe YAML.
-Maintainers can add another compatible profile that uses the registered managed-cluster adapters by adding preset and recipe YAML.
-The YAML `nodeCount` declares the required cardinality.
-The TypeScript adapters validate the qualified topology against it and materialize every ranked topology node.
-The build compiles those YAML definitions into the packaged runtime catalog automatically.
-A profile that needs a different execution contract requires a registered adapter.
-
 The compiled profile pins these artifacts:
 
 - The image is `ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8`.
@@ -6059,7 +6133,8 @@ $$nemoclaw uninstall
 
 Full uninstall revalidates every exact container ID before it removes the containers.
 It then retires the receipt, copied SSH bindings, and exact temporary discovery claims recorded by that receipt.
-If revalidation, removal, or safe claim retirement fails, uninstall stops before other cleanup and preserves the receipt for a retry.
+If NemoClaw cannot revalidate or remove a receipt-owned container, uninstall stops before other cleanup and preserves the receipt so you can rerun `$$nemoclaw uninstall`.
+Uninstall also stops and preserves the receipt when NemoClaw cannot retire an exact temporary discovery claim recorded by that receipt.
 A gateway-scoped uninstall preserves the host-global cluster, receipt, SSH bindings, and API key while another gateway remains.
 Cluster cleanup does not delete the Hugging Face model cache.
 
@@ -6325,12 +6400,45 @@ Without both `--enable-auto-tool-choice` and a matching parser, tool calls can a
 NemoClaw displays the **Install vLLM** or **Start vLLM** entry by default on DGX Spark and DGX Station.
 Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm` before the managed entry appears.
 
+### Discover Serving Profiles
+
+List the serving profiles installed with NemoClaw before you select a managed inference configuration.
+
+```bash
+$$nemoclaw profiles list
+```
+
+The command evaluates the catalog against the current host without downloading a model or changing host, gateway, inference, or sandbox resources.
+Each entry includes a stable ID, display name, backend, model, topology, selection mode, support state, estimated downloads, and an incompatibility reason when applicable.
+Add `--json` when a script needs the same fields as structured output.
+
+### Select a Serving Profile
+
+Pass a compatible profile's stable ID to onboarding.
+
+```bash
+$$nemoclaw onboard --profile <profile-id>
+```
+
+The same profile selector works with interactive and non-interactive onboarding.
+NemoClaw rejects unknown, ambiguous, disabled, incompatible, or conflicting selections before image or model downloads begin.
+Before confirmation, the review screen shows the resolved profile and recipe IDs, model, immutable runtime image, support state, and estimated image and model downloads.
+Do not combine `--profile` with `NEMOCLAW_PROVIDER`, `NEMOCLAW_MODEL`, `NEMOCLAW_VLLM_MODEL`, `NEMOCLAW_MANAGED_CLUSTER_PEERS`, or `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` overrides.
+If `NEMOCLAW_SERVING_PRESET` is already set, it must select the same stable profile ID; a different ID conflicts with `--profile`.
+
+The profile selector is model-independent, so a catalog can add profiles without adding model-specific CLI flags.
+Omitting `--profile` preserves the existing provider and model defaults.
+If onboarding is interrupted, `$$nemoclaw onboard --resume` reuses the recorded catalog, preset, and recipe digests.
+It exits before runtime effects if the installed catalog changed instead of silently switching the recipe; use `$$nemoclaw onboard --fresh --profile <profile-id>` to review and start with the current definition.
+Legacy sessions that predate profile provenance still resume with their original behavior, but you cannot add `--profile` to one of those in-progress sessions.
+
 In an interactive run, the managed path lists the supported model registry for your host profile.
 Press **Enter** to use the profile default or select another validated model with its registered `vllm serve` arguments.
 
 The single-host path pulls the vLLM image, downloads model weights into `~/.cache/huggingface`, and starts the `nemoclaw-vllm` container on `localhost:8000`.
 The distributed DGX pages document their separate container names, endpoints, and lifecycle checks.
-The container carries a NemoClaw ownership label so later onboarding runs can distinguish it from a bring-your-own server without trusting the container name alone.
+The container carries NemoClaw ownership and immutable catalog labels so later onboarding, recovery, and uninstall runs can distinguish it from a bring-your-own server without trusting the container name alone.
+NemoClaw also records an owner-only, credential-free runtime receipt that binds those labels to the exact container ID and API-key fingerprint.
 
 If an existing `nemoclaw-vllm` container does not carry that label, NemoClaw preserves it and asks you to remove or rename it before installing managed vLLM.
 If another vLLM server already occupies port `8000`, NemoClaw selects the existing-server path and applies the model-identity checks described above.
@@ -6675,7 +6783,13 @@ You can also re-supply the same endpoint URL when the registry records that onbo
 NemoClaw requires an exact canonical match and does not extend that trust to a different URL or an endpoint recorded by `inference set`.
 If the route metadata is incomplete, NemoClaw stops and tells you to re-run onboarding.
 
-For Hermes, the command also mirrors the selected model into the dashboard profile.
+</AgentOnly>
+
+<AgentOnly variant="hermes">
+
+For Hermes, the command recomputes the target model's context window before it updates the main configuration and dashboard profile.
+NemoClaw writes `model.context_length` when it resolves a value.
+When it cannot resolve a value, NemoClaw omits the field so Hermes can discover the model metadata from the endpoint.
 If it reports that the Dashboard config did not converge, the route and main Hermes config remain committed; follow [Hermes dashboard config did not converge](../../reference/troubleshooting#hermes-dashboard-config-did-not-converge) before using Dashboard Chat.
 
 </AgentOnly>
@@ -7748,9 +7862,9 @@ The lane does not automate an interactive inbound reply.
 # SPDX-License-Identifier: Apache-2.0
 title: "Add an MCP Server"
 sidebar-title: "Add an MCP Server"
-description: "Register an authenticated Streamable HTTP MCP server with a NemoClaw sandbox."
-description-agent: "Explains mcp add inputs, credential-name restrictions, URL and DNS validation, policy pinning, and agent capability checks. Use when adding a managed MCP server."
-keywords: ["nemoclaw mcp add", "streamable http mcp", "mcp bearer credential"]
+description: "Register an authenticated public or trusted private Streamable HTTP MCP server with a NemoClaw sandbox."
+description-agent: "Explains mcp add inputs, trusted private endpoints, credential-name restrictions, URL and DNS validation, policy pinning, and agent capability checks. Use when adding a managed MCP server."
+keywords: ["nemoclaw mcp add", "streamable http mcp", "mcp bearer credential", "trusted private mcp"]
 content:
   type: "how_to"
 skill:
@@ -7793,6 +7907,78 @@ NemoClaw persists only the variable name, writes `openshell:resolve:env:KEY` int
 After `mcp add` commits, NemoClaw performs a fresh status inspection and runs the gated credential-resolution probe once unless you pass `--no-probe`.
 If readiness is inconclusive, the command reports a probe skip without failing the committed add.
 
+## Add a Trusted Private Server
+
+Use an exact trusted private host when the MCP endpoint must remain on an operator-controlled private network.
+This flow is the same for OpenClaw, Hermes, and Deep Agents Code.
+
+Before registration, configure an HTTPS endpoint that meets these requirements:
+
+- The endpoint hostname resolves to stable RFC1918, carrier-grade network address translation (CGNAT), or IPv6 unique local addresses, or the URL uses one exact private IPv4 literal.
+- The OpenShell gateway can route to every resolved address.
+- The Transport Layer Security (TLS) certificate matches the endpoint hostname and chains to a trust root available to the managed runtime.
+- A host firewall limits the listener to the OpenShell gateway or the required deployment subnet.
+- The endpoint exposes only the required MCP path and methods.
+
+If the endpoint certificate chains to a private CA, provide that CA with `NEMOCLAW_CORPORATE_CA_BUNDLE` before onboarding.
+Rebuild an existing sandbox after adding or changing the CA so both the OpenShell upstream proxy and sandbox clients receive the trust anchor.
+For source validation and custom-image requirements, refer to [Configure Corporate CA Trust](../../security/configure-corporate-ca-trust).
+
+For a host-local MCP process, keep the process bound to loopback when practical.
+Place an operator-managed HTTPS reverse proxy on one stable, routed private address.
+Bind the proxy to the exact private interface instead of every host interface.
+NemoClaw preserves the URL hostname for TLS Server Name Indication and certificate validation.
+A direct private IPv4 URL requires a certificate with the matching IP subject alternative name.
+Use a DNS hostname for an IPv6 unique local address.
+OpenShell `v0.0.85` cannot safely represent a direct IPv6 literal as a proxy target, so NemoClaw rejects that URL form.
+
+Direct `127.0.0.1`, `::1`, and hostnames that resolve to loopback remain rejected.
+Sandbox loopback is not the host service, and trusted-private admission does not create a route to it.
+
+<Warning>
+The `--trusted-private-host` option and `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` admit private network access to the matching exact host for this registration.
+Confirm that you operate the endpoint and its network before you run the command.
+</Warning>
+
+Export one dedicated bearer credential, then register the endpoint with its exact URL hostname:
+
+```bash
+export LOCAL_MCP_TOKEN='replace-with-secret-manager-value'
+$$nemoclaw my-sandbox mcp add local-tools \
+  --url https://mcp-host.corp.example/mcp \
+  --env LOCAL_MCP_TOKEN \
+  --trusted-private-host mcp-host.corp.example
+unset LOCAL_MCP_TOKEN
+```
+
+The declaration must equal the normalized host from `--url`.
+NemoClaw rejects unused, unrelated, wildcard, suffix, CIDR, URL-shaped, duplicate, or malformed `--trusted-private-host` declarations before mutation.
+It also rejects a hostname when any answer is outside the admitted private ranges or otherwise disallowed.
+
+As an alternative, set `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` to a comma-separated list of exact hosts for the current command.
+NemoClaw combines the environment list with any `--trusted-private-host` options.
+It normalizes and deduplicates environment entries, ignores entries unrelated to this URL, and persists only the matching private host.
+The command records the resulting exact trust intent, so later lifecycle commands do not depend on the ambient environment.
+
+NemoClaw records the normalized trust intent and every validated address as exact policy pins.
+The raw bearer value passes transiently to the OpenShell provider and remains absent from NemoClaw state, sandbox configuration, command arguments, and logs.
+The sandbox configuration contains only the `openshell:resolve:env:LOCAL_MCP_TOKEN` credential placeholder.
+You can unset the host variable after `mcp add` returns because OpenShell retains the credential.
+An exported replacement updates it during restart, and `mcp remove` or sandbox destroy deletes the registry-owned provider.
+
+Inspect the registration after the add returns:
+
+```bash
+$$nemoclaw my-sandbox mcp status local-tools --json
+```
+
+The JSON field `trustedPrivateTarget.state` must report `match`.
+The ordinary provider, policy, and adapter checks must also report readiness.
+
+<Note>
+NemoClaw does not start, configure, monitor, or retain the reverse proxy, MCP process, certificate, DNS record, or host firewall state.
+</Note>
+
 ## Choose a Dedicated Credential Name
 
 Do not reuse OpenShell Google Cloud compatibility names such as `GCP_PROJECT_ID`, `GOOGLE_CLOUD_PROJECT`, `CLOUD_ML_REGION`, `GCP_LOCATION`, `GCP_SERVICE_ACCOUNT_EMAIL`, `GOOSE_PROVIDER`, `ANTHROPIC_VERTEX_PROJECT_ID`, or `VERTEX_LOCATION`.
@@ -7829,14 +8015,22 @@ Deep Agents Code supports at most 64 managed MCP servers in one sandbox.
 Endpoint paths cannot contain percent escapes, backslashes, semicolons, or OpenShell glob metacharacters.
 Endpoint URLs cannot use port `0`.
 
-NemoClaw resolves public hostnames before registration, rejects private, local, and special-use targets, and pins the resolved addresses in the generated policy.
+NemoClaw resolves hostnames before registration and pins the validated addresses in the generated policy.
+Public endpoints need no trusted-private declaration.
+Private endpoints require an exact trust declaration and can use only RFC1918, CGNAT, or IPv6 unique local addresses.
+Supply the declaration with `--trusted-private-host` or the generic `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` environment variable.
+NemoClaw continues to reject loopback, link-local, metadata, unspecified, multicast, documentation, translation, benchmarking, and other reserved ranges.
 OpenShell re-resolves the hostname for each new connection, requires every current answer to match the pinned `allowed_ips`, and connects to the validated socket addresses.
 
 A DNS change to a private, special-use, or otherwise unpinned address fails closed instead of widening the route.
 
+Cloudflare Quick Tunnels and other endpoints with rotating address sets are not durable managed MCP deployments.
+A named tunnel can stabilize the hostname without stabilizing its exact address set.
+Use stable private DNS and a routed private HTTPS endpoint when you operate the MCP server locally.
+
 Authenticated MCP rejects `host.openshell.internal`, `host.docker.internal`, and `host.containers.internal` on stable OpenShell `v0.0.85`.
 That release has a trusted-gateway branch for one narrow link-local topology, but it does not expose an attested driver gateway address that NemoClaw can pin.
-Use a normal HTTPS DNS endpoint with public address records until OpenShell exposes attested gateway state for exact policy pinning.
+Use a routed HTTPS endpoint on a stable private address instead.
 
 ## Understand the Generated Method Profile
 
@@ -7977,14 +8171,17 @@ NemoClaw computes versions (`v1`, `v2`, through `vN`) from timestamp order, so `
 `snapshot create` requires shields to be down.
 Snapshot creation and restore share the per-sandbox transition lock with the shields auto-restore timer.
 
-If a timed shields-down window expires during snapshot work, auto-restore closes the per-sandbox lifecycle deadline gate.
-The gate blocks new mutations and waits for the recorded live owner to release its exact lock generation.
-NemoClaw does not signal the snapshot process.
-If ownership becomes ambiguous, NemoClaw attempts to record durable containment and reports exact-generation recovery guidance.
-If the containment commit fails, NemoClaw retains any exact lifecycle and deadline gates it already owns.
-A state-directory failure that prevented gate publication also prevents normal mutation-lock acquisition.
-Correct the reported state-directory write failure, then run `$$nemoclaw <name> shields status` to resume recovery or receive exact-generation recovery guidance.
-If the command reports exact-generation recovery guidance, stop all NemoClaw processes for the sandbox, then follow that guidance before you retry the snapshot.
+If a timed shields-down window expires during snapshot work, the deadline gate blocks new mutations and waits for the exact snapshot owner to finish without signaling it.
+Snapshot work does not bypass recovery for an expired shields-down window.
+<AgentOnly variant="openclaw,hermes">
+Follow [Timed Shields Windows](../configure-sandboxes/understand-runtime-changes#timed-shields-windows) to correct state-directory failures or complete exact-generation recovery before you rerun `$$nemoclaw <name> snapshot create`.
+</AgentOnly>
+<AgentOnly variant="deepagents">
+If a state-directory failure prevents gate publication, normal mutation-lock acquisition also fails.
+If recovery reports a state-directory failure, correct it and run `$$nemoclaw <name> shields status`.
+Durable containment or retained exact gates keep new mutations blocked until you complete exact-generation recovery.
+If the command reports exact-generation recovery guidance, stop all NemoClaw processes for the sandbox and follow that guidance before you rerun `$$nemoclaw <name> snapshot create`.
+</AgentOnly>
 
 Tag a snapshot with a human-readable label:
 
@@ -8622,9 +8819,9 @@ The debug command gathers system information, Docker state, sandbox logs, and sa
 # SPDX-License-Identifier: Apache-2.0
 title: "Manage MCP Servers"
 sidebar-title: "Manage MCP Servers"
-description: "Inspect advertised tools, probe, rotate, restart, remove, rebuild, and destroy NemoClaw-managed MCP servers."
-description-agent: "Explains managed MCP status, advertised tool discovery, credential-resolution probes, credential rotation, restart, removal, rebuild restoration, destroy recovery, and lifecycle locking. Use after an MCP server is registered."
-keywords: ["nemoclaw mcp status", "mcp tool discovery", "nemoclaw mcp restart", "nemoclaw mcp remove", "mcp credential rotation"]
+description: "Inspect advertised tools and DNS pins, probe, rotate, restart, remove, rebuild, and destroy NemoClaw-managed MCP servers."
+description-agent: "Explains managed MCP status, DNS pin drift, advertised tool discovery, credential-resolution probes, credential rotation, restart, removal, rebuild restoration, destroy recovery, and lifecycle locking. Use after an MCP server is registered."
+keywords: ["nemoclaw mcp status", "mcp dns pin drift", "mcp tool discovery", "nemoclaw mcp restart", "nemoclaw mcp remove", "mcp credential rotation"]
 content:
   type: "how_to"
 skill:
@@ -8647,6 +8844,11 @@ The `env.missing` field lists recorded host variable names that are currently un
 
 An existing valid provider can remain ready when a host variable is unset because OpenShell retains the credential.
 The JSON value `support.mode: "bridge"` identifies the agent's config-adapter capability, not a host-side traffic bridge.
+
+For a trusted private server, status resolves the endpoint without changing managed state.
+Text output reports `private address pins: match`, `drift`, or `unresolved`.
+JSON output reports the same value in `trustedPrivateTarget.state` and includes the recorded pins.
+Status never adds a new address to the policy.
 
 ## Discover Advertised Tools
 
@@ -8738,7 +8940,9 @@ unset GITHUB_MCP_TOKEN
 `restart` requires a successful provider update, waits until the sandbox receives a new opaque provider revision, reapplies policy, and refreshes the adapter.
 An ambiguous or failed update is not treated as successful merely because another writer advanced the provider revision.
 
-Restart resolves the endpoint hostname again before updating its pinned network policy.
+For a trusted-private entry, restart replays the exact address pins recorded by `mcp add`.
+It does not resolve that endpoint again or widen its policy from ambient DNS.
+For a public entry, restart resolves the hostname again and refreshes the generated policy with the current validated public addresses.
 
 The raw value passes only through the OpenShell provider command's process environment and is not added to argv, NemoClaw state, or sandbox config.
 Revoke the old credential upstream after restart succeeds.
@@ -8750,6 +8954,26 @@ If the provider is missing, export the recorded variable before retrying.
 
 Running restart without a server name refreshes every managed server.
 Export only the variables whose credentials you intend to replace.
+
+## Change Endpoint Pins
+
+For a trusted-private server, review every destination change before NemoClaw records new pins.
+Neither status, restart, rebuild, nor restore changes the recorded address set.
+
+If the endpoint moves to another address, remove and re-add the server:
+
+```bash
+export LOCAL_MCP_TOKEN='replace-with-secret-manager-value'
+$$nemoclaw my-sandbox mcp remove local-tools
+$$nemoclaw my-sandbox mcp add local-tools \
+  --url https://mcp-host.corp.example/mcp \
+  --env LOCAL_MCP_TOKEN \
+  --trusted-private-host mcp-host.corp.example
+unset LOCAL_MCP_TOKEN
+```
+
+Removing the server deletes the registry-owned provider, policy, and adapter state after the existing ownership checks pass.
+The re-add performs a new DNS preflight and records the reviewed exact address set.
 
 ## Remove a Server
 
@@ -8773,6 +8997,8 @@ It never detaches the provider from other sandboxes.
 
 `rebuild` preserves providers that match the recorded ID, type, and credential-key metadata.
 It removes adapter entries and detaches providers before replacing the sandbox, then reattaches providers, waits for credential readiness, reapplies policy, and restores adapters.
+For a trusted-private entry, the restored policy uses the recorded exact address pins and does not widen them from current DNS answers.
+Public entries continue to resolve and validate their endpoint addresses during restoration.
 
 <AgentOnly variant="deepagents">
 NemoClaw revalidates the prepared Deep Agents replacement after MCP preparation and before stopping inference or deleting the old sandbox.
@@ -9214,6 +9440,27 @@ If the host gateway RPC returns an error while these sandbox-scoped commands run
 To repair the host gateway itself, use `openshell status`, `openshell gateway start --name <gateway>`, or run `$$nemoclaw onboard` again.
 Other workflows, including onboarding, rebuild, and `doctor --fix`, can explicitly recover the named host gateway when their operation requires it.
 `$$nemoclaw <name> gateway restart` instead restarts only the supported agent gateway inside the named sandbox.
+</AgentOnly>
+
+<AgentOnly variant="openclaw">
+### Recover Portable Local Ollama
+
+For a portable experimental-profile sandbox with the recorded `ollama-local` provider, `connect --probe-only` and `recover` also verify the host-side inference chain.
+Before it decides whether to start Ollama, the command probes `http://127.0.0.1:11434/api/tags` and leaves a healthy daemon unchanged.
+When that API is unhealthy, it starts the fixed user-local executable only if NemoClaw has a valid ownership receipt.
+NemoClaw releases that predate this receipt do not claim an existing executable after an upgrade.
+To authorize recovery for a previous NemoClaw user-local install, first verify that `${HOME}/.local/bin/ollama` is the executable you want NemoClaw to manage.
+Then run `NEMOCLAW_PORTABLE_OLLAMA_REENROLL=1 nemoclaw <name> recover` once.
+The command rejects a symbolic link or non-executable file before it records ownership.
+It refuses to launch a duplicate when another `ollama` process exists but the API remains unhealthy.
+After a launch, recovery waits up to 30 seconds for `/api/tags` to return valid JSON with a `models` array.
+It does not take over a system service or an unrelated user-managed daemon.
+It refuses a symbolic link, non-regular file, or non-executable file at the receipt-bound executable path.
+
+On every `ollama-local` completion path, the command verifies the authenticated proxy on port `11435`.
+It also requires HTTP 2xx from `https://inference.local/v1/models` before it reports success.
+If Ollama does not become healthy within 30 seconds, the command identifies the exact receipt-bound executable and its `serve` argument, then tells you to retry recovery.
+An Ollama startup or route failure exits non-zero and prints the available recovery guidance.
 </AgentOnly>
 
 ## Rebuild While Preserving State
@@ -9920,31 +10167,41 @@ Run `$$nemoclaw <name> shields down` before the change, then restore lockdown wi
 NemoClaw serializes host-side gateway recovery, config and inference writes, snapshot mutation, sandbox destruction, and shields transitions for each sandbox.
 When `shields down --timeout` is active, each mutation binds to that exact timer generation so a replaced or expired timer cannot race a later command or a new sandbox that reuses the same name.
 
+### Restore Lockdown After Expiration
+
 If the timeout expires while a mutation is changing sandbox state, auto-restore closes the per-sandbox lifecycle deadline gate.
 The gate blocks new mutations and waits for the recorded live owner to release its exact lock generation.
 NemoClaw does not signal that process because portable process inspection cannot prove that all descendants stopped.
 After the owner releases the lock, auto-restore restores the restrictive policy and configuration posture.
 The ownership check includes both the process ID and process start identity so PID reuse does not grant control over an unrelated process.
 
+### Complete Exact-Generation Recovery
+
 An interactive command can take over an expired timer.
 Interactive recovery has separate transition-takeover and restoration phases.
 Each phase makes up to 7 attempts and waits 5 seconds between failures, for up to 30 seconds of retry delay per phase.
 Detached recovery uses one 7-attempt budget across deadline setup, main-generation publication, and restoration.
 The deadline gate remains closed during those attempts.
+
 If restoration cannot commit, NemoClaw attempts to record durable containment.
 If that containment commit also fails, NemoClaw retains any exact lifecycle and deadline gates it already owns.
 A state-directory failure that prevented gate publication also prevents normal mutation-lock acquisition.
 Correct the reported state-directory write failure, then run `$$nemoclaw <name> shields status` to resume recovery or receive exact-generation recovery guidance.
 When recovery cannot complete, an interactive command returns an error, or the detached timer exits with a failure status.
+
 NemoClaw also records durable containment when an owner exits before it can prove that the owner's descendants stopped, or when ownership becomes ambiguous.
 Durable containment, retained exact gates, or the fail-closed state-directory error keeps new mutations blocked until you complete exact-generation operator recovery.
+
 Stop all NemoClaw processes for the sandbox, then follow the paths, identities, tokens, and removal order in the reported error.
 Verify each recorded generation is unchanged, remove only the exact stale generations first, and remove the exact containment generation last.
+
+### Preserve Managed MCP Policy
 
 Before a manual Shields transition replaces a policy, NemoClaw requires exact Model Context Protocol (MCP) agreement among the sandbox registry, generated-policy record, and live gateway policy.
 `shields down` carries the proven managed MCP policy entries into the relaxed policy.
 Restoration removes snapshot-time managed MCP entries before it overlays current exact entries.
 If exact agreement is absent, a manual Shields transition refuses the replacement policy.
+
 At an expired deadline, auto-restore omits unproven managed MCP policy entries, restores lockdown, and records the omission count in its audit entry.
 An MCP server removed during the shields-down window stays removed.
 A surviving server keeps its recorded endpoint and address pins while its policy ownership remains exact.
@@ -10471,6 +10728,27 @@ hermes whatsapp
 NemoClaw validates the gateway URL before pairing and renders the WhatsApp QR code in a compact terminal form so it fits in smaller terminal windows.
 If pairing exits with a gateway close such as `1008`, rerun the login command once, then check `$$nemoclaw <sandbox> channels status --channel whatsapp` to diagnose the gateway and session path separately from QR rendering.
 </AgentOnly>
+<AgentOnly variant="hermes">
+Hermes can pair from the Dashboard profile while the gateway reads the default `platforms/whatsapp/session` path.
+After scanning a dashboard QR code, run `$$nemoclaw <sandbox> channels status --channel whatsapp`.
+If the report says `dashboard-home has WhatsApp credentials, but the Hermes gateway session path is empty`, point the gateway at the dashboard session with the supported config command:
+
+```bash
+$$nemoclaw <sandbox> shields down --reason "repair Hermes WhatsApp session path"
+$$nemoclaw <sandbox> config set --key platforms.whatsapp.extra.session_path --value /sandbox/.hermes/profiles/dashboard-home/platforms/whatsapp/session --restart --config-accept-new-path
+$$nemoclaw <sandbox> shields up
+```
+
+Keep Shields down until `config set` finishes, then restore the restrictive posture with `shields up`.
+The `--config-accept-new-path` flag lets the command write the `platforms.whatsapp.extra.session_path` configuration key when the generated config does not already contain it.
+Dashboard pairing writes session credentials under `profiles/dashboard-home`; this bounded compatibility repair redirects the gateway to that session path while it still reads the default path otherwise.
+The repair stays documented until Hermes dashboard pairing state and gateway startup converge on one shared session path; NemoClaw can redirect the configured path but does not rewrite Hermes pairing state.
+Before removing the override, run `$$nemoclaw <sandbox> channels status --channel whatsapp` after dashboard pairing and gateway startup and confirm the report no longer shows a dashboard-home session with an empty gateway session path.
+Remove the override only after Hermes uses one shared WhatsApp session path for dashboard pairing and gateway startup.
+Do not edit `/sandbox/.hermes/.env` or `/sandbox/.hermes/config.yaml` by hand.
+Manual edits can cause the Hermes config-integrity guard to reject restart with `hash-mismatch`.
+Supervisor quarantine happens after repeated relaunch failures or other integrity failures.
+</AgentOnly>
 
 ## Protect Paired Session State
 
@@ -10478,7 +10756,7 @@ If pairing exits with a gateway close such as `1008`, rerun the login command on
 The sandbox stores mutable session credentials in durable `whatsapp` state.
 </AgentOnly>
 <AgentOnly variant="hermes">
-The sandbox stores mutable session credentials in durable `platforms/whatsapp` state.
+The sandbox stores mutable session credentials in durable `platforms/whatsapp` state for the gateway and `profiles/dashboard-home/platforms/whatsapp` state for Dashboard pairing.
 </AgentOnly>
 The credentials survive rebuilds without re-pairing.
 This is the runtime tradeoff of enabling WhatsApp without a host bridge: a paired sandbox can use that WhatsApp account until you unpair it or clear the durable state.
@@ -10489,6 +10767,8 @@ Pair only one sandbox per WhatsApp account at a time.
 For non-interactive onboarding, set `WHATSAPP_ALLOWED_IDS` to a nonempty comma-separated sender list to select WhatsApp for either agent.
 <AgentOnly variant="hermes">
 Hermes also uses these values as its WhatsApp sender allowlist.
+Use digits only, such as `15551234567`.
+Do not include a leading `+`.
 </AgentOnly>
 
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
@@ -10553,7 +10833,8 @@ openshell sandbox download "$SANDBOX" /sandbox/.hermes/platforms/ "$BACKUP_DIR/p
 
 Copy only the dashboard profile's `MEMORY.md` and `USER.md` files.
 Do not copy `.hermes/profiles/dashboard-home/.env` or `.hermes/profiles/dashboard-home/config.yaml`.
-NemoClaw regenerates both files, and `.env` contains dashboard authentication material.
+NemoClaw regenerates both files from the managed policy and current inference route.
+The dashboard process receives its API bearer token through the runtime environment instead of the mirrored `.env` file.
 
 If startup refuses a legacy profile migration, download the preserved user files for inspection:
 
