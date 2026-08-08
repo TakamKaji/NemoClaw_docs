@@ -10,7 +10,11 @@
 │       │   ├── pr-follow-up.md
 │       │   └── security-rubric.md
 │       ├── nemoclaw-contributor-create-pr
-│       │   └── SKILL.md
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── evals
+│       │       └── evals.json
 │       ├── nemoclaw-contributor-implement-issue
 │       │   ├── SKILL.md
 │       │   ├── agents
@@ -19,10 +23,10 @@
 │       │       └── evals.json
 │       ├── nemoclaw-contributor-onboard
 │       │   ├── SKILL.md
-│       │   └── agents
-│       │       └── openai.yaml
-│       ├── nemoclaw-contributor-onboard-messaging-channel
-│       │   └── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── evals
+│       │       └── evals.json
 │       ├── nemoclaw-contributor-plan-issue
 │       │   ├── SKILL.md
 │       │   ├── agents
@@ -33,6 +37,8 @@
 │       │   ├── SKILL.md
 │       │   ├── agents
 │       │   │   └── openai.yaml
+│       │   ├── evals
+│       │   │   └── evals.json
 │       │   ├── references
 │       │   │   ├── contract-audit.md
 │       │   │   ├── hermes.md
@@ -146,7 +152,9 @@
 │       │       ├── reproduction-rubrics.md
 │       │       └── scoring-comments-and-logging.md
 │       ├── nemoclaw-skills-guide
-│       │   └── SKILL.md
+│       │   ├── SKILL.md
+│       │   └── evals
+│       │       └── evals.json
 │       └── nemoclaw-user-guide
 │           ├── SKILL.md
 │           └── evals
@@ -434,6 +442,7 @@
 │   │   ├── 2026-08-04.mdx
 │   │   ├── 2026-08-05.mdx
 │   │   ├── 2026-08-06.mdx
+│   │   ├── 2026-08-07.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -563,6 +572,8 @@
 │       ├── credential-storage.mdx
 │       ├── e2e-weather-plugin-fixture-dependency-review.md
 │       ├── fern-5.80.1-dependency-review.md
+│       ├── filesystem-controls.mdx
+│       ├── gateway-authentication-controls.mdx
 │       ├── hermes-0.19.0-dependency-review.md
 │       ├── managed-base-perl-5.44-dependency-review.md
 │       ├── openclaw-2026.6.10-dependency-review.md
@@ -571,6 +582,8 @@
 │       ├── openshell-0.0.71-gateway-auth-review.mdx
 │       ├── openshell-0.0.72-compatibility-review.mdx
 │       ├── openshell-0.0.85-migration-review.md
+│       ├── openshell-0.0.99-migration-review.md
+│       ├── process-controls.mdx
 │       ├── sandbox-base-2026-07-25-dependency-review.md
 │       ├── sandbox-base-2026-07-27-native-package-review.md
 │       ├── sandbox-base-libexpat-jq-2026-07-24-dependency-review.md
@@ -3280,4 +3293,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-266 directories, 3015 files
+270 directories, 3024 files
