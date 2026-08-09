@@ -63,6 +63,28 @@ While NVIDIA does not currently have a public bug bounty program, we do offer ac
 For security bulletins, PSIRT policies, and all security-related concerns, visit the [NVIDIA Product Security](https://www.nvidia.com/en-us/security/) portal.
 Subscribe to notifications on that page to receive alerts when new bulletins are published.
 
+## Threat Models
+
+Component-level threat models for security-critical NemoClaw subsystems are documented here so a reviewer or auditor can understand what each subsystem is designed to prevent, which surfaces it protects, and where its guarantees end.
+
+### Ollama Auth Proxy Loopback Bind Probe (`#6014`)
+
+**Summary.** The Ollama auth proxy is the token-authenticated network gate in front of a locally-running Ollama backend on every topology where `shouldFrontOllamaWithProxy()` returns true (native Linux, macOS, WSL with a native dockerd runtime). Ollama itself has no built-in authentication. The proxy adds a bearer-token check on its own listen port and forwards to Ollama on the backend port.
+
+**Threat.** If the Ollama backend is reachable on any non-loopback interface on the host (e.g. the user set `OLLAMA_HOST=0.0.0.0:11434`, or an operator-supplied systemd unit binds to a public interface), an attacker on the same LAN, a co-tenant on a shared host, or any process that can open a socket on the host can bypass the proxy entirely by connecting directly to `<host-ip>:11434`. The proxy's token check on the listen port is useless in that case because Ollama is answering questions the proxy never sees.
+
+**Guarantee the bind probe adds.** Before the proxy accepts any traffic, it walks `/proc/net/tcp` and `/proc/net/tcp6` (Linux) or falls back to `lsof -sTCP:LISTEN` (macOS and any host without a readable /proc) to enumerate every LISTEN-state socket on the Ollama backend port. If any listener is not loopback, the proxy refuses to start with exit code `EXIT_BACKEND_NOT_LOOPBACK` (2) and writes a structured `backend-not-loopback` reason to its status file so the host CLI renders an actionable remediation. Loopback for this check is the full 127.0.0.0/8 block for IPv4, `::1` for IPv6, and `::ffff:127.0.0.0/8` for IPv4-mapped IPv6, so a legitimate bind to 127.0.0.2 or an IPv4-mapped IPv6 loopback is accepted.
+
+**Where the guarantee ends.**
+
+- **Docker-Desktop topologies (WSL + Windows-host Ollama, WSL + WSL-local Ollama).** These bypass the proxy entirely via `containerCanReachHostLoopback()` and are explicitly out of scope for this issue and probe. Hardening them is tracked separately.
+- **Operator override.** `NEMOCLAW_OLLAMA_PROXY_SKIP_BIND_PROBE=1` disables the probe. The operator setting the override MUST accept that the security posture is degraded. The proxy emits an audit warning to stderr every time the override runs so an incident investigator scanning proxy logs sees the skip and the exact env knob that produced it. This is not fail-closed by design; the escape hatch exists for hosts where /proc is unreadable and `lsof` is missing, and for CI environments that intentionally exercise the non-loopback path.
+- **Probe unavailable (both `/proc` and `lsof` absent).** The proxy warns and continues rather than fail-closed. Same reasoning as the operator override: on a host where neither probe surface exists, refusing to start would break the headless install contract with no operator recourse. The systemd loopback override (retained by design for this PR) provides defense in depth on Linux.
+- **Runtime bind changes.** The probe runs at startup only. A backend that binds loopback at proxy-start time and later rebinds to a public interface is out of scope. Adding a periodic re-probe is a follow-up.
+- **Non-Ollama providers.** The probe protects the Ollama backend specifically; it does not cover NIM, vLLM, or other providers.
+
+**Enforced by:** `test/ollama-auth-proxy-bind-probe.test.ts` covers every branch of both the `/proc` and `lsof` classifiers (accepts full 127.0.0.0/8 including IPv4-mapped IPv6, refuses wildcard and LAN-scope, refuses the lsof `*` token) and the `EXIT_BACKEND_NOT_LOOPBACK = 2` contract with the host CLI.
+
 ## Documented Risk Acceptances
 
 The following security-relevant defaults are intentional. Each item names the code path that carries the constraint and the compensating controls that make the trade-off acceptable.
@@ -9028,6 +9050,8 @@ NemoClaw routes inference through the OpenShell gateway. Each row below is a pro
 | Google Gemini | Tested | OpenAI-compatible | Uses Google's OpenAI-compatible endpoint |
 | Hermes Provider | Hermes only | OpenAI-compatible route | Available when onboarding Hermes Agent through `nemohermes` |
 | Local Ollama | Tested with limitations | Local Ollama API | Available when Ollama is installed or running on the host. Validated default models: `qwen3.6:35b` (high VRAM), `nemotron-3-nano:30b` (medium VRAM), `qwen3.5:9b` (low VRAM fallback). |
+| Local llama.cpp (already running) | Experimental | Local OpenAI-compatible | Attaches only to an authenticated operator-managed server on loopback port `8081` that passes cooperative native llama.cpp fingerprinting. NemoClaw does not own its server, model, or lifecycle. |
+| Local llama.cpp (managed DGX Spark) | Experimental | Local OpenAI-compatible | Uses the repository-owned YAML recipe for NVIDIA Nemotron 3 Nano 30B-A3B, exact GGUF verification, and Docker lifecycle on a qualified DGX Spark host. The recipe remains unqualified for agent support. |
 | Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a CDI spec present (`onboard` asserts CDI presence with `assertCdiNvidiaGpuSpecPresent`, `src/lib/onboard/fatal-runtime-preflight.ts`). NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag because it does not auto-select a NIM image for the host today. You must explicitly pick from the validated image list. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
 | Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Appears in the onboarding menu when NemoClaw detects a server already on `localhost:8000`. No flag required. Model is whatever the existing server serves. |
 | Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
@@ -15994,11 +16018,23 @@ archive under `NEMOCLAW_REAL_OPENCLAW_DIST_HARNESS=1`, applies every current
 NemoClaw patch, verifies syntax, and exercises the live device self-approval
 proof. This is not a substitute for focused nightly E2E proof.
 
-The `2026.7.1` dist changed seven reviewed shapes:
+The `2026.7.1` dist changed eight reviewed shapes:
 
 - strict managed-proxy activation now uses `isStrictManagedProxyActive`; the
   patch still activates only inside OpenShell and only without an explicit
   dispatcher policy;
+- gateway daemon backend calls ignore the inherited `OPENCLAW_GATEWAY_URL` only
+  when `process.title === "openclaw-gateway"` and `OPENSHELL_SANDBOX=1`, so
+  gateway daemon self-dialback uses loopback. Descendant agents retain the
+  environment variable for private-interface routing. Explicit gateway URL
+  overrides, local port overrides, configured remote URLs, and behavior outside
+  this condition are unchanged.
+  `scripts/openclaw/patch-gateway-daemon-dialback.mts` is gated to the exact
+  `2026.7.1` version and rejects missing or ambiguous compiled-dist shapes. Its
+  regression test covers the daemon and descendant boundaries.
+  Remove the patch when upstream OpenClaw distinguishes gateway daemon
+  self-dialback from descendant agent routing without changing the inherited
+  gateway URL.
 - queued follow-up execution now resolves inbound context before allocating a
   run id; `scripts/patch-openclaw-chat-send.mts` preserves the submitted run id
   at that new boundary. It also suppresses the premature empty final event that
@@ -16194,7 +16230,7 @@ Reviewed behavior:
 - The wrapper is inert unless `OPENSHELL_SANDBOX=1`, so it does not change host-side behavior.
 
 `diagnostic_id` is not a distributed trace identifier and does not correlate with an OpenShell audit event.
-`NVIDIA/OpenShell#2508` tracks span emission from the sandbox supervisor, and the OCSF `http_request` object in the pinned OpenShell `0.0.85` has no slot for a request-scoped correlation identifier, so a shared identifier is not representable today.
+`NVIDIA/OpenShell#2508` tracks span emission from the sandbox supervisor. The OCSF schema vendored by the pinned OpenShell `0.0.99` includes the optional `http_request.uid` field, but OpenShell's Rust `HttpRequest` object and current HTTP audit-event builders neither expose nor populate it. A shared request identifier is therefore not emitted today.
 The local identifier distinguishes application-side diagnostics, but operators still correlate each diagnostic with OpenShell audit events by endpoint and time.
 
 Managed transport diagnostics remains separate from `scripts/patch-openclaw-mcp-reliability.mts`.
@@ -17583,10 +17619,10 @@ This review covers the complete public source boundary from the previously suppo
 commits and 515 distinct changed paths. Source review, release publication, consumed artifact
 identity, credential-boundary review, and NemoClaw runtime qualification are separate gates.
 
-The source and artifact review supports selecting `0.0.99`. Merge remains conditional on the
-exact pinned artifacts passing NemoClaw's managed activation and live E2E lanes. In particular,
-the previously observed `0.0.85` activation mismatch is part of this upgrade's completion, not a
-waived unrelated failure.
+The source and artifact review supports selecting `0.0.99`. Runtime qualification is complete only
+after the exact pinned artifacts pass NemoClaw's managed activation and live E2E lanes. The
+previously observed `0.0.85` activation mismatch remains part of this upgrade's completion. It is
+not a waived unrelated failure.
 
 ## Audit Method and Exact Boundary
 
@@ -17688,8 +17724,14 @@ than enabling optional upstream behavior implicitly.
 | `OS99-13` | Inference status heading changed from `Gateway inference:` to `Inference:` | The parser accepts both headings, with focused regression coverage for the exact v0.0.99 output. |
 | `OS99-14` | Routable sandbox names are capped at 19 characters and cannot contain consecutive hyphens | NemoClaw's canonical validation enforces both constraints. Before any CLI preparation, backup, gateway retirement, OpenShell install, or sandbox recreation, the installer lists incompatible registered names for the selected gateway and stops. `upgrade-sandboxes --check` lists incompatible names and returns without gateway inspection or rebuild. `upgrade-sandboxes --auto` lists them and exits with a nonzero status before gateway inspection or rebuild. Generated activation names fit the constraint, and exact all-agent activation remains a final acceptance gate. |
 | `OS99-15` | The Docker driver records the immutable image content ID in `Config.Image` | Managed bootstrap accepts either the reviewed `repository@manifestDigest` or its exact runtime content ID, while separately requiring Docker to prove that the manifest resolves to that content ID. |
-| `OS99-16` | The Docker driver appends `--workdir /sandbox` to the supervisor command | Managed bootstrap requires that exact v0.0.99 supervisor argv before replacing the held workload. |
+| `OS99-16` | The Docker driver appends `--workdir /sandbox` to the supervisor command | Managed bootstrap requires that exact v0.0.99 supervisor argv. The managed clone preserves only that tuple, or the empty v0.0.85 migration form, and rejects other supervisor arguments before mutation. |
 | `OS99-17` | Overlapping endpoint selectors with conflicting connection or request metadata are rejected before policy activation | The OpenClaw baseline npm route remains GET-only in Restricted and temporarily adopts the reviewed npm preset's L4 metadata while that preset is active. An approved baseline exclusion remains absent, and unexpected live drift stops the npm change. Homebrew's overlapping GitHub routes use automatic TLS, and Outlook matches Microsoft Teams' request-body credential-rewrite setting on shared Microsoft endpoints. Focused composition coverage protects each compatibility decision. |
+| `OS99-18` | Docker and Podman container identity is workspace-qualified | Podman mutation requires the exact v0.0.99 labels, empty namespace, `default` workspace, full immutable container ID, and matching container name. Privileged Docker lifecycle routing recognizes `openshell-default--<sandbox>-<id>` only when the trusted labels and resolved owner agree; it rejects another workspace qualifier or ambiguous ownership. Final-destroy cleanup scans all OpenShell container names and applies the same resolver to the live sandbox list, so a matching v0.0.99 container or failed Docker probe preserves the gateway. The Shields live lane discovers its sandbox from the OpenShell management and sandbox-name labels instead of a legacy name prefix. The resolver retains the v0.0.85 forms for migration. |
+| `OS99-19` | The Podman gateway must use the prepared rootless socket | The portable gateway writes the normalized absolute socket path into the OpenShell Podman driver configuration. The pinned Ubuntu 26.04 live lane disables Docker and keeps the production `pasta` helper. Before activation, it adds the upstream-recommended `signal (receive) peer=podman,` rule at the packaged profile's expected abstraction boundary and reloads only that AppArmor profile. The workflow fails closed if the profile shape or rule count differs. This preserves AppArmor enforcement while permitting confined Podman to terminate the shared rootless network helper. The lane then verifies `pasta`, authenticated gateway health, sandbox creation, and repeated lifecycle operations. |
+| `OS99-20` | A failed v0.0.99 status probe omits the selected gateway name | Gateway reuse scopes the status probe to the requested gateway. It classifies a connection failure as stale only when the requested or reported active gateway matches; other status failures remain non-reusable. |
+| `OS99-21` | Sandbox SSH aliases include the workspace | NemoClaw selects only an exact alias declared by the captured OpenShell SSH configuration. It prefers the v0.0.99 default-workspace alias `openshell-<sandbox>.default` and otherwise accepts the exact legacy alias `openshell-<sandbox>`. The upgrade uses that fallback to back up a pre-upgrade sandbox. Wildcard, negated, and unrelated declarations cannot authorize it. |
+| `OS99-22` | Sandbox activation requires an effective non-root process identity and proxy namespace tooling | The rootless Podman proof uses the immutable sandbox-base from the NemoClaw v0.0.89 fixture that runs OpenShell v0.0.85, pinned at `sha256:3265d482f67c9d81ee3a59b0bbad5eb5ea6c705fea81ece8ae888ed12794f7f1`. Exact live activation must prove that it supplies the `ip` prerequisite that v0.0.99 uses before workload startup. The proof also supplies `run_as_user: "1000"` and `run_as_group: "1000"` so activation does not depend on OCI `Config.User`. |
+| `OS99-23` | A successful delete can precede v0.0.99 status convergence | Sandbox recreation polls the exact journaled gateway within a bounded interval and continues only after OpenShell explicitly reports the source sandbox absent. Timeouts, transport failures, gateway errors, and ambiguous output do not prove absence. |
 
 An unresolved critical or high concern blocks the upgrade. Test selection cannot waive a concern;
 conditional skips and expected failures do not count as qualification evidence.
@@ -17701,8 +17743,10 @@ OpenShell API-created held workload serialized `AttachStdout=false`, `AttachStde
 `PortBindings=null`; the Docker CLI-created equivalent serialized `true`, `true`, and `{}`. Those
 values are creation-client markers or equivalent empty defaults, not durable workload identity.
 NemoClaw now normalizes them before hashing. It still refuses any non-empty port binding because
-the managed clone cannot reproduce that behavior exactly. Unit tests prove both equivalence and
-the rejection path; exact `0.0.85 -> 0.0.99` live activation remains required.
+the managed clone cannot reproduce that behavior exactly. The v0.0.99 held workload also appends
+`--workdir /sandbox` to the supervisor command. The managed clone preserves only that exact tuple
+or the empty v0.0.85 form and rejects other supervisor arguments before mutation. Unit tests prove
+the accepted forms and rejection paths. Exact `0.0.85 -> 0.0.99` live activation remains required.
 
 OpenShell 0.0.99 also validates the complete effective network policy before activation. Several
 previously accepted overlaps used incompatible metadata: the OpenClaw baseline and npm preset
@@ -17719,6 +17763,44 @@ keeps its OpenClaw-only binary scope, but its GET method and path inspection is 
 unavailable until npm is removed. The other routes retain their separate binary allowlists and
 authorization rules.
 
+## Automated Exact-Head Qualification Gate
+
+The required `check-hash` pull request check runs the OpenShell qualification verifier from the
+pull request's base revision. It treats the candidate checkout as inspected data and does not
+execute candidate verifier code.
+
+The verifier requires qualification when either side of a changed or renamed path touches one of
+these surfaces:
+
+- OpenShell selectors, installer pins, release identities, or trust manifests.
+- Agent manifests, blueprint runtime configuration, or credential-boundary manifests.
+- Gateway, supervisor, managed activation, command transport, or lifecycle implementation.
+- OpenShell E2E workflows, trusted preparation and artifact actions, or qualification code.
+
+An authenticated exact-revision dispatch creates a strict
+`nemoclaw-e2e-dispatch-v2` receipt in the trusted main workflow. The workflow uploads the receipt
+before candidate checkout or candidate-controlled commands can run. The receipt binds the
+repository, pull request, candidate repository and SHA, base SHA, trusted workflow SHA, run ID and
+attempt, event, selectors, and optional-runner flags.
+
+The base-trusted verifier derives the baseline and target versions independently from the base and
+candidate trees. It then requires the trusted receipt, the matching upgrade fixture, the workflow
+run link and ID, and each executed job's successful conclusion. Every default qualification job
+must succeed. Before candidate checkout, the trusted controller also pins the complete live-target
+and shared-test matrices; candidate planning must reproduce the exact shared-test IDs, files, and
+projects. Reviewed condition-only jobs may be skipped when the empty-selector dispatch does not
+select them, including Launchable, Jetson, DGX Spark, retired-selector compatibility, reporting,
+and scorecard jobs.
+
+Changes that can affect managed activation also require the current head's exact all-agent managed
+runtime activation check. Changes that can affect rootless Podman also require the current head's
+rootless Podman CPU lifecycle check with Docker disabled.
+
+The gate fails closed for missing, expired, duplicate, or malformed evidence. It also rejects a
+stale head or base, a workflow mismatch, nonempty selectors, an unreviewed skipped job, an
+incomplete job, or an unsuccessful or cancelled run. A later push changes the head SHA and
+invalidates every earlier receipt and proof check.
+
 ## Final Acceptance Gates
 
 - All active CLI, blueprint, installer, Brev, workflow, supervisor, and sandbox selectors agree on
@@ -17729,6 +17811,14 @@ authorization rules.
   the reviewed binary scopes for npm, Homebrew, and pricing traffic.
 - Managed Docker and Podman activation, lifecycle, policy, credential, inference, and MCP E2E run
   against the exact pinned release without conditional skips or expected failures.
+- Default-workspace SSH access after upgrade uses `openshell-<sandbox>.default`.
+  The resolver uses `openshell-<sandbox>` only when the captured configuration declares it and omits the current alias.
+- Privileged Docker lifecycle routing accepts `openshell-default--<sandbox>-<id>` only when its
+  labels and owner agree.
+- The rootless Podman proof uses the immutable NemoClaw v0.0.89 sandbox-base fixture that runs OpenShell v0.0.85.
+  It proves the `ip` prerequisite, supplies an explicit non-root process identity, and activates every registered agent against OpenShell v0.0.99.
+- Sandbox recreation continues only after the exact journaled gateway explicitly reports the
+  source sandbox absent within the bounded convergence interval.
 - On a supported host that starts with no NemoClaw state, the activation lane creates the `0.0.85`
   state and completes its `0.0.99` transition, including the previously failing Docker-spec comparison.
 
@@ -17793,18 +17883,58 @@ Refer to [Review Sandbox Hardening](../../manage-sandboxes/configure-sandboxes/r
 | Risk if relaxed | `CAP_SYS_ADMIN` and `CAP_SYS_PTRACE` expand kernel and process attack surface. `CAP_NET_RAW` allows raw socket access for network sniffing. `CAP_DAC_OVERRIDE` bypasses filesystem permission checks. If `capsh` cannot run or `CAP_SETPCAP` is unavailable, the container retains more of the runtime-provided capability set. |
 | Recommendation | Run on an image that includes `capsh` and `setpriv` (NemoClaw-managed images include them). For defense-in-depth, also pass `--cap-drop=ALL` at the container runtime level. |
 
+<AgentOnly variant="openclaw">
+
 ## Gateway Process Isolation
 
 Gateway and agent UID isolation depends on the container process topology.
-A direct root-entrypoint container runs the gateway as the separate `gateway` user and the agent as the `sandbox` user.
-An OpenShell-managed container has OpenShell as PID 1 and launches nonroot `nemoclaw-start`, so the supervisor, gateway, and agent all use the `sandbox` UID.
+The stock OpenClaw image defaults to the `sandbox` user for OpenShell compatibility.
+An OpenShell-managed container has OpenShell as PID 1 and launches `nemoclaw-start` as a non-root process, so the supervisor, gateway, and agent all use the `sandbox` UID.
+The managed-image publication workflow explicitly sets `NEMOCLAW_MANAGED_IMAGE_RUNTIME_USER=root` for its reviewed release images.
+That build-time setting lets the entrypoint run the gateway as the separate `gateway` user and agent commands as the `sandbox` user.
+A direct container runtime can override the image user to `root`.
+That root-entrypoint topology runs the gateway as the separate `gateway` user and agent commands as the `sandbox` user.
 
 | Aspect | Detail |
 |---|---|
-| Default | Direct root entrypoints use `setpriv` for gateway UID isolation. The OpenShell-managed topology runs the gateway and agent under the same sandbox UID because `no-new-privileges` prevents the nonroot entrypoint from changing users. |
-| What you can change | This is not a user-facing knob. The selected container topology determines whether the entrypoint can step down from root to the gateway UID. |
+| Default | A stock Dockerfile build declares `USER sandbox`. The OpenShell-managed topology runs the gateway and agent under the same sandbox UID because `no-new-privileges` prevents the non-root entrypoint from changing users. |
+| What you can change | The managed-image publication workflow can set `NEMOCLAW_MANAGED_IMAGE_RUNTIME_USER=root` at build time. A direct container runtime can also override the image user to `root`. OpenClaw custom images must keep `USER sandbox` as the default. |
 | Risk if relaxed | A same-UID agent can signal peer processes and can attempt to imitate the expected gateway process shape. The root managed controller prevents PID-reuse mistakes, but it cannot prove provenance against a malicious same-UID process or provide the direct root-entrypoint restart seal for mutable config. |
-| Recommendation | Use a direct root-entrypoint deployment when separate gateway and agent UIDs are required. Treat the managed controller as authenticated lifecycle and exact-target safety, not as a same-UID provenance boundary. |
+| Recommendation | Keep the stock OpenClaw image default user as `sandbox`. Use the managed-image publication setting or a direct root-entrypoint deployment when separate gateway and agent UIDs are required. Treat an OpenShell-managed controller that shares the `sandbox` UID as an authenticated lifecycle control, not as proof that the target process is trustworthy. |
+
+</AgentOnly>
+<AgentOnly variant="hermes">
+
+## Gateway Process Isolation
+
+The stock Hermes image and the managed-image publication workflow set the OCI default user to `root`.
+The entrypoint runs the Hermes agent gateway as the `gateway` user and agent commands as the `sandbox` user.
+If a runtime starts the entrypoint as a non-root user, the supervisor, agent gateway, and agent commands share that UID.
+
+| Aspect | Detail |
+|---|---|
+| Default | The OCI default user is `root`. The entrypoint runs the agent gateway as `gateway` and agent commands as `sandbox`. |
+| What you can change | A direct container runtime can override the image user. A non-root override removes separate gateway and agent UIDs. |
+| Risk if relaxed | A same-UID agent can signal the agent gateway and attempt to imitate its process shape. Running agent commands as `root` also expands filesystem access and container escape impact. |
+| Recommendation | Keep the root entrypoint when the deployment requires separate gateway and agent UIDs. Keep agent commands under the `sandbox` user. |
+
+</AgentOnly>
+<AgentOnly variant="deepagents">
+
+## Gateway Process Isolation
+
+The stock Deep Agents image defaults to the `sandbox` user.
+The managed-image publication workflow sets the OCI default user to `root`, but the entrypoint immediately switches to `sandbox`.
+Deep Agents does not use a separate agent gateway UID in this topology.
+
+| Aspect | Detail |
+|---|---|
+| Default | Stock builds declare `USER sandbox`. Images from the managed-image publication workflow use `root` only for the startup handoff to `sandbox`. |
+| What you can change | A direct container runtime can override the image user, but the entrypoint switches a root process to `sandbox` before it starts Deep Agents. |
+| Risk if relaxed | Running the terminal agent as `root` expands filesystem access and increases the impact of container escape vulnerabilities. |
+| Recommendation | Keep the terminal runtime under the `sandbox` user. Use `root` only for the managed startup handoff. |
+
+</AgentOnly>
 
 ## No New Privileges
 
@@ -17815,7 +17945,7 @@ The `no-new-privileges` flag prevents processes from gaining additional privileg
 | Default | OpenShell sets `PR_SET_NO_NEW_PRIVS` using `prctl()` inside the sandbox process as part of the seccomp filter setup. The NemoClaw Compose example also shows the equivalent `security_opt: no-new-privileges:true` setting. |
 | What you can change | OpenShell's seccomp path enforces this inside the sandbox. It is not a user-facing knob. |
 | Risk if relaxed | Without this flag, a compromised process could execute a setuid binary to escalate to root inside the container, then attempt container escape techniques. |
-| Recommendation | No action needed. OpenShell enforces this automatically when the sandbox network policy is active. In the OpenShell-managed topology, this flag also means the nonroot entrypoint and gateway remain under the sandbox UID. |
+| Recommendation | No action needed. OpenShell enforces this automatically when the sandbox network policy is active. When an OpenShell-managed topology starts an entrypoint as a non-root user, this flag prevents that process from changing users. |
 
 ## Process Limit
 
@@ -17913,17 +18043,53 @@ The managed headless path automatically approves non-shell tool requests such as
 
 </AgentOnly>
 
+<AgentOnly variant="openclaw">
+
 ## Non-Root User
 
 The sandbox runs agent processes as a dedicated `sandbox` user and group.
-The entrypoint starts as root for privilege separation, then drops to the `sandbox` user for all agent commands.
+The stock OpenClaw image starts the entrypoint as `sandbox` for OpenShell compatibility.
+A build from the managed-image publication workflow can select `root` so the entrypoint starts the gateway and agent commands under separate UIDs.
+A direct runtime can override the image user to `root`, which lets the entrypoint separate the `gateway` and `sandbox` UIDs before it runs agent commands.
 
 | Aspect | Detail |
 |---|---|
-| Default | `run_as_user: sandbox`, `run_as_group: sandbox`. A separate `gateway` user runs the gateway process. |
-| What you can change | Change the `process` section in the policy file to run as a different user. |
-| Risk if relaxed | Running as `root` inside the container gives the agent access to modify any file in the container filesystem and increases the impact of container escape vulnerabilities. |
-| Recommendation | Never run as root. Keep the `sandbox` user. |
+| Default | `run_as_user: sandbox`, `run_as_group: sandbox`. The stock OpenClaw image runs the entrypoint, gateway, and agent under the sandbox UID. |
+| What you can change | Change the `process` section in the policy file to run as a different user. The managed-image publication workflow can select the root entrypoint at build time, and direct container runtimes can override the image user to `root`. |
+| Risk if relaxed | Running agent commands as `root` gives the agent access to modify any file in the container filesystem and increases the impact of container escape vulnerabilities. |
+| Recommendation | Keep agent commands under the `sandbox` user. Use `root` only for the entrypoint supervisor when the managed-image publication workflow or a direct container runtime selects it. Do not run agent commands as `root` or make `root` the OpenClaw image default. |
+
+</AgentOnly>
+<AgentOnly variant="hermes">
+
+## Non-Root User
+
+The Hermes entrypoint starts as `root` and runs the agent gateway as `gateway`.
+It runs the dashboard and agent commands as `sandbox`.
+
+| Aspect | Detail |
+|---|---|
+| Default | The image entrypoint uses `root`. The agent gateway uses `gateway`, and the dashboard and agent commands use `sandbox`. |
+| What you can change | A direct container runtime can override the image user, but a non-root override removes the separate gateway UID. |
+| Risk if relaxed | Running dashboard or agent commands as `root` expands filesystem access and increases the impact of container escape vulnerabilities. |
+| Recommendation | Keep dashboard and agent commands under the `sandbox` user. Use `root` only for the entrypoint supervisor. |
+
+</AgentOnly>
+<AgentOnly variant="deepagents">
+
+## Non-Root User
+
+The stock Deep Agents image starts as `sandbox`.
+An image from the managed-image publication workflow starts as `root` only long enough to switch immediately to `sandbox`.
+
+| Aspect | Detail |
+|---|---|
+| Default | The terminal runtime and agent commands use the `sandbox` user. |
+| What you can change | A direct container runtime can override the image user, but the entrypoint switches a root process to `sandbox` before it starts Deep Agents. |
+| Risk if relaxed | Running the terminal agent as `root` expands filesystem access and increases the impact of container escape vulnerabilities. |
+| Recommendation | Keep the terminal runtime and agent commands under the `sandbox` user. Use `root` only for the managed startup handoff. |
+
+</AgentOnly>
 
 ## PATH Hardening
 
@@ -17987,7 +18153,7 @@ This prevents other users on the host from reading stored credentials.
 
 Date: 2026-07-25
 
-Last updated: 2026-08-03
+Last updated: August 8, 2026
 
 ## Scope
 
@@ -18089,7 +18255,10 @@ The replacement helper:
 10. invokes npm and npx only after the fixed package is active.
 
 All managed base images apply the helper after the complete npm upgrade.
-Their final images reassert the same idempotent contract so the scanned filesystem, not an intermediate stage, owns the dependency boundary.
+Each final image reruns the idempotent helper against `/usr/local/lib/node_modules/npm`.
+The final image stage therefore owns the bundled npm dependency boundary.
+NemoClaw image builds and image workflows do not scan the complete image filesystem for other `node_modules/tar` packages.
+They do not create or retain a node-tar inventory artifact.
 
 ### Perl component versions
 
@@ -18175,7 +18344,7 @@ Required evidence for the final pull-request head:
 - real reviewed npm archive replacement using the registry artifact;
 - repository formatting and type checks;
 - amd64 and arm64 builds for the OpenClaw, Hermes, and Deep Agents Code base images; and
-- completed-image dependency inventory.
+- final-stage npm remediation ordering checks for OpenClaw, Hermes, and Deep Agents Code.
 
 
 ========================================

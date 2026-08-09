@@ -477,6 +477,7 @@
 │   │   ├── how-inference-routing-works.mdx
 │   │   ├── model-capability-audit.mdx
 │   │   ├── set-up-anthropic-compatible-endpoint.mdx
+│   │   ├── set-up-llama-cpp.mdx
 │   │   ├── set-up-model-router.mdx
 │   │   ├── set-up-nvidia-nim.mdx
 │   │   ├── set-up-ollama.mdx
@@ -3293,4 +3294,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-270 directories, 3024 files
+270 directories, 3025 files
