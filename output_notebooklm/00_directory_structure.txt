@@ -580,6 +580,7 @@
 │       ├── openclaw-2026.6.10-dependency-review.md
 │       ├── openclaw-2026.7.1-dependency-review.md
 │       ├── openclaw-controls.mdx
+│       ├── openshell-0.0.101-migration-review.md
 │       ├── openshell-0.0.71-gateway-auth-review.mdx
 │       ├── openshell-0.0.72-compatibility-review.mdx
 │       ├── openshell-0.0.85-migration-review.md
@@ -3294,4 +3295,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-270 directories, 3025 files
+270 directories, 3026 files

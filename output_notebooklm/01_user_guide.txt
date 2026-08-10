@@ -1693,7 +1693,7 @@ The integration has three parts:
 
 This integration depends on the OpenShell MCP/JSON-RPC L7 policy support from [NVIDIA/OpenShell#1865](https://github.com/NVIDIA/OpenShell/pull/1865).
 
-Current NemoClaw builds default to the pinned stable OpenShell `0.0.99` release, which exposes native `protocol: mcp` policy handling and provider-backed credential replacement.
+Current NemoClaw builds default to the pinned stable OpenShell `0.0.101` release, which exposes native `protocol: mcp` policy handling and provider-backed credential replacement.
 The optional OpenShell development channel is compatibility evidence only and is not a shipping target.
 
 NemoClaw accepts Streamable HTTP MCP endpoints only.
@@ -1733,36 +1733,36 @@ NemoClaw accepts canonical HTTPS MCP URLs and writes the credential placeholder 
 
 ### DNS Pinning Contract
 
-The MCP integration pins its OpenShell DNS enforcement contract to [`NVIDIA/OpenShell@8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032`](https://github.com/NVIDIA/OpenShell/tree/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032).
+The MCP integration pins its OpenShell DNS enforcement contract to [`NVIDIA/OpenShell@8ddd98c3dff62619a3963f99ba1e055b67650e72`](https://github.com/NVIDIA/OpenShell/tree/8ddd98c3dff62619a3963f99ba1e055b67650e72).
 
 With `proxy_connect_by_hostname` disabled, OpenShell uses one socket-address list throughout resolution, validation, and connection:
 
-- [`crates/openshell-supervisor-network/src/proxy.rs:3030-3055`](https://github.com/NVIDIA/OpenShell/blob/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032/crates/openshell-supervisor-network/src/proxy.rs#L3030-L3055) produces the list.
-- [`crates/openshell-supervisor-network/src/proxy.rs:3060-3115`](https://github.com/NVIDIA/OpenShell/blob/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032/crates/openshell-supervisor-network/src/proxy.rs#L3060-L3115) validates every address.
-- [`crates/openshell-supervisor-network/src/proxy.rs:3130-3211`](https://github.com/NVIDIA/OpenShell/blob/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032/crates/openshell-supervisor-network/src/proxy.rs#L3130-L3211) connects through the validated list.
+- [`crates/openshell-supervisor-network/src/proxy.rs:3030-3055`](https://github.com/NVIDIA/OpenShell/blob/8ddd98c3dff62619a3963f99ba1e055b67650e72/crates/openshell-supervisor-network/src/proxy.rs#L3030-L3055) produces the list.
+- [`crates/openshell-supervisor-network/src/proxy.rs:3060-3115`](https://github.com/NVIDIA/OpenShell/blob/8ddd98c3dff62619a3963f99ba1e055b67650e72/crates/openshell-supervisor-network/src/proxy.rs#L3060-L3115) validates every address.
+- [`crates/openshell-supervisor-network/src/proxy.rs:3130-3211`](https://github.com/NVIDIA/OpenShell/blob/8ddd98c3dff62619a3963f99ba1e055b67650e72/crates/openshell-supervisor-network/src/proxy.rs#L3130-L3211) connects through the validated list.
 
 The CONNECT path passes that validated connector to the direct or operator-configured upstream dial path.
-By default, direct connections and corporate-proxy CONNECT requests use the validated address list at [`crates/openshell-supervisor-network/src/proxy.rs:3179-3211`](https://github.com/NVIDIA/OpenShell/blob/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032/crates/openshell-supervisor-network/src/proxy.rs#L3179-L3211).
-The explicit HTTP-forward path carries the same connector from [`crates/openshell-supervisor-network/src/proxy.rs:4650-4656`](https://github.com/NVIDIA/OpenShell/blob/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032/crates/openshell-supervisor-network/src/proxy.rs#L4650-L4656) into the actual connection at [`crates/openshell-supervisor-network/src/proxy.rs:4706-4711`](https://github.com/NVIDIA/OpenShell/blob/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032/crates/openshell-supervisor-network/src/proxy.rs#L4706-L4711).
+By default, direct connections and corporate-proxy CONNECT requests use the validated address list at [`crates/openshell-supervisor-network/src/proxy.rs:3179-3211`](https://github.com/NVIDIA/OpenShell/blob/8ddd98c3dff62619a3963f99ba1e055b67650e72/crates/openshell-supervisor-network/src/proxy.rs#L3179-L3211).
+The explicit HTTP-forward path carries the same connector from [`crates/openshell-supervisor-network/src/proxy.rs:4650-4656`](https://github.com/NVIDIA/OpenShell/blob/8ddd98c3dff62619a3963f99ba1e055b67650e72/crates/openshell-supervisor-network/src/proxy.rs#L4650-L4656) into the actual connection at [`crates/openshell-supervisor-network/src/proxy.rs:4706-4711`](https://github.com/NVIDIA/OpenShell/blob/8ddd98c3dff62619a3963f99ba1e055b67650e72/crates/openshell-supervisor-network/src/proxy.rs#L4706-L4711).
 
 The exception is OpenShell's operator-controlled `proxy_connect_by_hostname` option.
-When enabled, OpenShell sends the requested hostname to the corporate proxy instead of the validated address, which reopens proxy-side DNS resolution; the upstream source records that residual risk at [`crates/openshell-supervisor-network/src/proxy.rs:3168-3200`](https://github.com/NVIDIA/OpenShell/blob/8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032/crates/openshell-supervisor-network/src/proxy.rs#L3168-L3200).
+When enabled, OpenShell sends the requested hostname to the corporate proxy instead of the validated address, which reopens proxy-side DNS resolution; the upstream source records that residual risk at [`crates/openshell-supervisor-network/src/proxy.rs:3168-3200`](https://github.com/NVIDIA/OpenShell/blob/8ddd98c3dff62619a3963f99ba1e055b67650e72/crates/openshell-supervisor-network/src/proxy.rs#L3168-L3200).
 NemoClaw does not enable or prohibit that host-level OpenShell option, so operators who require the pinned-address guarantee must leave it disabled and ensure their gateway configuration does not enable it.
 
-### Stable OpenShell 0.0.99 Limitations
+### Stable OpenShell 0.0.101 Limitations
 
-OpenShell v0.0.99 attributes network policy with `/proc/<pid>/exe` and process ancestors, so script-based adapters require Node or Python interpreter grants rather than immutable package-entrypoint identities.
+OpenShell v0.0.101 attributes network policy with `/proc/<pid>/exe` and process ancestors, so script-based adapters require Node or Python interpreter grants rather than immutable package-entrypoint identities.
 NemoClaw compensates with an exact HTTPS destination, path, MCP method profile, DNS pins, and a unique least-privilege credential for each server.
 
 Remove the interpreter grants when OpenShell exposes stable script or package entrypoint attribution.
 
-OpenShell v0.0.99 attaches static provider credentials at sandbox scope rather than reserving a credential key exclusively for one endpoint.
+OpenShell v0.0.101 attaches static provider credentials at sandbox scope rather than reserving a credential key exclusively for one endpoint.
 It also does not expose an immutable provider binding on an attachment.
 
 NemoClaw rejects credential-key reuse between managed MCP servers, creates a dedicated provider for each definition, reports the residual risk in `status`, and requires a unique least-privilege token and environment key.
 Do not grant a broader inspected-HTTP route to the same adapter runtime because that route could resolve the sandbox-scoped placeholder.
 
-OpenShell v0.0.99 updates, attaches, detaches, and deletes providers by mutable name instead of an atomic immutable identity.
+OpenShell v0.0.101 updates, attaches, detaches, and deletes providers by mutable name instead of an atomic immutable identity.
 NemoClaw compensates with randomized provider names, the per-sandbox lifecycle lock, and immediate ownership checks against the recorded provider ID, type, and credential-key metadata before mutations.
 
 NemoClaw fails closed and preserves retryable state when those checks do not match, but the checks do not provide compare-and-swap behavior against another OpenShell client.
@@ -3975,7 +3975,7 @@ An unset, blank, invalid, or negative value uses 30 seconds for OpenClaw gateway
 <AgentOnly variant="openclaw">
 
 Increase `NEMOCLAW_AGENT_TIMEOUT` for a slow model server, such as CPU-only local inference or modest vLLM hardware.
-NemoClaw writes this value to `agents.defaults.timeoutSeconds` during onboarding.
+NemoClaw writes this value to `agents.defaults.timeoutSeconds` and `models.providers.<provider-id>.timeoutSeconds` during onboarding.
 
 ```bash
 export NEMOCLAW_AGENT_TIMEOUT=1800
@@ -8162,7 +8162,7 @@ Do not reuse OpenShell Google Cloud compatibility names such as `GCP_PROJECT_ID`
 NemoClaw rejects them because OpenShell exposes those non-secret configuration names as child-process values.
 
 It also rejects `GCE_METADATA_HOST`, `GCE_METADATA_IP`, and `METADATA_SERVER_DETECTION`, which OpenShell rewrites for its metadata emulator.
-NemoClaw pins the child-visible compatibility list to OpenShell `v0.0.99` commit `8c7dd148a9e6360c9d5b2830e339a0dc4b3f3032`.
+NemoClaw pins the child-visible compatibility list to OpenShell `v0.0.101` commit `8ddd98c3dff62619a3963f99ba1e055b67650e72`.
 Review this list with every OpenShell version change.
 
 OpenShell reserves credential names matching `v[0-9]+_[A-Za-z0-9_]+` for revisioned placeholders.
@@ -8206,7 +8206,7 @@ A named tunnel can stabilize the hostname without stabilizing its exact address 
 Use stable private DNS and a routed private HTTPS endpoint when you operate the MCP server locally.
 
 Authenticated MCP rejects `host.openshell.internal`, `host.docker.internal`, and `host.containers.internal`.
-OpenShell `v0.0.99` has a trusted-gateway branch for a narrow driver-provided topology, but it does not expose an attested driver gateway address that NemoClaw can pin for this flow.
+OpenShell `v0.0.101` has a trusted-gateway branch for a narrow driver-provided topology, but it does not expose an attested driver gateway address that NemoClaw can pin for this flow.
 Use a routed HTTPS endpoint on a stable private address instead.
 
 ## Understand the Generated Method Profile
@@ -9572,14 +9572,15 @@ It is idempotent and safe to script.
 If the gateway is already healthy, `recover` does not restart it.
 If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable.
 
-After it checks gateway health and host forwards, `recover` checks for a NemoClaw cron restore gate left by an interrupted rebuild.
+Before it repairs the gateway, `recover` checks for a NemoClaw cron restore gate or release recovery record left by an interrupted rebuild.
 The gate continues to block new Hermes turns and cron dispatch across gateway and container restarts in the same sandbox.
-When the gate exists, `recover` waits for active agent work to finish and validates the restored cron jobs and scripts.
-It clears only the NemoClaw gate after validation succeeds.
+If release rollback could not restore the gate, `recover` uses the root-owned recovery record to reacquire it before gateway repair can start dispatch.
+After gateway repair, `recover` waits for active agent work to finish and validates the restored cron jobs and scripts.
+It clears NemoClaw-owned gate and release recovery state only after validation succeeds.
 If no independent operator drain exists, successful recovery prints `Hermes cron dispatch resumed after restored jobs and scripts were validated.`
 If an operator drain exists, recovery prints `Hermes cron restore gate cleared; the independent operator drain remains active.`
 The command does not own or clear the Hermes operator drain, so new Hermes turns and cron dispatch remain blocked while that drain is active.
-If cron validation fails, `recover` exits nonzero and retains the NemoClaw gate.
+If gate reacquisition or cron validation fails, `recover` exits nonzero and retains the recovery state for another attempt.
 
 Use `gateway restart` when you intentionally need a supported Hermes gateway to reload runtime configuration or plugins.
 
@@ -9714,9 +9715,11 @@ $$nemoclaw <sandbox-name> gateway-token --quiet
 ```
 
 Before post-restore repairs, NemoClaw verifies that the recreated sandbox still identifies as Hermes and exits nonzero if its identity does not match the rebuild target.
-After state restore, NemoClaw restores managed MCP configuration through the normal lifecycle, then re-proves or recovers gateway health and performs final MCP reconciliation.
+After state restore, NemoClaw restarts the Hermes gateway so it reads the restored durable state, then restores managed MCP configuration through the normal lifecycle.
+MCP restoration performs an acknowledged gateway reload, so NemoClaw finishes by verifying the final running gateway and its managed MCP state without replacing that verified process again.
+The gateway starts during recreation and reads its durable state before the restore replaces it, which is why the first post-restore restart must happen before managed MCP restoration.
 `rebuild` exits nonzero instead of reporting success when it cannot verify final gateway health or managed MCP state.
-Follow the printed recovery guidance, using `$$nemoclaw <sandbox-name> recover` for gateway health and `$$nemoclaw <sandbox-name> mcp restart` for incomplete managed MCP restoration.
+Follow the printed recovery guidance, using `$$nemoclaw <sandbox-name> gateway restart` first for gateway health, `$$nemoclaw <sandbox-name> recover` when the restart does not restore verified health, and `$$nemoclaw <sandbox-name> mcp restart` for incomplete managed MCP restoration.
 
 When the rebuild backup contains active Hermes cron jobs that reference scripts, NemoClaw validates those script references before it deletes the existing sandbox.
 The check covers the default profile and named profiles.
@@ -9727,12 +9730,18 @@ If this validation fails, the rebuild keeps the existing sandbox and reports the
 After NemoClaw creates the replacement, it acquires an independent root-owned gate that blocks new Hermes turns and cron dispatch.
 The gate remains active across gateway and container restarts in the replacement sandbox.
 NemoClaw waits for active agent work to finish before restoring state.
-It validates the restored jobs and scripts against the same running gateway before it clears its gate.
-If an operator already drained the gateway, NemoClaw clears only its gate and leaves the operator drain active.
-If state restore or cron validation fails after gate acquisition, the command exits nonzero, preserves the backup, and retains the NemoClaw gate.
+It validates the restored jobs and scripts before the gateway replacement, then keeps dispatch blocked while it restarts and verifies that replacement.
+It records the replacement process identity around managed health verification and clears the gate only if that same live process completes the final cron validation.
+If an operator already drained the gateway, NemoClaw clears its gate and release recovery record while leaving the operator drain active.
+If state restore, managed MCP restoration, gateway replacement, or cron validation fails after gate acquisition, the command exits nonzero and preserves the backup.
+Those failures retain the NemoClaw gate unless the output explicitly reports that release rollback could not restore its marker.
+In that exceptional case, NemoClaw preserves a root-owned release recovery record, but you must not assume dispatch is blocked.
+Run `$$nemoclaw <sandbox-name> recover` immediately so it can reacquire the gate before validating the restored cron state.
+If gate reacquisition fails, recovery exits nonzero and leaves the recovery record in place for another attempt.
 Failures before gate acquisition do not create a new gate.
-Do not manually remove the root-owned cron restore marker because removal bypasses restored cron validation.
-After you correct the reported restore problem, run `$$nemoclaw <sandbox-name> recover` to validate the restored cron tree and clear the NemoClaw gate.
+Do not manually remove the root-owned cron restore marker or release recovery record because removal bypasses restored cron validation.
+If managed MCP restoration failed, correct the reported cause and run `$$nemoclaw <sandbox-name> mcp restart` first.
+Then run `$$nemoclaw <sandbox-name> recover` to repair and probe the gateway, validate the restored cron tree, and clear NemoClaw-owned cron restore recovery state.
 </AgentOnly>
 
 <AgentOnly variant="deepagents">
@@ -11251,8 +11260,11 @@ For a NemoClaw-managed authority, it also removes only NemoClaw's marked Linux g
 It preserves upstream Linux package units, the macOS Homebrew service, and unrelated environment entries.
 Gateway-scoped cleanup removes that gateway's OpenShell resources first, then the marked Linux unit.
 The OpenShell gateway service therefore keeps running while uninstall deletes the selected gateway's sandboxes.
-If that OpenShell cleanup fails, uninstall exits nonzero and preserves the marked Linux unit and the gateway process.
-That cleanup can partially complete before the failure.
+If OpenShell resource cleanup fails, uninstall exits nonzero and preserves the marked Linux unit and gateway process.
+If marked Linux unit cleanup fails, uninstall exits nonzero before it scans for or stops a remaining gateway process or continues with later Docker and gateway-state cleanup.
+OpenShell resource and Linux unit cleanup can partially complete before either failure.
+After selected sandbox cleanup succeeds, uninstall removes those entries from `sandboxes.json` before gateway registration and Linux unit cleanup.
+If a later step fails, the retry skips gateway selection and resumes the remaining cleanup.
 Resolve the reported error.
 Inspect the remaining gateways with `openshell gateway list`.
 Rerun `NEMOCLAW_GATEWAY_PORT=<port> $$nemoclaw uninstall` with the gateway port from the failed uninstall.
@@ -11368,7 +11380,7 @@ The `langchain-deepagents-code` agent manifest declares the expected Deep Agents
 </AgentOnly>
 
 <Warning>
-OpenShell 0.0.99 limits a routed sandbox name to 19 characters and rejects consecutive hyphens.
+OpenShell 0.0.101 limits a routed sandbox name to 19 characters and rejects consecutive hyphens.
 A NemoClaw sandbox name must contain 1 to 19 characters.
 It must start with a lowercase letter, use lowercase letters, numbers, and single internal hyphens, and end with a letter or number.
 Before the OpenShell upgrade, the installer checks registered sandboxes for the selected gateway.
@@ -11377,7 +11389,7 @@ If the installer finds incompatible names, it lists each name and exits before i
 - Prepare the NemoClaw CLI for the upgrade.
 - Start a backup of the registered sandboxes.
 - Retire the selected OpenShell gateway.
-- Install OpenShell 0.0.99.
+- Install OpenShell 0.0.101.
 - Recreate a sandbox.
 
 NemoClaw does not automatically truncate or change the sandbox name.
