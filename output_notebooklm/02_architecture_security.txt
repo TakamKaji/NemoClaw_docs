@@ -571,15 +571,19 @@ This separation keeps host orchestration, agent-specific assets, and the sandbox
 
 ## Readiness and Sandbox Creation
 
-Run `$$nemoclaw host probe` when you need a read-only host readiness report before onboarding.
-The report describes host observations, capabilities, qualifications, findings, evidence, and CLI provenance without changing host state.
+Run `$$nemoclaw host probe` when you need a read-only system readiness report before onboarding.
+The report combines host and gateway observations, capabilities, qualifications, findings, evidence, and CLI provenance without changing system state.
+Onboarding consumes the same stable host and gateway entities and applies its explicit admission policy.
+It revalidates live facts after permitted preparation and when a saved onboarding session resumes.
 
 When you run `$$nemoclaw onboard`, the host CLI and blueprint runner complete these operations:
 
-1. NemoClaw resolves the blueprint, checks version compatibility, and verifies the digest.
-2. Onboarding validates the selected inference provider, credentials, agent settings, and platform requirements.
-3. The runner determines which gateway, provider, policy, sandbox, and integration resources to create or update.
-4. NemoClaw records progress so a supported interruption can resume or report a specific recovery action.
+1. NemoClaw resolves gateway lifecycle authority and rejects blocking system readiness results before managed resource effects.
+   A container-backed WSL GPU proof can run only after this admission check; explicit CPU-only intent skips it.
+2. NemoClaw resolves the blueprint, checks version compatibility, and verifies the digest.
+3. Onboarding validates the selected inference provider, credentials, agent settings, and platform requirements.
+4. The runner determines which gateway, provider, policy, sandbox, and integration resources to create or update.
+5. NemoClaw records progress so a supported interruption can resume or report a specific recovery action.
 
 After the sandbox starts, the selected agent uses its managed configuration and the controls supported by the host.
 
@@ -589,7 +593,7 @@ NemoClaw operates the sandbox and its manifest-declared state through host-side 
 
 | Operation | Result |
 |---|---|
-| Inspect | `host probe`, `status`, and `logs` report host, sandbox, agent-runtime, inference, and recovery information without replacing the sandbox. |
+| Inspect | `host probe`, `status`, and `logs` report system, sandbox, agent-runtime, inference, and recovery information without replacing the sandbox. |
 | Configure | Inference, policy, managed MCP, and supported agent-runtime integration commands update the applicable managed resources. |
 | Rebuild | Recreates the sandbox from the recorded configuration and restores supported agent state through a recorded transaction. |
 | Recover | Repairs a stopped or degraded agent runtime and its sandbox-scoped forwards when the recorded identities still match. |
@@ -3439,7 +3443,7 @@ If the gateway is not running, Kubernetes allocatable fields are omitted and hos
 
 ### `$$nemoclaw host probe`
 
-Inspect host readiness before onboarding without changing host, Docker, gateway, credential, policy, or sandbox state.
+Inspect host capabilities and gateway authority before onboarding without changing host, Docker, gateway, credential, policy, or sandbox state.
 Use `--json` for the schema-versioned report.
 The command exits with `0` for `supported`, `2` for `incompatible`, and `3` for `inconclusive`.
 
@@ -3983,7 +3987,7 @@ Kanban backup does not include named boards, attachments, worker logs, scratch w
 </AgentOnly>
 
 Before creating the gateway, the wizard runs preflight checks.
-It verifies that Docker is reachable, warns on untested runtimes such as Podman, and prints host remediation guidance when prerequisites are missing.
+It verifies that Docker is reachable, rejects unsupported runtimes such as Podman, and prints host remediation guidance when prerequisites are missing.
 The preflight also enforces the OpenShell version range declared in the blueprint (`min_openshell_version` and `max_openshell_version`).
 If the installed OpenShell version falls outside this range, onboarding exits with an actionable error and a link to compatible releases.
 For fresh OpenShell installs, NemoClaw queries published OpenShell releases and asks the installer to use a release that fits the blueprint range.
@@ -3998,8 +4002,15 @@ For Linux Docker-driver gateways, onboarding also checks that a helper container
 If a host firewall blocks that sandbox path, onboarding exits with a `sudo ufw allow from <subnet> to <gateway-ip> port <gateway-port> proto tcp` command before it reports the gateway healthy.
 Set `NEMOCLAW_AUTO_FIX_FIREWALL=1` to opt in to automatic UFW remediation for this specific failure: NemoClaw uses `sudo -n` only, validates the Docker bridge subnet/gateway/port, applies the narrow UFW rule only after a proven TCP reachability failure, and re-probes before continuing.
 If passwordless sudo, UFW, or active UFW is unavailable, NemoClaw falls back to the manual guidance path without prompting for a password.
-Tune the wait via `NEMOCLAW_REUSE_HEALTH_POLL_COUNT` (default `6`) and `NEMOCLAW_REUSE_HEALTH_POLL_INTERVAL` (default `5` seconds).
-The poll count is clamped to a minimum of `1` so the probe always runs at least once, and the interval is clamped to a minimum of `0` (no sleep between attempts).
+
+For the portable experimental profile, the helper maps `host.openshell.internal` to the OpenShell Podman host gateway instead of the inspected network gateway.
+This path does not use Docker bridge UFW remediation.
+After all portable TCP probe attempts fail, onboarding prints commands for the user-scoped Podman service and socket.
+
+Onboarding prints the same commands when the portable probe cannot reach the user-scoped Podman service.
+The printed rerun command keeps the portable experimental profile selected.
+To tune the existing-gateway HTTP health poll, use `NEMOCLAW_REUSE_HEALTH_POLL_COUNT` (default `6`) and `NEMOCLAW_REUSE_HEALTH_POLL_INTERVAL` (default `5` seconds).
+The poll count is clamped to a minimum of `1` so the health probe always runs at least once, and the interval is clamped to a minimum of `0` (no sleep between attempts).
 
 #### `--from <Dockerfile>`
 
@@ -4115,15 +4126,13 @@ The user-supplied context uses the OpenShell gateway builder instead of NemoClaw
 $$nemoclaw onboard --from ./Dockerfile.custom
 ```
 
-### GPU passthrough
+### GPU Passthrough
 
 When `$$nemoclaw onboard` detects an NVIDIA GPU on the host, it enables OpenShell GPU passthrough at both the gateway and sandbox level by default.
-Detection proceeds along two paths. The `nvidia-smi`-based paths (the primary `--query-gpu=name,memory.total,memory.free` probe and the unified-memory `--query-gpu=name` fallback) require `nvidia-smi` to succeed and, on hosts whose firmware does not classify as a known NVIDIA platform (DGX Spark, DGX Station, Jetson, or Tegra), additionally require that the GPU name does not match the placeholder family observed on the Windows-on-ARM WSL2 nvidia-smi shim (`JMJWOA-Generic-*`) and that either the host is not ARM64 Linux (the observed shim is Windows-on-ARM only) or the NVIDIA kernel driver is bound (`/proc/driver/nvidia/` present), so that placeholder shims on non-NVIDIA hardware are not mistaken for real GPUs.
+The `nvidia-smi` probes require a successful result and reject placeholder `JMJWOA-Generic-*` GPU names unless NemoClaw can prove a supported NVIDIA platform or GPU execution.
 NemoClaw treats a recognized NVIDIA product model from `/sys/class/dmi/id/product_name` or `/sys/firmware/devicetree/base/model`, or a known Tegra device node, as authoritative platform identity.
-Remove the native ARM64 proof exception when every supported host that uses it exposes a stable value through one of these signals and `detectNvidiaPlatform()` recognizes that value.
-On a native or Docker Desktop-backed WSL ARM64 Linux host without firmware-confirmed NVIDIA platform metadata, the primary memory-query probe can clear a `JMJWOA-Generic-*` name only after a bounded CUDA workload succeeds.
-The workload runs `docker run --rm --gpus all nvcr.io/nvidia/k8s/cuda-sample@sha256:7c7540bdf1f942d4fb6db97069fd6c289471b54ac29e3c7fcdf914cf77af7d41`.
-Docker may pull the CUDA sample image from `nvcr.io` and keeps the image in the local cache after the container exits.
+On eligible native or Docker Desktop-backed WSL ARM64 Linux hosts without that firmware evidence, one bounded Docker CUDA workload can prove GPU execution.
+For the proof command, timeout control, and failure recovery, refer to [GPU Setup Fails with a Placeholder GPU Name](troubleshooting#gpu-setup-fails-with-a-placeholder-gpu-name).
 The names-only unified-memory fallback does not run this workload and rejects denylisted names.
 Other non-firmware-vouched hosts also reject denylisted names.
 Jetson/Tegra hosts that ship without `nvidia-smi` continue to be detected via the devicetree firmware fallback (`/sys/firmware/devicetree/base/model`) or the Tegra device-node fallback (`/dev/nvhost-gpu`, `/dev/nvhost-ctrl-gpu`, `/dev/nvhost-ctrl`, or `/dev/nvmap`); both bypass the trust-tier gate above.
@@ -4630,8 +4639,19 @@ NemoClaw removes the temporary state backup after a successful restore or rollba
 If state restoration and rollback both fail, it retains the backup and prints host recovery guidance.
 Mounted state remains available, but a committed swap does not retain other writable-layer changes.
 It is idempotent.
-When `recover` repairs a stopped built-in OpenClaw or Hermes gateway, it repeats the recovery action only for an exit status of `1` with blank stdout and a sole nonblank stderr line equal to `SUPERVISOR_BUSY`, with at most three controller attempts.
-The same result is inconclusive during managed settle confirmation and can be probed again only within the configured settle window.
+When `recover` repairs a stopped built-in OpenClaw or Hermes gateway, it repeats the recovery action only for these exact transient results:
+
+- Status `1` with blank stdout and exactly one stderr line, `SUPERVISOR_BUSY`.
+- Status `137` with blank stdout and stderr.
+- Status `1` with blank stdout and exactly one stderr line, `Error response from daemon: Container <id> is restarting, wait until the container is running`.
+
+For the Docker result, `<id>` must be a 64-character lowercase hexadecimal ID that matches the selected registry-owned container.
+Recovery makes at most 11 controller attempts in total.
+It stops after 3 of those attempts return `SUPERVISOR_BUSY`.
+Managed settle confirmation treats exact `SUPERVISOR_BUSY` as inconclusive within its configured window.
+Status `137` and the Docker restart result remain terminal during that confirmation.
+The managed supervisor startup waiter accepts the two container-transition results within its separate 11-attempt bound.
+Unbound container IDs, reformatted Docker errors, status `137` with nonblank output, and other diagnostic results are terminal.
 NemoClaw treats `SUPERVISOR_UNAVAILABLE` as terminal because the managed controller uses it for integrity refusals, ambiguous discovery, and process-identity changes.
 It does not repeat the recovery action or treat the settle probe as inconclusive, and instead prints host-side restart and rebuild guidance.
 Other controller failures also stop immediately.
@@ -7119,6 +7139,17 @@ Rerun `NEMOCLAW_GATEWAY_PORT=<port> $$nemoclaw uninstall` with the gateway port 
 For an externally supervised authority, uninstall preserves the selected local gateway state in both full and gateway-scoped cleanup.
 It also preserves the gateway process, supervisor resources, marked Linux unit, Docker resources, OpenShell binaries, and the declared external state directory.
 A custom-port uninstall does not stop or remove the default gateway service or its environment file.
+Before scoped cleanup stops a Docker gateway process, including a managed default gateway service, NemoClaw requires two Docker namespace proofs.
+The selected Docker gateway configuration and any running gateway process must use the state-root-specific OpenShell sandbox namespace that NemoClaw generated.
+Because the supported OpenShell Podman schema does not expose `sandbox_namespace`, scoped Podman uninstall fails closed before signaling and preserves the gateway runtime evidence and local state.
+Full single-gateway Podman uninstall continues to use normal graceful teardown.
+For Docker, if either proof is absent, uninstall exits nonzero before it signals the host gateway.
+NemoClaw preserves the gateway runtime evidence and local state.
+Keep that state intact.
+Restore the selected Docker gateway through the supported install or onboarding recovery flow so it restarts with the generated configuration.
+Verify every gateway with `openshell gateway list`.
+Retry the scoped uninstall.
+Do not add `sandbox_namespace` manually to a live gateway configuration because the running process can still be using its previous namespace.
 
 ##### Uninstalling Every Gateway Port
 
@@ -7447,7 +7478,7 @@ Set them before running `$$nemoclaw onboard`.
 | `NEMOCLAW_INSTALL_TAG` | release tag | For internal installer commands: the release tag to install when `NEMOCLAW_INSTALL_REF` is unset or empty. Defaults to the admin-promoted `lkg` tag when unset. Overridden by the `--install-tag` flag. |
 | `NEMOCLAW_ENABLE_LOCAL_MODEL_PROFILE` | `1` to enable | Enables the fixed vLLM local model profile. Requires `NEMOCLAW_LOCAL_MODEL_RUNTIME=vllm`. Direct `$$nemoclaw onboard` use also requires `NEMOCLAW_NON_INTERACTIVE=1`. The hosted installer makes onboarding non-interactive, disables Express selection, and sets this value automatically when it receives `--local-model-runtime=vllm`. |
 | `NEMOCLAW_LOCAL_MODEL_RUNTIME` | `vllm` | Selects the fixed vLLM local model profile. Requires `NEMOCLAW_ENABLE_LOCAL_MODEL_PROFILE=1`; direct onboarding also requires `NEMOCLAW_NON_INTERACTIVE=1`. The hosted installer sets this value from `--local-model-runtime=vllm`. |
-| `NEMOCLAW_VLLM_MODEL` | registry slug or Hugging Face model id | Selects the model the managed-vLLM install path serves and remains authoritative during DGX Station installer setup. Recognised slugs: `qwen3.6-27b`, `qwen3.6-35b-a3b-nvfp4`, `nemotron-3-nano-4b`, `deepseek-v4-flash`, `nemotron-3-ultra-550b-a55b`, `deepseek-r1-distill-70b`. Station Express selects `nemotron-3-ultra-550b-a55b`; a qualified reciprocal pair uses the distributed topology, while no qualifying pair retains the single-Station Ultra topology. Outside Station Express, unset uses the per-platform profile default. Gated models (e.g. `deepseek-r1-distill-70b`) require `HF_TOKEN` or `HUGGING_FACE_HUB_TOKEN`. |
+| `NEMOCLAW_VLLM_MODEL` | registry slug or Hugging Face model ID | Selects the model the managed-vLLM install path serves and remains authoritative during DGX Station installer setup. Recognized slugs: `qwen3.6-27b`, `qwen3.6-35b-a3b-nvfp4`, `muse-glimmer-30b`, `nemotron-3-nano-4b`, `deepseek-v4-flash`, `nemotron-3-ultra-550b-a55b`, `deepseek-r1-distill-70b`. The `muse-glimmer-30b` profile remains Experimental until the upstream vLLM support is merged and NemoClaw qualifies a replacement runtime. NemoClaw does not enable or support DFlash speculative decoding for this profile. Station Express selects `nemotron-3-ultra-550b-a55b`; a qualified reciprocal pair uses the distributed topology, while no qualifying pair retains the single-Station Ultra topology. Outside Station Express, unset uses the per-platform profile default. Gated models (for example, `deepseek-r1-distill-70b`) require `HF_TOKEN` or `HUGGING_FACE_HUB_TOKEN`. |
 | `NEMOCLAW_DGX_STATION_PEER` | SSH host or `user@host` | Selects one exact, already-trusted DGX Station peer for Nemotron 3 Ultra pair qualification. The peer must match the reciprocal private `/30` rail and hardware checks; an explicit peer failure stops setup instead of falling back. NemoClaw does not enroll SSH trust or accept a port or SSH option in this value. When unset, DGX Station installer discovery checks only the two deterministic `/30` counterpart addresses. A peer cannot be combined with an explicit non-Ultra model; conflicting explicit selections fail before pair preparation. |
 | `NEMOCLAW_DGX_STATION_SSH_BINDING` | opaque installer-managed token | Carries the qualified peer endpoint and host-key binding from DGX Station pair preparation into the current managed-vLLM install. The installer creates and clears this token; operators should not set or persist it. Missing, changed, or mismatched binding state fails before peer SSH or Docker work. |
 | `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` | JSON array of non-blank strings | Appends advanced operator-owned tokens to the managed `vllm serve` command after NemoClaw's registry defaults. Example: `["--max-num-seqs","2"]`. Malformed JSON, non-string tokens, or blank tokens fail before Docker work starts. |
@@ -7749,6 +7780,7 @@ Defaults are sized for typical hardware; override only if you see false-positive
 | `NEMOCLAW_MCP_PROVIDER_SYNC_TIMEOUT_SECONDS` | `30` | Maximum time to wait for an OpenShell MCP provider credential revision to become active or fully revoked inside the sandbox. Integer seconds; raise only when provider synchronization is unusually slow. |
 | `NEMOCLAW_SANDBOX_EXEC_TIMEOUT_MS` | per call site (typically `15000`) | Overrides the default timeout for `openshell sandbox exec` calls issued by recovery and lifecycle helpers. Integer milliseconds; non-positive or non-numeric values fall back to the per-call-site default. |
 | `NEMOCLAW_STATUS_PROBE_TIMEOUT_MS` | built-in default | Overrides the timeout for the OpenShell status probe used by `$$nemoclaw <name> status`. Integer milliseconds; non-positive or non-numeric values fall back to the default. |
+| `NEMOCLAW_WSL_GPU_PROOF_TIMEOUT_MS` | `180000` | Maximum time for the bounded Docker CUDA workload that proves a placeholder-named GPU on an eligible ARM64 Linux host. A positive finite number of milliseconds overrides the default. Invalid, infinite, zero, and negative values use the default. |
 
 ### Onboard and Sandbox Readiness Timeouts
 
@@ -9041,7 +9073,7 @@ For install requirements and the shorter setup-oriented platform view, refer to 
 {/* platform-matrix-full:begin */}
 | OS | Container runtime | Status | PRD priority | CI | Notes |
 |----|-------------------|--------|--------------|----|-------|
-| DGX OS (Spark) | Docker | Tested | P1 | Yes | Use the standard installer and `$$nemoclaw onboard`. The automatic two-DGX Spark managed-vLLM profile is Experimental, and physical two-node end-to-end validation is pending. For the profile requirements and controls, see [Set Up vLLM on Two DGX Sparks](../inference/local-inference/set-up-vllm-on-two-dgx-sparks). For the validated single-DGX Spark walkthrough with local inference, see the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw). |
+| DGX OS (Spark) | Docker | Tested | P1 | Yes | Use the standard installer and `$$nemoclaw onboard`. DGX Spark Express keeps automatic managed-vLLM serving-profile selection as option 1 and offers the fixed single-host catalog profile as option 2. The automatic two-DGX Spark managed-vLLM profile is Experimental, and physical two-node end-to-end validation is pending. For the profile requirements and controls, see [Set Up vLLM on Two DGX Sparks](../inference/local-inference/set-up-vllm-on-two-dgx-sparks). For the validated single-DGX Spark walkthrough with local inference, see the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw). |
 | DGX OS (Station) | Docker | Tested with limitations | P1 | No | The PRD marks this platform as P1. Physical validation on one DGX Station GB300 covers generic Ubuntu 24.04 ARM64, stock DGX OS `7.5.0`, the April 2026 NVIDIA Colossus BaseOS profile, and the June 2026 NVIDIA AI Developer Tools profile. A physical no-OTA DGX OS `7.6.0` host provided the release and hardware profile used for its stable workstation-family classifier and passed read-only eligibility and runtime-command preflight. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. The profile remains subject to the same physical GB300, driver, ECC, Docker, CDI, and container GPU validation. Clean-host end-to-end validation passed on generic Ubuntu and Colossus BaseOS; stock DGX OS and AI Developer Tools completed Station Express validation. The DGX OS `7.5.0` run used released OpenShell `0.0.85`, local Nemotron Ultra serving, sandbox `cuInit(0)`, and a Hermes write/read file-tool task. A dual-Station configuration has not been validated, and dedicated CI coverage is not available. Direct-GPU policies expose only the exact read-only BDF directory for each discovered display-class PCI device with NVIDIA vendor ID (`0x10de`) and GB300 device ID (`0x31c2` or `0x31c3`) plus required existing topology and module paths; they do not expose `/sys`, the PCI parent subtree, or sysfs write access. During physical validation, reads of `/sys/fs/cgroup/cgroup.controllers` and `/sys/class/net/lo/address` remained denied. For canonical hardware qualification, image requirements, preparation, repair limits, reboot handoff, and the explicit temporary metadata override, see [Prepare DGX Station to Install NemoClaw](../get-started/additional-setup/dgx-station-preparation). |
 | Linux | Docker | Tested | P0 | Yes | Primary tested path. Ubuntu 24.04 has host-level onboarding validation. A digest-pinned Ubuntu 26.04 userspace lane builds the CLI and runs preflight, installer, and platform contracts on eligible main pushes; Docker-host, AppArmor, Landlock, and live onboarding validation on 26.04 remain pending. Other distros (Ubuntu 22.04, Fedora, Rocky, Alma, NixOS, Arch) may work but are not validated. |
 | macOS (Apple Silicon) | Colima, Docker Desktop | Tested with limitations | P0 | Yes | Start the container runtime (Colima or Docker Desktop) before running the installer. When Homebrew is available, OpenShell uses its official formula and the gateway appears in `brew services list` as `openshell`; without Homebrew, NemoClaw uses the standalone OpenShell install and detached gateway fallback. Homebrew Colima users must install both Colima and the Docker CLI (`brew install colima docker`) before `docker info` can work. Xcode Command Line Tools (`xcode-select --install`) are typically required for Node native modules during install. NemoClaw recommends them but does not enforce them during preflight. |
@@ -9067,7 +9099,7 @@ NemoClaw routes inference through the OpenShell gateway. Each row below is a pro
 | Local Ollama | Tested with limitations | Local Ollama API | Available when Ollama is installed or running on the host. Validated default models: `qwen3.6:35b` (high VRAM), `nemotron-3-nano:30b` (medium VRAM), `qwen3.5:9b` (low VRAM fallback). |
 | Local llama.cpp (already running) | Experimental | Local OpenAI-compatible | Attaches only to an authenticated operator-managed server on loopback port `8081` that passes cooperative native llama.cpp fingerprinting. NemoClaw does not own its server, model, or lifecycle. |
 | Local llama.cpp (managed DGX Spark) | Experimental | Local OpenAI-compatible | Uses the repository-owned YAML recipe for NVIDIA Nemotron 3 Nano 30B-A3B, exact GGUF verification, and Docker lifecycle on a qualified DGX Spark host. The recipe remains unqualified for agent support. |
-| Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a CDI spec present (`onboard` asserts CDI presence with `assertCdiNvidiaGpuSpecPresent`, `src/lib/onboard/fatal-runtime-preflight.ts`). NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag because it does not auto-select a NIM image for the host today. You must explicitly pick from the validated image list. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
+| Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag because it does not auto-select a NIM image for the host today. You must explicitly pick from the validated image list. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
 | Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Appears in the onboarding menu when NemoClaw detects a server already on `localhost:8000`. No flag required. Model is whatever the existing server serves. |
 | Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status-full:end */}
@@ -9102,7 +9134,7 @@ Each row below is a launch-facing capability claim that NemoClaw makes in docs, 
 | Snapshot and restore | Tested | Create, list, and restore named snapshots of sandbox state with the `$$nemoclaw <name> snapshot` subcommands (`create`, `list`, `restore`). Credential stripping is enforced on capture. Unsafe symlinks are rejected on restore. |
 | Agent skills | Tested | Packaged agent skills are discoverable by Cursor, Claude Code, and other coding assistants under `.agents/skills/`. Skills also install into the sandbox with `$$nemoclaw <name> skill install`. |
 | Managed MCP servers | Tested | OpenClaw, Hermes, and LangChain Deep Agents Code support authenticated HTTPS Streamable HTTP MCP server lifecycle through `$$nemoclaw <name> mcp`. NemoClaw stores only credential names and ownership metadata, while OpenShell keeps raw credential values outside the sandbox and replaces credential placeholders at approved egress boundaries. |
-| Host readiness reporting | Tested | `$$nemoclaw host probe` reports host observations, capabilities, qualifications, findings, evidence, and CLI provenance without changing host, gateway, provider, policy, credential, or sandbox state. The human-readable and JSON formats use the same schema-versioned report and deterministic exit codes. |
+| System readiness reporting | Tested | `$$nemoclaw host probe` reports host and gateway observations, capabilities, qualifications, findings, evidence, and CLI provenance without changing host, Docker, gateway, provider, policy, credential, or sandbox state. The human-readable and JSON formats use the same schema-versioned report and deterministic exit codes. |
 | Deep Agents trace export | Tested with limitations | LangChain Deep Agents Code can opt into bounded-content OpenTelemetry Protocol (OTLP) over HTTP trace export to an operator-managed host collector. The sandbox receives no remote-backend credential, the local receiver has no authentication, trace content can contain sensitive application data, and delivery failures do not stop agent work. |
 | State migration | Tested | Sandbox state migrates across rebuilds with credentials intentionally excluded. Hermes excludes `auth.json` and restores its SQLite session DB through the backup API. OpenClaw config merge prevents stale state from overwriting fresh values. |
 | Blueprint versioning | Tested | Versioned, digest-verified, and reproducible blueprint lifecycle. Drives `$$nemoclaw <name> rebuild` and the migration safeguards above. |
@@ -9135,7 +9167,7 @@ They are listed here so launch material, sales conversations, and support triage
 | Native Kubernetes or OpenShift deployments | Unsupported | NemoClaw runs the sandbox as a Docker container, not a Kubernetes pod. The default Docker-driver topology does not embed k3s. Operator-managed K8s/OpenShift deployments are out of scope; see issue #407 (community OpenShift through agent-sandbox CRD). |
 | Air-gapped / offline installs | Unsupported | Onboard assumes network reachability for package fetches, container pulls, and provider validation. See open issues #4872 and #2218 (production-deployment epic covering air-gapped support, China network guidance, multi-host topology). |
 | Windows-on-ARM GPU passthrough | Unsupported | Windows-on-ARM CPU paths run under WSL2 'tested with limitations', but GPU passthrough on WOA is denylisted (`src/lib/onboard/wsl-docker-desktop-gpu.ts:214`, `src/lib/inference/gpu-trust.test.ts:70`). See closed issue #4565. |
-| Non-NVIDIA GPUs (AMD/ROCm, Intel Arc, Apple Metal) | Unsupported | Local vLLM and NIM paths assert NVIDIA CDI presence with `assertCdiNvidiaGpuSpecPresent` (`src/lib/onboard/fatal-runtime-preflight.ts`). NemoClaw does not install non-NVIDIA accelerator drivers. |
+| Non-NVIDIA GPUs (AMD/ROCm, Intel Arc, Apple Metal) | Unsupported | GPU-backed local vLLM and NIM onboarding requires the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities. NemoClaw does not install non-NVIDIA accelerator drivers. |
 | Other LangChain, AutoGen, CrewAI, or non-listed agent harnesses | Unsupported | LangChain Deep Agents Code is the only integrated LangChain-family agent runtime (refer to the Agents section above; status `Tested`). Other LangChain agent runtimes, AutoGen, CrewAI, and any agent runtime not listed in the Agents table are not integrated. Bringing more agent runtimes is tracked as a research epic (refer to open issue #4861) but is not on the current roadmap. |
 | Multi-user host sharing | Unsupported | Sandboxes are scoped to a single host user. NemoClaw treats multi-user hosts as a risk and warns at onboard; see `docs/security/openclaw-controls.mdx` Multi-user detection. |
 | Hosted SaaS / managed NemoClaw | Unsupported | There is no managed offering. Supported deployment paths are local CLI onboarding and headless Linux server onboarding. |
@@ -9171,14 +9203,14 @@ They are listed here so launch material, sales conversations, and support triage
 # SPDX-License-Identifier: Apache-2.0
 title: "System Readiness"
 sidebar-title: "System Readiness"
-description: "Check host readiness before NemoClaw onboarding without changing system state."
-description-agent: "Documents the read-only host readiness command, JSON contract, exit codes, redaction boundary, and mutation guarantees. Use when checking a host before onboarding or consuming readiness JSON."
+description: "Check host and gateway readiness before NemoClaw onboarding without changing system state."
+description-agent: "Documents the read-only system readiness command, host and gateway contract, onboarding admission, exit codes, redaction boundary, and mutation guarantees. Use when checking a system before onboarding or consuming readiness JSON."
 keywords: ["nemoclaw host probe", "system readiness", "readiness json", "pre-onboarding check"]
 content:
   type: "reference"
 ---
 
-Use the system readiness report to inspect a host before you run onboarding.
+Use the system readiness report to inspect host prerequisites and OpenShell gateway authority before you run onboarding.
 The command works without a registered gateway or sandbox.
 
 ## Run the readiness check
@@ -9229,7 +9261,7 @@ The identity is present for `supported`, `incompatible`, and `inconclusive` repo
 | --- | --- |
 | `provenance.nemoclawVersion` | Public version of the executing CLI build. |
 | `provenance.sourceRevision` | Full immutable source revision of that build. |
-| `provenance.observedAt` | Time when the host observation started. |
+| `provenance.observedAt` | Time when the system observation started. |
 
 A Git-described version can use a value such as `0.0.96-35-g8bfff4526`.
 The version must begin with three dot-separated digit groups.
@@ -9265,6 +9297,11 @@ Do not use `observedAt` as build identity.
 
 ## Interpret Docker storage
 
+The report rejects an unsupported `DOCKER_HOST` before it uses Docker daemon evidence.
+`host.docker.host_invalid` records whether the configured endpoint is invalid, `host.docker.endpoint_supported` is absent when a configured endpoint is not an absolute local `unix://` socket, and the blocking `host.docker.host_invalid` finding identifies that condition.
+TCP, SSH, relative Unix socket, and unsafe path values do not fall back to the default Docker socket.
+Unset `DOCKER_HOST` continues to use Docker's default local socket.
+
 The Docker storage capabilities separate the current host configuration from NemoClaw's supported remediation path.
 
 | Capability ID | Result represented |
@@ -9298,10 +9335,14 @@ Each capability uses `present`, `absent`, or `unknown`.
 | `host.platform.dgx_spark` | DGX Spark identity on ARM64 with an available NVIDIA GPU. |
 | `host.platform.dgx_station` | Qualified DGX Station GB300 identity, Linux ARM64 runtime, Ubuntu 24.04, hardware, and software profile. |
 
+If the combined platform capability is absent and no more specific platform qualification finding applies, the blocking `host.platform.unsupported` finding identifies an unsupported host and runtime combination.
+
 The report adds `host.platform.wsl`, `host.platform.dgx_spark`, or `host.platform.dgx_station` qualifications when those platforms apply.
 For WSL, Docker Desktop is `qualified`, native Docker is `unqualified`, and an unrecognized reachable runtime is `unknown`.
 The `host.platform.wsl_gpu_passthrough` capability is `present` only after the Docker Desktop proof passes.
 It is `absent` when the proof fails or the host has no NVIDIA GPU, and `unknown` when the proof cannot run conclusively.
+The read-only `host probe` command does not pull or start the container-backed WSL GPU proof, so a host that needs that proof reports this capability as `unknown`.
+Onboarding can run the bounded proof only after its current host and gateway readiness checks admit the run.
 
 DGX Station qualification fails closed.
 The `host.platform.dgx_station` capability is `present` only when the host runs Linux ARM64 on Ubuntu 24.04, reports an effective NVIDIA GPU, and the product identity, an exact display-class PCI device with NVIDIA vendor ID (`0x10de`) and GB300 device ID (`0x31c2` or `0x31c3`), and the software profile all qualify.
@@ -9312,10 +9353,156 @@ An unreadable marker or missing required OS or PCI evidence produces an `unknown
 Both outcomes prevent `host.platform.supported` from becoming `present`.
 When available, bounded Station identity appears under evidence ID `host.platform.identity`.
 
-## Understand the read-only boundary
+## Interpret NVIDIA GPU Integration
+
+GPU readiness distinguishes Jetson/Tegra Docker runtime integration from CDI-based NVIDIA GPU integration on other Linux hosts.
+
+| Stable ID | Kind | Result represented |
+| --- | --- | --- |
+| `host.gpu.nvidia_runtime` | Observation | Whether Docker advertises an NVIDIA runtime when the detected GPU platform is Jetson/Tegra. It is `present` when advertised, `absent` when missing or when the check does not apply, and `unknown` when an applicable check lacks enough evidence. The `host.gpu.nvidia_runtime_missing` finding distinguishes a missing Jetson/Tegra runtime from an inapplicable check. |
+| `host.gpu.nvidia_available` | Capability | `present` when NemoClaw detects an NVIDIA GPU and `absent` otherwise. |
+| `host.gpu.container_toolkit_available` | Capability | NVIDIA container integration is available. On Jetson/Tegra, this capability is derived from Docker NVIDIA runtime evidence rather than CDI files. It is `present` when container integration checks do not apply. |
+| `host.gpu.cdi_healthy` | Capability | Applicable CDI specifications are present and current. It is `present` when CDI checks do not apply, including Jetson/Tegra and Docker Desktop GPU integration in WSL. |
+| `host.gpu.nvidia_runtime_missing` | Finding | Blocking: Docker NVIDIA runtime support is missing for Jetson/Tegra sandbox GPU. |
+| `host.gpu.container_toolkit_missing` | Finding | Blocking: NVIDIA Container Toolkit is missing where toolkit integration applies. |
+| `host.gpu.cdi_missing` | Finding | Blocking: an applicable NVIDIA CDI specification is missing. |
+| `host.gpu.cdi_stale` | Finding | Blocking: an applicable NVIDIA CDI specification is stale. |
+
+Jetson/Tegra detection can use platform firmware and device evidence even when `nvidia-smi` is unavailable.
+Its remediation configures the Docker NVIDIA runtime and does not instruct the user to generate CDI files.
+An explicit CPU-only onboarding run can waive GPU integration findings for that run; `host probe` still reports the observed host state.
+
+## Interpret Gateway Readiness
+
+Gateway readiness establishes one lifecycle authority before onboarding can create or change managed resources.
+The report covers both NemoClaw-managed and externally supervised gateways.
+
+The gateway observations use these stable IDs:
+
+| Observation ID | Values and meaning |
+| --- | --- |
+| `gateway.management.mode` | `nemoclaw-managed` lets NemoClaw manage the gateway lifecycle. `externally-supervised` limits NemoClaw to attachment and validation. |
+| `gateway.owner.name` | The canonical OpenShell gateway registration for later operations. |
+| `gateway.owner.source` | `declared`, `packaged-service`, or `standalone`, according to how NemoClaw resolved the authority. |
+| `gateway.owner.port` | The host gateway port paired with the resolved registration. |
+| `gateway.attachment` | `verified`, `rejected`, or `unknown` for external supervision. NemoClaw-managed gateways report `not-applicable`. |
+| `gateway.reuse` | `healthy`, `missing`, `stale`, `active-unnamed`, `foreign-active`, or `unknown` for managed gateways. External supervision reports `not-applicable`. |
+| `gateway.version_drift` | `detected`, `not-detected`, or `unknown` for managed gateways. External supervision reports `not-applicable`. |
+| `gateway.port_conflict` | `none`, `occupied`, `multiple-owners`, `owner-mismatch`, or `unknown`. |
+
+Each gateway capability uses `present`, `absent`, or `unknown`:
+
+| Capability ID | Result represented |
+| --- | --- |
+| `gateway.authority.resolved` | NemoClaw resolved one lifecycle authority for the run. |
+| `gateway.attachment.valid` | The external attachment passed, or attachment does not apply to the managed mode. |
+| `gateway.reuse.ready` | The managed gateway is reusable, no gateway exists yet, or reuse does not apply. An absent value can require managed reconciliation. |
+| `gateway.version.compatible` | A positively identified managed gateway has source-bound version evidence that matches the installed OpenShell version, no managed gateway is running, or the check does not apply. Missing or unbound version evidence is unknown. |
+| `gateway.port.uncontested` | The gateway port has no incompatible or ambiguous owner. |
+
+Use finding IDs to handle gateway failures without parsing summaries:
+
+| Finding ID | Severity | Meaning |
+| --- | --- | --- |
+| `gateway.authority.invalid` | Blocking | NemoClaw could not resolve one lifecycle authority. |
+| `gateway.probe.inconclusive` | Warning | Required gateway observations could not be collected. |
+| `gateway.attachment.effect_forbidden` | Blocking | An operation conflicts with external lifecycle authority. |
+| `gateway.attachment.unreachable` | Blocking | The declared external gateway did not answer its health probe. |
+| `gateway.supervisor.inactive` | Blocking | The declared external supervisor was not active. |
+| `gateway.ownership.mismatch` | Blocking | The listener identity did not match the declared supervisor. |
+| `gateway.ownership.unverified` | Blocking | NemoClaw could not verify the listener identity. |
+| `gateway.ownership.multiple` | Blocking | More than one process could own the declared gateway port. |
+| `gateway.endpoint.port_mismatch` | Blocking | The declared endpoint port did not match the configured gateway port. |
+| `gateway.registration.failed` | Blocking | NemoClaw could not verify the required OpenShell registration. |
+| `gateway.capability.unsupported` | Blocking | This NemoClaw build does not implement a capability required by the declaration. |
+| `gateway.attachment.inconclusive` | Warning | The external attachment probe did not establish a result. |
+| `gateway.reuse.stale` | Warning | Managed gateway metadata requires reconciliation before reuse. |
+| `gateway.reuse.active_unnamed` | Warning | A managed gateway is active without the expected named registration. |
+| `gateway.reuse.foreign_active` | Blocking | A different active gateway conflicts with the configured gateway. |
+| `gateway.reuse.inconclusive` | Warning | NemoClaw could not determine managed gateway reuse state. |
+| `gateway.version.drift` | Blocking | The running gateway version does not match the installed OpenShell version. |
+| `gateway.version.inconclusive` | Warning | NemoClaw could not determine gateway version drift. |
+| `gateway.port.multiple_owners` | Blocking | Multiple listeners claim the managed gateway port. |
+| `gateway.port.owner_mismatch` | Blocking | A listener on the managed gateway port failed identity verification. |
+| `gateway.port.occupied` | Blocking | An incompatible listener occupies the managed gateway port. |
+| `gateway.port.inconclusive` | Warning | NemoClaw could not establish gateway port ownership. |
+
+The report includes bounded evidence for the resolved owner and applicable attachment, port, collection, or stale-observation failures.
+It omits the gateway state directory, removes process environments, redacts credential-shaped content, bounds diagnostic length, and renders control characters visibly.
+
+Managed gateway metadata is reusable only when its endpoint is bound to loopback on the configured gateway port.
+A legacy Docker proxy is accepted only when the active cluster container and its published host port establish the same target.
+For a direct Linux host-process gateway, version comparison runs only against an independently resolved binary whose exact path matches the listener's kernel-backed executable identity.
+For a package service, the validated systemd `ExecStart` or official Homebrew formula binary must match the live executable before NemoClaw runs that trusted binary's version command.
+NemoClaw samples the listener executable on both sides of identity checks and samples an external listener on both sides of its health request.
+A PID, executable, service, or listener change during that interval makes the result inconclusive instead of combining evidence from different processes.
+A service PID with missing or ambiguous executable evidence produces unknown version compatibility instead of comparing an unrelated CLI sibling.
+
+An externally supervised declaration is authoritative.
+NemoClaw validates its endpoint, supervisor, listener identity, port, and required capabilities.
+NemoClaw does not start, stop, replace, or use a standalone fallback for that gateway.
+An owner mismatch, multiple listeners, or missing identity evidence blocks onboarding before managed lifecycle effects.
+
+## Understand Onboarding Admission
+
+Onboarding consumes the same stable host and gateway entities as `host probe`.
+It applies an onboarding policy instead of treating the public report status as the only decision.
+
+Fresh onboarding and authoritative rebuilds use this order:
+
+1. Resolve and validate gateway authority.
+2. Collect canonical host and gateway facts and reject blocking findings or unknown required capabilities.
+3. On a resumed agent change, retain the old router and durable provider state until the full preflight phase succeeds; only then stop the old router and commit the projected agent state.
+4. Apply only an explicitly permitted host remediation, if required, and replace the earlier observations.
+5. Run a bounded WSL GPU proof when required, then revalidate live host and gateway facts.
+6. Validate the effective GPU configuration before Docker bridge and container DNS probes that can start a short-lived container.
+7. Install or upgrade OpenShell when required. A successful install can change gateway authority only from managed `standalone` to `packaged-service`. NemoClaw records that transition before later effects.
+8. Revalidate gateway authority immediately before gateway selection, recovery, reconciliation, or other lifecycle effects.
+
+The readiness gate runs before model-router cleanup, provider selection, credential registration, policy changes, image builds, or sandbox lifecycle effects.
+Host and gateway observations have a 30-second reuse window.
+If collection itself takes too long, onboarding rejects the stale composite instead of assigning a fresh timestamp to old facts.
+
+The policy permits only these narrow exceptions:
+
+- An explicit CPU-only sandbox mode makes NVIDIA GPU passthrough findings irrelevant to that run.
+- The experimental portable profile can prepare its rootless runtime after an initial admission check.
+- A NemoClaw-managed gateway can apply the documented Docker storage remediation when the report says it is available.
+- A NemoClaw-managed gateway can reconcile version drift after its ownership and port checks pass.
+- An explicit runtime path that does not use the standard Docker driver can admit its documented runtime exception.
+
+The portable profile discards its earlier host and gateway observations after preparation.
+It collects both again before the runtime probes or later lifecycle effects.
+No other blocking finding or unknown required capability is waived.
+
+Resume does not trust a cached preflight result for live host or gateway facts.
+It collects both again before a container-backed WSL GPU proof, GPU validation, or bridge and DNS probes.
+Explicit CPU-only intent skips the WSL GPU proof.
+The gateway phase validates authority again immediately before managed reconciliation or external attachment.
+
+Authoritative rebuild preflight pins read-only probes to the recorded gateway without selecting, starting, or recovering it.
+Immediately before source deletion, the rebuild journal requires the complete gateway authority to match that preflight handoff and carries the journaled authority into replacement onboarding.
+Gateway recovery remains after the canonical readiness gate.
+
+For external supervision, onboarding skips managed gateway selection, reuse refresh, cleanup, start, stop, replace, and standalone fallback paths.
+It attaches only after the current external authority passes the readiness checks.
+
+## Distinguish Sandbox Doctor
+
+`$$nemoclaw <name> doctor` remains a separate diagnostic workflow for an existing sandbox and its dependencies.
+Its report and exit behavior are not the system readiness JSON contract.
+An agent runtime can expose an explicit `doctor --fix` repair mode, while `host probe` cannot change state.
+
+The Docker host check in `doctor` and the system readiness report share the same daemon-reachability semantics.
+Both require positive server-version evidence from JSON `docker info` output.
+They reject an exit-zero response that contains empty or error-only daemon data.
+
+## Understand the Read-Only Boundary
 
 `host probe` observes the host and does not run remediation.
 Repeated runs do not change filesystem, service, Docker image or container, gateway, provider, credential, policy, or sandbox state.
+Read-only child processes receive a replacement environment containing only exact system variables, the selected OpenShell gateway, its validated local TLS directory when present, and a supported local Unix Docker socket when configured.
+Ambient provider, OpenShell, sandbox, and gateway credentials are not forwarded to those children.
 A future command that changes the host must use a separate mutating mode.
 That mode cannot run with `--json` probing.
 
@@ -10533,14 +10720,13 @@ On DGX machines, sandbox creation can fail if the gateway's DNS has not finished
 Run `$$nemoclaw onboard` to retry.
 The wizard cleans up stale port forwards and waits for gateway readiness automatically.
 
-### GPU setup fails with a placeholder GPU name
+### GPU Setup Fails with a Placeholder GPU Name
 
 On Windows, WSL, and native Linux ARM64 hosts, some systems report a placeholder display adapter name even when no NVIDIA GPU firmware is present.
 NVIDIA NIM and GPU-backed sandbox setup require a real NVIDIA GPU.
 
 When the primary memory-query probe reports a placeholder name on a native or Docker Desktop-backed WSL ARM64 Linux host without firmware-confirmed NVIDIA platform metadata, onboarding runs one bounded Docker CUDA workload.
 NemoClaw treats a recognized NVIDIA product model from `/sys/class/dmi/id/product_name` or `/sys/firmware/devicetree/base/model`, or a known Tegra device node, as authoritative platform identity.
-Remove the native ARM64 proof exception when every supported host that uses it exposes a stable value through one of these signals and `detectNvidiaPlatform()` recognizes that value.
 Docker may pull the CUDA sample image from `nvcr.io` and keeps the image in the local cache after the container exits.
 The workload uses this command:
 
@@ -10550,7 +10736,7 @@ docker run --rm --gpus all nvcr.io/nvidia/k8s/cuda-sample@sha256:7c7540bdf1f942d
 
 The run is bounded to 3 minutes.
 Set `NEMOCLAW_WSL_GPU_PROOF_TIMEOUT_MS` to a positive millisecond value to change that bound.
-Increase the value on slow links.
+Increase the value only when the image pull or GPU workload needs more than 3 minutes.
 A passing workload qualifies the detected GPU for GPU passthrough.
 A failed or timed-out workload leaves the GPU unproven and does not enable GPU passthrough.
 The names-only unified-memory fallback does not run this workload and rejects denylisted names.
@@ -10998,14 +11184,25 @@ On a direct-container deployment, first confirm that the sandbox is running:
 $$nemoclaw <name> status
 ```
 
-When `recover` repairs a stopped built-in gateway, NemoClaw repeats the recovery action only for an exit status of `1` with blank stdout and a sole nonblank stderr line equal to `SUPERVISOR_BUSY`, with at most three controller attempts.
-The same result is inconclusive during managed settle confirmation and can be probed again only within the configured settle window.
+When `recover` repairs a stopped built-in gateway, NemoClaw repeats the recovery action only for these exact transient results:
+
+- Status `1` with blank stdout and exactly one stderr line, `SUPERVISOR_BUSY`.
+- Status `137` with blank stdout and stderr.
+- Status `1` with blank stdout and exactly one stderr line, `Error response from daemon: Container <id> is restarting, wait until the container is running`.
+
+For the Docker result, `<id>` must be a 64-character lowercase hexadecimal ID that matches the selected registry-owned container.
+Recovery makes at most 11 controller attempts in total.
+It stops after 3 of those attempts return `SUPERVISOR_BUSY`.
+Managed settle confirmation treats exact `SUPERVISOR_BUSY` as inconclusive within its configured window.
+Status `137` and the Docker restart result remain terminal during that confirmation.
+The managed supervisor startup waiter accepts the two container-transition results within its separate 11-attempt bound.
+Unbound container IDs, reformatted Docker errors, status `137` with nonblank output, and other diagnostic results stop immediately.
 NemoClaw treats `SUPERVISOR_UNAVAILABLE` as terminal because it can report unreadable or untrusted supervisor state, ambiguous discovery, or a process-identity change.
-It does not retry other status or output combinations.
 `SUPERVISOR_NOT_RUNNING` is a separate result that requires two zero-supervisor scans with a stable PID 1 and does not enter that retry loop.
 On a supported local Docker-driver sandbox with the legacy keepalive startup, it can authorize a container-identity-pinned recreation that commits only after managed health and settle checks pass.
 To bypass that trusted recreation while troubleshooting, run `NEMOCLAW_DISABLE_SUPERVISOR_RELAUNCH=1 $$nemoclaw <name> recover`; NemoClaw leaves the container unchanged and returns rebuild or re-onboard guidance.
-If that bounded retry is exhausted, or if `gateway restart` reports `SUPERVISOR_BUSY`, wait for the active request to finish and retry the command.
+If recovery stops after 3 `SUPERVISOR_BUSY` results, or if `gateway restart` reports `SUPERVISOR_BUSY`, wait for the active request to finish and retry the command.
+If recovery exhausts the transition bound after status `137` or the Docker restart result, wait for the container to finish restarting and retry the command.
 If the error mentions `SUPERVISOR_NOT_RUNNING` and trusted recreation could not proceed, `SUPERVISOR_REBUILD_REQUIRED`, a missing `nemoclaw-gateway-control` helper, or a missing managed controller, the sandbox image may predate the current lifecycle contract.
 An exact `SUPERVISOR_UNAVAILABLE` result instead means the managed controller refused the current supervisor state rather than guessing which same-UID process is the gateway.
 The current recovery action and any managed settle confirmation stop immediately.
@@ -12756,6 +12953,53 @@ Then rerun portable onboarding:
 $$nemoclaw onboard --experimental-profile portable
 ```
 
+### Portable Host Gateway Is Unreachable
+
+The portable experimental profile maps `host.openshell.internal` to the OpenShell Podman host gateway.
+Do not apply the Docker bridge UFW command when portable onboarding reports this route as unreachable.
+
+Use the same procedure when onboarding reports that the Podman service is unreachable for the portable gateway probe.
+
+Portable onboarding reports output like this:
+
+```text
+✗ Sandbox containers cannot reach the gateway at host.openshell.internal:8080.
+  The probe mapped host.openshell.internal to the OpenShell Podman host gateway.
+```
+
+If `podman.service` is active, restart it.
+Then enable and start the user-scoped Podman socket:
+
+```bash
+systemctl --user try-restart podman.service
+systemctl --user enable --now podman.socket
+```
+
+The first command does not start an inactive service.
+The second command enables and starts the current user's Podman API socket.
+These commands affect only the current user's Podman units.
+They do not read or write credentials.
+
+Verify that the socket is active:
+
+```bash
+systemctl --user is-active podman.socket
+```
+
+Expected output:
+
+```text
+active
+```
+
+Then rerun portable onboarding:
+
+```bash
+$$nemoclaw onboard --experimental-profile portable
+```
+
+Continue only when onboarding no longer reports that the Podman service or OpenShell Podman host gateway is unreachable.
+
 <AgentOnly variant="hermes">
 
 ## Hermes
@@ -14451,6 +14695,157 @@ No live E2E, sandbox build, migration, rollback, compatibility shim, or changelo
 
 
 ========================================
+[FILE: docs/security/fern-5.92.4-dependency-review.md]
+========================================
+
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Fern 5.92.4 Dependency Review
+
+Review date: 2026-08-10
+
+## Decision
+
+Pin the documentation tool to `fern-api@5.92.4`.
+This replaces `5.80.1` without changing a supported NemoClaw runtime or product integration.
+All production, staging, pull-request preview, validation, and local preview commands read the version from `fern/fern.config.json`.
+
+The upgrade spans 194 contiguous source commits.
+The review found no unresolved high-severity concerns.
+The archive structure, dependency closure, lifecycle-script surface, and licenses are unchanged.
+The Fern root package version, archive bytes, and integrity values differ.
+Versions `5.92.3` and `5.92.4` correct Markdown image destinations with bracketed alternative text and angle-bracket delimiters, so `5.92.4` is the reviewed target.
+
+## Reviewed Identities
+
+The npm registry is the artifact authority.
+Fern does not publish semantic Git tags for these CLI versions, so npm provenance identifies the source revisions.
+
+| Identity | Value |
+| --- | --- |
+| Current package | `fern-api@5.80.1` |
+| Current source commit | `76de91e1216afbdb56a36d3389ee6b91d3e59a9e` |
+| Current integrity | `sha512-1GZglZnA8T1JogREverqNwIY5G9e3e6uRHv1bpMjX0iIJVr+Dh+5MMPSBq6NegTmBjppqRHF6PVNbnuuO9VfRA==` |
+| Target package | `fern-api@5.92.4` |
+| Target source commit | `f501eb09d3a31776d54beaa70346af4174d09664` |
+| Target integrity | `sha512-+vOR7M+G98poLJTSnyx2gw3Si+5AT/cTF7yRAdFst+977+DsTxWmUDx4RtajvR75EFqEOERwUcmDDUa2vCUerw==` |
+| Target SHA-1 | `fd89c28f9f72d41be7d0a021da3a0136f88027c9` |
+| Target publish time | `2026-08-10T22:34:31.983Z` |
+| Target provenance workflow | `.github/workflows/publish-cli.yml` |
+| Target provenance run | `31437991221`, attempt `1`, successful push to `main` |
+
+The current and target archives each contain only `cli.cjs`, `package.json`, and `LICENSE`.
+`cli.cjs` is the only executable.
+Neither archive contains links, devices, unsafe paths, install scripts, a `NOTICE` file, or an SBOM.
+Both archives include an Apache-2.0 license and expose `fern` through `cli.cjs`.
+
+`npm audit signatures` reports verified registry signatures for all four packages installed on the review host and verified attestations for three.
+The target npm provenance binds the registry artifact to the source revision and a successful GitHub-hosted publication run on `main`.
+
+## Complete Source Range Ledger
+
+Every range is contiguous, reports `behind_by=0`, and starts at the preceding range's endpoint.
+The five ranges cover all 194 commits between the reviewed packages.
+
+| Range | Commits | NemoClaw-relevant change |
+| --- | ---: | --- |
+| `5.80.1` to `5.80.5` | 60 | Markdown image titles resolve correctly. Generator and API import changes do not apply to the NemoClaw docs-only configuration. |
+| `5.80.5` to `5.86.0` | 42 | The CLI adds packaging, organization bounds, and OpenAPI options that NemoClaw does not invoke. |
+| `5.86.0` to `5.89.6` | 40 | Named preview listing and Markdown substitution improve commands that NemoClaw uses. OAuth login and package-generation paths remain unused. |
+| `5.89.6` to `5.92.2` | 46 | Git-ref docs versioning, MCP installation, and importer changes are inactive because NemoClaw does not configure or invoke them. Optional-request-body fixes do not affect this docs tree. |
+| `5.92.2` to `5.92.4` | 6 | Markdown images with bracketed alternative text and angle-bracket destinations resolve correctly. |
+
+The published CLI source manifest adds only development dependencies for ZIP typing and implementation.
+The published package still declares only the optional `@boundaryml/baml@^0.219.0` dependency.
+
+## Dependency Closure and Advisory Result
+
+Lifecycle scripts were disabled while materializing the current and target graphs.
+Each graph contains 11 packages:
+
+- `@boundaryml/baml@0.219.0`;
+- eight matching `@boundaryml/baml-*` platform packages at `0.219.0`;
+- `@scarf/scarf@1.4.0`;
+- the selected `fern-api` version.
+
+All transitive versions and licenses are identical between current and target.
+The BAML packages use the MIT license, and Scarf uses Apache-2.0.
+`npm audit --omit=dev` reports zero info, low, moderate, high, or critical findings for both graphs.
+
+The package still declares optional `@boundaryml/baml@^0.219.0`, so a future fresh `npx` install can select another compatible `0.219.x` release.
+The currently resolved graph remains `0.219.0`.
+This is a pre-existing reproducibility residual, not a change introduced by `5.92.4`.
+
+`@scarf/scarf@1.4.0` still has a best-effort postinstall telemetry script inherited through BAML.
+The script honors `SCARF_ANALYTICS=false`, `SCARF_NO_ANALYTICS=true`, and `DO_NOT_TRACK=1`, redacts package names and paths before reporting, and does not fail installation when reporting fails.
+NemoClaw's `npx` commands do not disable lifecycle scripts, so this remains a pre-existing low-severity side effect.
+The target does not add or change that script or dependency path.
+
+NemoClaw pins Fern by version, uses it only for contributor and CI documentation tooling, and does not ship this graph in its CLI, plugin, blueprint, or runtime images.
+
+## Downstream Contract Audit
+
+`fern/fern.config.json` is the single version authority.
+The following consumers read that file before constructing a versioned `fern-api` selector:
+
+- the `docs:deps`, `docs:validate`, `docs:live`, and `docs:preview:watch` npm scripts;
+- public and staging publication;
+- pull-request previews;
+- staging preview deletion.
+
+No lockfile, generated manifest, workflow input, environment default, cache key, or runtime image contains a second production Fern version.
+The synthetic `3.67.1` in `test/fern-preview-config.test.ts` is an opaque unit-test input, not a production selector.
+
+NemoClaw has no Fern API definition or generator manifest.
+Its Fern tree contains docs configuration, theme assets, components, and CSS.
+The API importer, SDK generator, OAuth login, MCP installation, packaging, and organization-management paths are therefore not invoked.
+
+The staging preview workflow uses named preview listing and deletion.
+The relevant Fern changes preserve that contract, and NemoClaw tests the constructed command arguments.
+Markdown-path fixes apply during docs validation and publication and are covered by the docs build.
+
+## Concern Ledger
+
+| ID | Severity | Failure mode | Evidence and disposition |
+| --- | --- | --- | --- |
+| `FERN-1` | Medium | New login or MCP commands could expose credentials during normal docs commands | NemoClaw does not invoke those commands, and no reviewed configuration activates them. Normal docs commands keep their existing entry points. |
+| `FERN-2` | Medium | Git-ref docs versioning could publish a different source tree | NemoClaw does not configure the new `ref` field. Publication still checks out the repository revision selected by GitHub Actions. |
+| `FERN-3` | Medium | Markdown parser changes could omit or rewrite local assets | `5.92.4` includes follow-up fixes for bracketed alternative text and angle-bracket destinations. The full docs build validates the current tree. |
+| `FERN-4` | Medium | Named preview changes could delete or retain the wrong preview | The staging workflow constructs a repository-owned preview identifier, and focused workflow tests cover listing and deletion arguments. |
+| `FERN-5` | Medium | The target archive could be substituted | Registry integrity, signatures, provenance, source revision, and successful publication run bind the reviewed artifact. |
+| `FERN-6` | Medium | A changed dependency could introduce a vulnerability or license conflict | The current and target closures are identical apart from the Fern root package, and both advisory audits report zero findings. |
+| `FERN-7` | Low | Scarf postinstall telemetry can run during a fresh `npx` install | The path and script are unchanged from `5.80.1`, opt-out variables remain available, and Fern is docs-only tooling. The residual is accepted for this upgrade. |
+| `FERN-8` | Low | The compatible BAML range could resolve differently in a future install | The range is unchanged, the current resolution is `0.219.0`, and registry signature checks cover the materialized graph. |
+| `FERN-9` | Low | New package-generation or importer features could alter shipped artifacts | NemoClaw has no generator manifest and does not invoke these commands. The Fern graph is not included in product artifacts. |
+| `FERN-10` | Low | Persisted state could retain incompatible Fern behavior | Fern caches and generated docs are disposable build outputs with no product migration, rollback state, or runtime compatibility shim. |
+
+Unresolved high-severity concerns: `0`.
+
+## Verification and Remaining Gates
+
+Completed audit evidence:
+
+- 194 contiguous source commits reviewed across five non-overlapping ranges;
+- target SHA-1 and SHA-512 identities matched npm registry metadata;
+- package structure and licenses inspected without executing upstream lifecycle scripts;
+- npm signatures and SLSA provenance verified for current and target graphs;
+- current and target dependency closures compared;
+- current and target advisory audits reported zero findings;
+- the target source manifest and NemoClaw command consumers reviewed.
+
+Before merge, the reviewed PR must still pass:
+
+- the focused dependency-review and staging workflow tests;
+- the full documentation build with `fern-api@5.92.4`;
+- normal commit hooks and required GitHub checks;
+- automated review with no unresolved actionable finding;
+- documentation writer review.
+
+No live sandbox E2E, migration, rollback, compatibility shim, or runtime changelog entry is required because the dependency is not part of a supported NemoClaw runtime or user-visible product behavior.
+
+
+========================================
 [FILE: docs/security/filesystem-controls.mdx]
 ========================================
 
@@ -15756,7 +16151,8 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
   The exact source shapes, replacement SRIs, tarball URLs, patched metadata, and provenance recipe fail closed on drift.
   The low `body-parser` and moderate Hono and `protobufjs` findings remain documented at the configured `high` threshold.
   Current NemoClaw closes the WeChat residual with `agents/openclaw/wechat-runtime/package-lock.json` and post-install graph verification.
-- `src/lib/messaging/channels/manifests.test.ts` remains below the shared `test-size:check` threshold and does not need extraction in this dependency bump.
+- `src/lib/messaging/channels/manifests.test.ts` remains within the repository test-file line budget.
+  This OpenClaw dependency upgrade does not require a split to satisfy that budget.
 - The npm audit result in this note remains a point-in-time snapshot.
   Default PR and main CI rematerialize the production-compatible graph from the reviewed local archives, audit it and the committed mcporter lock with `npm audit --omit=dev --json` through the reviewed evaluator, upload the raw reports and normalized policy results, and fail on unaccepted findings at the configured `high` threshold.
   The separate `wechat-runtime-audit` gate uses Node `22.19.0` and npm `10.9.4`, installs the committed WeChat production lock with scripts disabled, fails on any low-or-higher production advisory, verifies registry signatures, exercises the reviewed archive through a copied writable cache, and uploads its evidence.
@@ -16616,13 +17012,13 @@ The review was performed against NemoClaw worktree base
 `02398f3433f8c8d4cc329328229854bde7f4ce77`; it does not rebase its conclusions
 onto later `main` changes.
 
-The source decision is **conditionally compatible**. No reviewed upstream change requires a
-NemoClaw code or configuration change, but v0.0.101 does change upstream credential-storage
-behavior, and source compatibility is not release acceptance. The final `#8598` identity and trust
-handoff has been consumed below and passes independent exact-commit review. Acceptance remains
-conditional until both of the following are true. This completed review belongs to the
-parent epic `#8590`; that epic also retains its later selector, qualification, and final-candidate
-gates.
+The source decision is **conditionally compatible** with the Docker recreation correction recorded in `OS101-I15`.
+OpenShell v0.0.101 retains the v0.0.99 default workspace preparation that later Shields evidence identified as an escaped compatibility regression.
+The correction preserves NemoClaw's existing user-visible runtime contract and does not change a command or default.
+OpenShell v0.0.101 also changes upstream credential-storage behavior, and source compatibility is not release acceptance.
+The final `#8598` identity and trust handoff has been consumed below and passes independent exact-commit review.
+Acceptance remains conditional until both of the following are true.
+This completed review belongs to the parent epic `#8590`; that epic also retains its later selector, qualification, and final-candidate gates.
 
 1. issue `#8600` lands the base-trusted qualification descriptor, orchestration workflow, and
    fail-closed receipt checks; and
@@ -16804,10 +17200,33 @@ listed qualification owner.
 | `OS101-I12` | RFC 0005 adds no executable egress adapter; NemoClaw's existing network-policy producers remain authoritative. | `rfc/0005-sandbox-proxy-egress-adapter/`. | NemoClaw policy composition and MCP bridge restrictions. | Policy/credential and egress-negative evidence in `#8602`. |
 | `OS101-I13` | Supervisor middleware uses a 5-second connect timeout, 10-second HTTP/2 keepalive interval, 20-second timeout, keepalive while idle, and adaptive windows without bypassing policy. | `crates/openshell-supervisor-middleware/src/remote.rs:18-39`. | Long-lived inference/MCP connections through the managed supervisor. | Idle, reconnect, long-running, and proxy/policy-path proof in `#8601`. |
 | `OS101-I14` | The russh update accepts loopback forwarding and rejects non-loopback or out-of-range targets; OIDC RS256 validation still rejects tampering, wrong keys, expiry, issuer, audience, and `kid` mismatches. | `crates/openshell-supervisor-process/src/ssh.rs:300-404` and `crates/openshell-server/src/auth/oidc.rs`. | NemoClaw SSH alias transport and authenticated gateway operations. | Runtime identity/SSH evidence in `#8604`; authenticated policy/credential operations in `#8602`. |
-| `OS101-I15` | Docker/Podman labels, full IDs, names, aliases, supervisor argv, workdir, image metadata, effective non-root identity, and the prepared Podman socket retain the reviewed v0.0.99 contracts. | Unchanged OpenShell Docker, Podman, SSH, and driver-utility sources between v0.0.99 and v0.0.101. | Managed bootstrap, ownership resolution, privileged execution, SSH host resolution, and Podman adapter. | Docker/runtime identity proof in `#8604`; rootless Podman proof in `#8603`. |
+| `OS101-I15` | Docker recreation retains the root supervisor, Docker working directory `/`, exact `--workdir /sandbox` supervisor arguments, explicit `sandbox:sandbox` process policy, and the effective `/sandbox` home, workload working directory, and Landlock root. At the exact NemoClaw startup boundary, it omits only `OPENSHELL_OCI_IMAGE_USER` so OpenShell does not change the protected `/sandbox` owner. Podman contracts remain unchanged. | OpenShell commit `537805568d8ebed1f057e035e09dbc4a71976d2c` uses OCI image-user metadata presence to prepare the default working directory. The producer is byte-unchanged from v0.0.99 to v0.0.101. | Managed bootstrap, ownership resolution, privileged execution, SSH host resolution, and Podman adapter. | Focused metadata and replacement-delta tests plus OpenClaw and Hermes Shields restart evidence in `#8662`; rootless Podman proof remains in `#8603`. |
 | `OS101-I16` | Upgrade, deletion convergence, activation, restart, rebuild, rollback journal, and same-name isolation preserve source state and never reuse ambiguous ownership. | OpenShell gateway lifecycle plus the inherited 0.0.99 behavior. | NemoClaw upgrade preflight/recovery and managed lifecycle. | Clean and direct 0.0.85 upgrades, recovery injection, and same-name isolation in `#8605`. |
 
 ## Credential and Security Verdicts
+
+### Escaped Default Workspace Ownership Finding
+
+OpenShell commit `537805568d8ebed1f057e035e09dbc4a71976d2c` made the OCI image working directory part of process identity preparation.
+When `OPENSHELL_OCI_IMAGE_USER` is present, OpenShell changes `/sandbox` ownership to the policy-selected process identity before it exposes SSH and starts the workload.
+NemoClaw's explicit policy selects `sandbox:sandbox`, but Shields up requires `/sandbox` to remain `root:sandbox` with mode `1775`.
+The ownership change caused OpenClaw and Hermes startup to fail after a Shields up stop and start.
+
+The reviewed compatibility path applies only to Docker recreation that has all of these properties:
+
+- root supervisor user `0`;
+- Docker working directory `/`;
+- entrypoint `/opt/openshell/bin/openshell-sandbox`;
+- empty arguments or the exact `--workdir /sandbox` arguments;
+- label `openshell.ai/managed-by=openshell`; and
+- a `nemoclaw-start` workload command.
+
+At that boundary, NemoClaw omits only `OPENSHELL_OCI_IMAGE_USER`.
+It preserves empty `OPENSHELL_SANDBOX_UID` and `OPENSHELL_SANDBOX_GID` entries.
+The explicit OpenShell policy remains the workload process-identity authority.
+The correction therefore preserves `/sandbox` as the home, working directory, and Landlock root without triggering this OpenShell ownership change.
+The compatibility helper preserves the legacy state when all three identity entries are absent.
+When any entry is present, an incomplete, duplicate, or unexpected metadata shape stops recreation before the replacement workload starts.
 
 ### Default Storage Is Active, Not Disabled
 
@@ -16852,9 +17271,10 @@ wholesale at-rest migration at startup. A correct upgrade therefore proves three
   positive and negative tests; production OIDC selection logic is unchanged. The tar update does
   not alter a reviewed NemoClaw contract.
 
-No critical or high source-level regression was found in the reviewed range. That verdict remains
-conditional on the exact live evidence above; it is not a claim that unselected surfaces are safe
-to enable later without a new review.
+The escaped v0.0.99 default workspace ownership regression is recorded above.
+No additional critical or high source-level regression was found in the v0.0.99-to-v0.0.101 range.
+That verdict remains conditional on the exact live evidence above.
+It does not establish that an unselected surface can be enabled without a new review.
 
 ## Regenerated Child-Visible Credential Manifest
 
@@ -16893,7 +17313,7 @@ stays with `#8602`; the new HTTP/2 keepalive delta is separately owned by `#8601
 | `OS99-07` | Pending allowed-IP proposals are not effective policy. | Policy state and MCP bridge negative paths. | `#8602` |
 | `OS99-08` | Listener/readiness lifecycle converges before use. | Managed start/stop/rebuild health and `openshell-gateway-upgrade-workflow-boundary.test.ts`. | `#8605` |
 | `OS99-09` | Docker activation spec normalizes only reviewed empty defaults. | `docker-spec.test.ts`; non-empty port bindings remain rejected. | `#8604` |
-| `OS99-10` | Working directory and image-user metadata remain driver-owned. | Managed-bootstrap Docker spec and runtime identity checks. | `#8604` |
+| `OS99-10` | Docker recreation prevents OCI image-user metadata from changing the protected `/sandbox` owner at the exact NemoClaw startup boundary. | `docker-gpu-patch-clone.test.ts`, managed-bootstrap replacement-delta tests, and Shields restart evidence verify the narrow omission and preserved runtime identity. | `#8662` |
 | `OS99-11` | System CA mode is not enabled implicitly. | Policy/CA configuration negatives and exact live policy proof. | `#8602` |
 | `OS99-12` | Podman lifecycle remains exact-version qualified. | `podman-cpu-lifecycle.test.ts` and `podman-cpu-proof.yaml`. | `#8603` |
 | `OS99-13` | Both reviewed inference status headings parse without broadening authority. | `parseGatewayInference` regression coverage. | `#8604` |
@@ -16958,8 +17378,9 @@ but they are not substitutes for the final clean and direct-public-v0.0.85 paths
 
 ## Compatibility Correction Assignments
 
-This review makes recommendations but implements none of them. Each correction is assigned to one
-and only one child issue:
+The original review made the following recommendations and implemented none of them.
+Each original correction remains assigned to one child issue.
+Issue `#8662` owns only the later escaped working-directory correction and does not change these assignments.
 
 | Correction | Required correction | Sole implementation owner |
 | --- | --- | --- |
@@ -16980,6 +17401,9 @@ and only one child issue:
   downstream digests. Activation is owned by `#8606`.
 - Every inherited `OS99-01` through `OS99-23` invariant remains represented by exact-version
   behavior or live evidence.
+- The reviewed Docker recreation omits only `OPENSHELL_OCI_IMAGE_USER` at the exact NemoClaw startup boundary and rejects every unreviewed metadata shape.
+- The OpenClaw and Hermes Shields lanes restart successfully under Shields up.
+  The OpenClaw lane verifies that `/sandbox` remains `1775 root:sandbox` after restart.
 - Each `OS101-C01` through `OS101-C05` correction is implemented by only its named owner.
 - Clean and direct v0.0.85 upgrade lanes exercise both Docker and rootless Podman. The public
   v0.0.85 path cannot be replaced by a v0.0.99-only upgrade.
@@ -18117,6 +18541,11 @@ after the exact pinned artifacts pass NemoClaw's managed activation and live E2E
 previously observed `0.0.85` activation mismatch remains part of this upgrade's completion. It is
 not a waived unrelated failure.
 
+Later Shields lifecycle evidence found an escaped compatibility regression in upstream commit `537805568d8ebed1f057e035e09dbc4a71976d2c`.
+When OCI image-user metadata is present, OpenShell prepares its default `/sandbox` working directory by changing the directory owner to the policy-selected process identity.
+This preparation runs before OpenShell exposes SSH and starts the workload.
+It breaks the Shields up requirement that `/sandbox` remain `root:sandbox` with mode `1775`.
+
 ## Audit Method and Exact Boundary
 
 The repository-owned release-ledger collector enumerated every adjacent tag, commit, and changed
@@ -18211,7 +18640,7 @@ than enabling optional upstream behavior implicitly.
 | `OS99-07` | Internal allowed-IP proposal state | Pending proposals are not treated as effective policy. |
 | `OS99-08` | Listener/readiness lifecycle changes | Managed activation, start, stop, rebuild, and gateway health require live evidence. |
 | `OS99-09` | Docker activation spec representation | Attach markers and empty port maps are normalized; non-empty port bindings are rejected. |
-| `OS99-10` | OCI WorkingDir and image-user metadata | Driver-owned values remain under the runtime-control boundary. |
+| `OS99-10` | OCI working-directory preparation can change the protected `/sandbox` owner before workload startup | The reviewed Docker recreation omits only `OPENSHELL_OCI_IMAGE_USER` at the exact NemoClaw startup boundary. It preserves empty `OPENSHELL_SANDBOX_UID` and `OPENSHELL_SANDBOX_GID`, the explicit `sandbox:sandbox` policy identity, and the `/sandbox` runtime contract. |
 | `OS99-11` | System CA root mode | Not enabled implicitly; current CA-policy tests remain required. |
 | `OS99-12` | Podman lifecycle changes | Podman exact-version live coverage remains an acceptance gate. |
 | `OS99-13` | Inference status heading changed from `Gateway inference:` to `Inference:` | The parser accepts both headings, with focused regression coverage for the exact v0.0.99 output. |
@@ -18228,6 +18657,29 @@ than enabling optional upstream behavior implicitly.
 
 An unresolved critical or high concern blocks the upgrade. Test selection cannot waive a concern;
 conditional skips and expected failures do not count as qualification evidence.
+
+## Escaped Working Directory Ownership Finding
+
+OpenShell commit `537805568d8ebed1f057e035e09dbc4a71976d2c` made the OCI image working directory part of the process identity preparation path.
+For NemoClaw images, the supervisor runs as root while the explicit policy selects the `sandbox:sandbox` workload identity.
+The new preparation interpreted `OPENSHELL_OCI_IMAGE_USER` as a request to change `/sandbox` to that identity before the workload started.
+Shields up then rejected startup because the untrusted workload user owned its protected parent directory.
+
+The compatibility correction applies only when the inspected Docker workload matches all reviewed NemoClaw boundaries:
+
+- root supervisor user `0`;
+- Docker working directory `/`;
+- entrypoint `/opt/openshell/bin/openshell-sandbox`;
+- empty arguments or the exact `--workdir /sandbox` arguments;
+- label `openshell.ai/managed-by=openshell`; and
+- a `nemoclaw-start` workload command.
+
+At that boundary, Docker recreation omits only `OPENSHELL_OCI_IMAGE_USER`.
+It preserves empty `OPENSHELL_SANDBOX_UID` and `OPENSHELL_SANDBOX_GID` metadata.
+The explicit OpenShell policy continues to select `sandbox:sandbox` for workload processes.
+This restores the earlier workspace preparation behavior without changing the `/sandbox` home, working directory, or Landlock contract.
+The helper preserves the legacy state when all three identity entries are absent.
+When any entry is present, a missing or duplicate entry, an empty OCI user, or a nonempty UID or GID stops recreation before the replacement workload starts.
 
 ## The 0.0.85 Activation Failure
 
@@ -18285,9 +18737,12 @@ projects. Reviewed condition-only jobs may be skipped when the empty-selector di
 select them, including Launchable, Jetson, DGX Spark, retired-selector compatibility, reporting,
 and scorecard jobs.
 
-Changes that can affect managed activation also require the current head's exact all-agent managed
-runtime activation check. Changes that can affect rootless Podman also require the current head's
-rootless Podman CPU lifecycle check with Docker disabled.
+The managed image lifecycle job is not a required PR check and does not gate or roll back promotion.
+When the base-image workflow publishes managed images from `main`, this job runs after `promote` moves the OpenClaw cohort pointer.
+It exercises each published `linux/amd64` digest reference through onboarding, agent turns, gateway restart recovery, and destroy.
+The references cover OpenClaw, Hermes, and LangChain Deep Agents Code.
+If verification fails, the workflow does not roll back the promoted cohort pointer.
+Changes that can affect rootless Podman still require the latest PR commit's rootless Podman CPU lifecycle check with Docker disabled.
 
 The gate fails closed for missing, expired, duplicate, or malformed evidence. It also rejects a
 stale head or base, a workflow mismatch, nonempty selectors, an unreviewed skipped job, an
@@ -18300,6 +18755,9 @@ invalidates every earlier receipt and proof check.
   `0.0.99` and exact reviewed identities.
 - The `v0.0.99` credential-boundary manifest is the active manifest and its source commit is exact.
 - Static checks, focused lifecycle tests, CLI and plugin builds, and documentation checks pass.
+- The reviewed Docker recreation omits only `OPENSHELL_OCI_IMAGE_USER` at the exact NemoClaw startup boundary and rejects every unreviewed metadata shape.
+- The OpenClaw and Hermes Shields lanes restart successfully under Shields up.
+  The OpenClaw lane verifies that `/sandbox` remains `1775 root:sandbox` after restart.
 - Default OpenClaw policy composition activates without endpoint-metadata ambiguity while retaining
   the reviewed binary scopes for npm, Homebrew, and pricing traffic.
 - Managed Docker and Podman activation, lifecycle, policy, credential, inference, and MCP E2E run
