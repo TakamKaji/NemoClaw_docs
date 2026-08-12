@@ -8,6 +8,7 @@
 │       │   ├── git-github-hard-stop.md
 │       │   ├── implementation-discovery.md
 │       │   ├── pr-follow-up.md
+│       │   ├── root-cause-and-state-checks.md
 │       │   └── security-rubric.md
 │       ├── nemoclaw-contributor-create-pr
 │       │   ├── SKILL.md
@@ -444,6 +445,7 @@
 │   │   ├── 2026-08-06.mdx
 │   │   ├── 2026-08-07.mdx
 │   │   ├── 2026-08-10.mdx
+│   │   ├── 2026-08-11.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3297,4 +3299,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-270 directories, 3028 files
+270 directories, 3030 files

@@ -2443,6 +2443,8 @@ Use these details when your first-run path needs more control.
     ```
 
     The onboard flow starts both port forwards automatically.
+    If OpenShell reports `sandbox is not ready`, NemoClaw waits 5 seconds and retries the affected forward up to three times.
+    These retries preserve the existing sandbox and selected host port.
     The Hermes dashboard URL does not include an OpenClaw `#token=` fragment.
     `nemohermes my-hermes dashboard-url --quiet` returns `http://127.0.0.1:18789/` when the default local forward is active.
     Check the API health endpoint from the host.
@@ -3102,8 +3104,11 @@ Use these details when your first-run path needs more control.
     ```
 
     The default is `Y`.
-    Press Enter to continue, or answer `n` to abort cleanly, correct the entries, and rerun `nemoclaw onboard`.
-    Non-interactive runs print the summary for log clarity but skip the prompt.
+    Press Enter to accept the configuration.
+    If you answer `n`, onboarding exits with a nonzero status and clears the recorded provider, model, and sandbox name.
+    The rejected run does not register a new gateway credential.
+    Run `nemoclaw onboard` to make new choices.
+    Non-interactive runs print the summary and skip the prompt.
   </Accordion>
 
   <Accordion title="Web Search Messaging and Network Policies">
@@ -3198,6 +3203,8 @@ Use these details when your first-run path needs more control.
     The wizard starts a background dashboard port forward and prints its URL in the ready summary.
     The default host port is `18789`.
     When that port is occupied, NemoClaw uses the next free dashboard port, such as `18790`, and includes the port in the URL.
+    If OpenShell reports `sandbox is not ready`, NemoClaw waits 5 seconds and retries the dashboard forward up to three times.
+    These retries preserve the existing sandbox and selected port.
     If the selected port becomes occupied after the sandbox build begins, onboarding rolls back the new sandbox and asks you to retry rather than print an unreachable URL.
     The installation transcript does not print the gateway token.
     Use `nemoclaw my-gpt-claw dashboard-url --quiet` to print the complete authenticated URL explicitly.
@@ -5079,6 +5086,9 @@ The default recipe serves NVIDIA Nemotron 3 Nano 30B-A3B through the OpenAI Chat
 <Note>
 This path is an experimental implementation.
 It does not establish a supported agent, model, and runtime tuple until the protected qualification and activation gates pass.
+The protected qualification runner requires Docker Engine `28.3.3` or newer and the trusted daemon's default protected NAT and firewall behavior; it re-queries the live daemon and consumes a fresh single-use authority immediately before each temporary loopback publication.
+That requirement supersedes older Docker 27 qualification evidence.
+Ordinary managed onboarding does not publish a Docker port: it retains its no-publication container contract and uses the host-owned private bridge, so this runner-specific version floor does not apply to onboarding.
 </Note>
 
 Before you start, confirm these prerequisites:
@@ -5131,7 +5141,7 @@ Onboarding performs these actions:
 - Reuses a verified GGUF from the shared `~/.cache/huggingface/` cache, or acquires the exact file through the existing Hugging Face mechanism when it is absent or invalid.
 - Verifies the GGUF size and SHA-256 digest before it starts the runtime.
 - Runs the authenticated container as the current non-root user with one NVIDIA GPU and no CPU fallback.
-- Starts a private host bridge on `127.0.0.1:8081` and connects the container to a Docker internal network without publishing a container port.
+- Starts a host-owned private bridge on `127.0.0.1:8081` and connects the container to a Docker internal network without a Docker-published port.
 - Registers `llama-cpp-local` and routes agent traffic through `https://inference.local/v1`.
 
 The runtime cannot download a model and has no egress on its internal Docker network.
@@ -5143,14 +5153,17 @@ Selecting either runtime fails before model acquisition or runtime mutation and 
 
 ## Verify the Managed Runtime
 
-Run the managed runtime and route checks:
+Run the managed runtime, route, and host-port checks:
 
 ```bash
 $$nemoclaw my-assistant status
 $$nemoclaw my-assistant doctor
+docker inspect --format '{{json .HostConfig.PortBindings}}' nemoclaw-llama-cpp
 ```
 
 Accept the result when `status` reports `Managed llama.cpp: running`, the inference route is `reachable`, and `doctor` exits with status `0`.
+The Docker inspection output must be `{}`, confirming that the container has no Docker-published port.
+The host-owned private bridge still listens on loopback.
 These checks do not establish agent and model qualification.
 
 `status` reports the recipe ID, model digest, image reference, endpoint, and lifecycle state without exposing the API key.
@@ -5268,6 +5281,8 @@ OpenShell registers it as an OpenAI-compatible provider while the sandbox remain
 The Model Router option uses the `routed` inference profile in `nemoclaw-blueprint/blueprint.yaml`.
 During onboarding, NemoClaw starts the router proxy on host port `4000`, waits for its health endpoint, and registers the `nvidia-router` provider with OpenShell.
 The sandbox does not call port `4000` directly.
+On a host without cached routing-model files, Model Router downloads and loads its routing model before the health endpoint responds.
+NemoClaw gives a running router up to 10 minutes to pass its health check and stops onboarding sooner if the process exits.
 
 ```text
 Sandbox agent -> OpenShell -> Model Router on port 4000 -> NVIDIA API
@@ -5606,7 +5621,7 @@ The agent inside the sandbox never receives the token directly because the OpenS
 The wizard manages the proxy lifecycle:
 
 - It generates a random 24-byte token and stores it in `~/.nemoclaw/ollama-proxy-token` with `0600` permissions.
-- It starts and verifies the proxy after Ollama.
+- It starts and verifies the proxy only after you accept the onboarding configuration.
 - It removes stale matching proxy processes from previous runs.
 - It probes the sandbox Docker network path before saving the inference route.
 - It stops matching proxy processes during uninstall.
@@ -6783,11 +6798,17 @@ NemoClaw also records an owner-only, credential-free runtime receipt that binds 
 
 If an existing `nemoclaw-vllm` container does not carry that label, NemoClaw preserves it and asks you to remove or rename it before installing managed vLLM.
 If another vLLM server already occupies port `8000`, NemoClaw selects the existing-server path and applies the model-identity checks described above.
+If another process holds the configured single-host port, NemoClaw stops the managed install before it persists a bearer key or records the selected model.
+NemoClaw also stops before storage prompts, cache creation, image pull, or container start.
+Stop the process, then run onboarding again.
+Docker reports a bind failure if another process claims the port after this preflight.
 Managed profiles and model-specific recipes use immutable image digests:
 
 - DGX Spark and DGX Station models without a model-specific runtime use the `linux/arm64` digest `sha256:9204569b17ee4c0eff75194b8e6e458479c8aee18953b5ab9cf359fcdac659e2` with a compressed layer size of `9.60 GB` under `nvcr.io/nvidia/vllm:26.05.post1-py3`.
 - The DGX Spark Muse Glimmer recipe uses the `linux/arm64` digest `sha256:ab0f5fc3bb81b9257a9aee801abcb0eeb94bb0523b57b2bb79349dc61e7c1e25` with a compressed layer size of `10.51 GB` under `vllm/vllm-openai`.
   It pins Hugging Face revision `d35cb79050f419c457611b1cee5c5d15b176f285` for the approximately `25.45 GB` model download.
+- The DGX Spark Nemotron 3.5 Lightning recipe uses the `linux/arm64` digest `sha256:3af90144a0926e5c5fe46ee16e5201e763dd854538b9d7ce433755f11dadaf78` with a compressed layer size of approximately `12.69 GB` under `vllm/vllm-openai`.
+  It pins Hugging Face revision `0dcd680e5585c791728c83342b311d0a0026dbeb` for the approximately `21.56 GB` model download.
 - The DGX Station Nemotron 3 Ultra express recipe uses the multi-platform index digest `sha256:0fec7ec5f3e6bc168e54899935fb0557da908a4832a1dbc88e2debcf2f889416` under `vllm/vllm-openai:v0.22.0`; on DGX Station, that index selects a `linux/arm64` manifest with a compressed layer size of `10.67 GB`.
   It also pins Hugging Face revision `183968f87ae4cedce3039313cac1fd43d112c578` for the approximately `352.38 GB` model download.
 - Generic Linux `arm64` hosts use `sha256:447995cbb57e6c7cf792cab95e9852e5f62b5fb6d2f39e030fa4eda9a54eadb4` with a compressed layer size of `9.28 GB` under `nvcr.io/nvidia/vllm:26.03.post1-py3`.
@@ -6917,14 +6938,40 @@ When you start managed vLLM outside the installer express flow, NemoClaw uses th
 For the managed single-node DGX Spark `nvidia/Qwen3.6-35B-A3B-NVFP4` profile, NemoClaw enables async scheduling and does not enable multi-token prediction (MTP) speculative decoding.
 The profile retains `--gpu-memory-utilization 0.4`, a `262144`-token context window, `4` concurrent sequences, an `8192`-token batch limit, chunked prefill, prefix caching, and its registered parsers and acceleration backends.
 
+NVIDIA Nemotron 3.5 Lightning is an additional explicit-only single-DGX Spark profile and does not change the Qwen default.
+Select its stable catalog ID after confirming that `$$nemoclaw profiles list` reports it as compatible.
+
+```bash
+$$nemoclaw onboard --profile vllm.dgx-spark-gb10.single.nemotron-3.5-lightning-30b-a3b-nvfp4
+```
+
+The profile serves the public [`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4) checkpoint through a pinned ARM64 vLLM image.
+Its profile limits for one concurrent sequence are a 65,536-token context window, a 4,096-token batch limit, 0.65 GPU-memory utilization, FP8 KV cache, and one-token MTP speculative decoding.
+It uses vLLM's Python frontend because the pinned runtime's Rust frontend does not register the required `step3p5` reasoning and tool-call parsers.
+Physical single-DGX Spark validation of public revision `0dcd680e5585c791728c83342b311d0a0026dbeb` covered direct chat, automatic and named structured tool calls, a ten-request release workload with input lengths from 32,768 through 41,984 tokens and 2,048 output tokens per request, OpenClaw chat and file tools, and a cached restart.
+Requests 2 through 10 averaged about 102 output tokens/s.
+At 0.65 utilization, the workload completed with about 33 GiB of host memory available and no NVIDIA kernel errors.
+
+<Warning title="Experimental Nemotron 3.5 Lightning vLLM Profile">
+This profile is an explicit opt-in for one DGX Spark and remains Experimental.
+Promotion requires broader validation of the pinned Python frontend and the `step3p5` reasoning and tool-call parsers.
+The fixed recipe intentionally rejects model and serve-argument overrides; use another catalog profile instead of modifying its validated resource boundary.
+</Warning>
+
 Muse Glimmer is an additional single-DGX Spark choice and does not change the Qwen default.
-Select `muse-glimmer-30b` to serve `Inferact/Muse-Glimmer-30B-NVFP4-W4A4` with the `muse-glimmer` alias.
+Select its stable catalog ID after confirming that `$$nemoclaw profiles list` reports it as compatible.
+
+```bash
+$$nemoclaw onboard --profile vllm.dgx-spark-gb10.single.muse-glimmer-30b-nvfp4-w4a4
+```
+
+The profile serves `Inferact/Muse-Glimmer-30B-NVFP4-W4A4` with the `muse-glimmer` alias.
 The registered recipe configures a 32,768-token context window, 1 concurrent sequence, a 4,096-token batch limit, and 0.75 GPU-memory utilization.
 It uses `muse_glimmer` for reasoning and tool-call parsing and sets `--generation-config auto`.
 The pinned model and runtime were validated on one physical DGX Spark for a direct chat request, separated reasoning, a required structured tool call, and an OpenClaw TUI chat turn without fallback.
 Vision was not part of that validation.
-The registered defaults do not enable DFlash, pass `--quantization` or `--trust-remote-code`, or install `fastsafetensors`.
-Advanced operator arguments from `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` remain authoritative.
+The fixed profile does not enable DFlash, pass `--quantization` or `--trust-remote-code`, or install `fastsafetensors`.
+It rejects model and serve-argument overrides so its validated resource boundary remains reproducible.
 
 <Warning title="Experimental Muse Glimmer vLLM Profile">
 This profile uses a candidate runtime image that contains Muse Glimmer changes not yet merged into upstream vLLM.
@@ -10559,7 +10606,33 @@ NemoClaw binds the write to the SHA-256 digest of the matching read, temporarily
 `shields up` also publishes fresh config, environment, and compatibility-hash inodes so a descriptor opened before lockdown cannot retain write authority.
 Shields up keeps `/sandbox/.hermes/profiles/dashboard-home/` sandbox-owned at mode `0700` so the dashboard can update its isolated profile.
 Other Hermes profiles remain read-only during lockdown.
-The same root-only mutation lock stays held through Hermes config writes, the full `shields up` or `shields down` filesystem transition and verification, and lifecycle recovery that needs to seal those paths.
+The root-only mutation lock stays held through every Hermes host-side config write.
+On the sealed-plan and compatibility Shields paths, it also stays held through the full `shields up` or `shields down` filesystem transition and verification, and lifecycle recovery that needs to seal those paths.
+
+Current NemoClaw-managed Hermes images on the Docker driver use the `provider-state-mutation-v2` runtime provider state mutation contract for Shields filesystem transitions.
+NemoClaw selects this contract only when all these conditions apply:
+
+- The registered sandbox is a managed Hermes image.
+- The sandbox registry records its lifecycle generation.
+- The image exposes the exact root-owned capability installed by NemoClaw.
+
+An older managed image uses the sealed-plan transition only after NemoClaw proves that the capability is absent.
+A custom image, including a legacy Dockerfile workflow, remains on its existing sealed-plan or compatibility contract and cannot opt in by adding a similarly named file.
+An invalid capability that is present fails closed and requires a rebuild with a current managed image.
+
+The Docker provider binds each transition to the registered lifecycle generation, exact container, qualified Docker engine authority, mount namespace, `/sandbox/.hermes` inode, AgentDefinition-derived plan and projection, target posture, rollback posture, and fresh nonce.
+Before the provider fence becomes active, NemoClaw drains any earlier privileged sandbox execution lease.
+While the fence is active, new direct-container, SSH, and OpenShell command transports are rejected before a sandbox command starts.
+The installed root-owned controller and Hermes publisher apply and verify the exact target posture, then the provider starts only the bound Hermes entrypoint and proves the replacement gateway and startup checkpoint before it releases the fence.
+
+The owner-only ledger under `~/.nemoclaw/state/runtime-provider-lifecycle/` survives a host controller restart and remains authoritative for recovery of the exact target.
+The next Shields command, including `shields status`, must recover a retained fence before it can report or change posture.
+Hermes startup also checks the image-owned startup gate before it reads mutable state and remains held when the runtime provider state mutation is active or cannot be authenticated.
+While recovery is incomplete, do not:
+
+- Delete the ledger.
+- Kill a held entrypoint.
+- Use a manual container command to bypass the fence.
 
 If another host mutation is active, the command reports `Hermes config mutation is already in progress`.
 If another lifecycle request owns the supervisor, it reports `SUPERVISOR_BUSY`.
@@ -10929,7 +11002,7 @@ Continue with [Enable Channels During Onboarding](enable-channels-during-onboard
 title: "Set Up Slack"
 sidebar-title: "Set Up Slack"
 description: "Prepare Slack Socket Mode credentials and user or channel allowlists for NemoClaw."
-description-agent: "Explains Slack bot and app token validation, allowlists, mention behavior, rich Hermes rendering, and selected-gateway Socket Mode conflict checks. Use before enabling Slack."
+description-agent: "Explains Slack bot and app token validation, allowlists, mention behavior, rich Hermes rendering, selected-gateway Socket Mode conflict checks, and OpenClaw readiness polling. Use before enabling Slack or verifying Slack readiness."
 keywords: ["nemoclaw slack", "slack socket mode", "slack app token", "slack allowlist"]
 content:
   type: "how_to"
@@ -10982,6 +11055,45 @@ Use distinct bot and app tokens for Slack sandboxes on different OpenShell gatew
 Onboarding, rebuild, and `channels add slack` abort when they detect a conflict in the selected OpenShell gateway's sandbox registry.
 Onboarding and rebuild have no override.
 For `channels add slack` only, pass `--force` to accept the conflict risk.
+
+<AgentOnly variant="openclaw">
+## Wait for Slack Readiness
+
+After a rebuild, OpenClaw can need more time to initialize the Slack plugin and connect through Socket Mode.
+Use the readiness check when automation must wait until Slack can receive messages:
+
+```bash
+$$nemoclaw my-assistant channels status --channel slack --wait --timeout 180 --json
+```
+
+The command polls the manifest-defined Slack readiness check until all these conditions pass:
+
+- Slack is registered for the sandbox.
+- The `slack` network policy preset covers the sandbox.
+- The OpenClaw Slack account runtime is running.
+- Socket Mode is connected.
+- The OpenClaw account probe succeeds.
+
+NemoClaw runs the live OpenClaw account probe only after Slack is registered and the `slack` preset is recorded and applied.
+Each live probe can send traffic through the configured Slack policy.
+The command does not change channel configuration or display Slack credentials.
+The default timeout is 180 seconds.
+The `--timeout` value is the total wait budget; NemoClaw limits live probes to the remaining budget and starts none at or after the deadline.
+
+Deferred initialization is reported as retryable.
+A successful result exits with status 0 and reports the readiness evidence in JSON.
+The `readiness` object reports its state, category, reason, retryability, attempts, elapsed milliseconds, last transition timestamp, and last observed channel state.
+If the timeout expires, `readiness.state`, `readiness.category`, and `readiness.reason` are `timeout`; `readiness.retryable` mirrors `readiness.lastObserved.retryable`, and `readiness.lastObserved.category` and `readiness.lastObserved.reason` retain the underlying cause.
+
+A terminal credential, policy, plugin, or runtime error exits nonzero with a structured category and reason.
+If Slack is paused with `channels stop`, the command skips the live probe and returns one terminal result with `readiness.reason` set to `channel_paused`.
+The command also exits nonzero with the `timeout` category when Slack does not become operational before the timeout.
+Use the category and reason to correct a terminal error.
+If the result reports a timeout during deferred initialization, inspect the OpenClaw logs, then rerun the readiness check.
+
+Other messaging channels return their existing status snapshot in the result.
+They return `readiness_not_supported` for `--wait` until their channel manifests define equivalent readiness checks.
+</AgentOnly>
 
 ## Enable Slack
 
@@ -11138,25 +11250,22 @@ NemoClaw validates the gateway URL before pairing and renders the WhatsApp QR co
 If pairing exits with a gateway close such as `1008`, rerun the login command once, then check `$$nemoclaw <sandbox> channels status --channel whatsapp` to diagnose the gateway and session path separately from QR rendering.
 </AgentOnly>
 <AgentOnly variant="hermes">
-Hermes can pair from the Dashboard profile while the gateway reads the default `platforms/whatsapp/session` path.
-After scanning a dashboard QR code, run `$$nemoclaw <sandbox> channels status --channel whatsapp`.
-If the report says `dashboard-home has WhatsApp credentials, but the Hermes gateway session path is empty`, point the gateway at the dashboard session with the supported config command:
+Hermes dashboard pairing and the gateway share `/sandbox/.hermes/platforms/whatsapp/session`.
+After scanning a dashboard QR code, run `$$nemoclaw <sandbox> channels status --channel whatsapp` to confirm that the shared session is available to the gateway.
+
+If `channels status` reports credentials only under the legacy `profiles/dashboard-home` path, the sandbox has credentials from an image that wrote dashboard sessions to that path.
+Rebuilding and pairing again writes new credentials to the shared path, but it leaves the legacy credentials in durable state, and sandbox startup treats that copy as migration input.
+Clear every WhatsApp session path first with the supported removal command, then re-add the channel:
 
 ```bash
-$$nemoclaw <sandbox> shields down --reason "repair Hermes WhatsApp session path"
-$$nemoclaw <sandbox> config set --key platforms.whatsapp.extra.session_path --value /sandbox/.hermes/profiles/dashboard-home/platforms/whatsapp/session --restart --config-accept-new-path
-$$nemoclaw <sandbox> shields up
+$$nemoclaw <sandbox> channels remove whatsapp
+$$nemoclaw <sandbox> channels add whatsapp
 ```
 
-Keep Shields down until `config set` finishes, then restore the restrictive posture with `shields up`.
-The `--config-accept-new-path` flag lets the command write the `platforms.whatsapp.extra.session_path` configuration key when the generated config does not already contain it.
-Dashboard pairing writes session credentials under `profiles/dashboard-home`; this bounded compatibility repair redirects the gateway to that session path while it still reads the default path otherwise.
-The repair stays documented until Hermes dashboard pairing state and gateway startup converge on one shared session path; NemoClaw can redirect the configured path but does not rewrite Hermes pairing state.
-Before removing the override, run `$$nemoclaw <sandbox> channels status --channel whatsapp` after dashboard pairing and gateway startup and confirm the report no longer shows a dashboard-home session with an empty gateway session path.
-Remove the override only after Hermes uses one shared WhatsApp session path for dashboard pairing and gateway startup.
-Do not edit `/sandbox/.hermes/.env` or `/sandbox/.hermes/config.yaml` by hand.
-Manual edits can cause the Hermes config-integrity guard to reject restart with `hash-mismatch`.
-Supervisor quarantine happens after repeated relaunch failures or other integrity failures.
+`channels remove` clears `/sandbox/.hermes/platforms/whatsapp`, the dashboard profile session at `/sandbox/.hermes/profiles/dashboard-home/platforms/whatsapp/session`, and the legacy migration source at `/sandbox/.hermes/dashboard-home/platforms/whatsapp/session`.
+The sandbox must be running for that cleanup to succeed; `channels remove` refuses to proceed when it cannot reach the sandbox.
+Pair again from the dashboard so the credentials are written to `/sandbox/.hermes/platforms/whatsapp/session`.
+Rerun `$$nemoclaw <sandbox> channels status --channel whatsapp` and confirm that the gateway session path holds the credentials and that the report no longer lists a `profiles/dashboard-home` session.
 </AgentOnly>
 
 ## Protect Paired Session State
@@ -11165,9 +11274,13 @@ Supervisor quarantine happens after repeated relaunch failures or other integrit
 The sandbox stores mutable session credentials in durable `whatsapp` state.
 </AgentOnly>
 <AgentOnly variant="hermes">
-The sandbox stores mutable session credentials in durable `platforms/whatsapp` state for the gateway and `profiles/dashboard-home/platforms/whatsapp` state for Dashboard pairing.
+The sandbox stores mutable session credentials in durable `platforms/whatsapp` state for both dashboard pairing and the gateway.
 </AgentOnly>
 The credentials survive rebuilds without re-pairing.
+<AgentOnly variant="hermes">
+A sandbox that also holds legacy `profiles/dashboard-home` or `dashboard-home` credentials keeps both copies across a rebuild, because both paths are part of the durable state that a rebuild restores.
+Run `$$nemoclaw <sandbox> channels remove whatsapp` to clear every WhatsApp session path, then re-add the channel and pair again.
+</AgentOnly>
 This is the runtime tradeoff of enabling WhatsApp without a host bridge: a paired sandbox can use that WhatsApp account until you unpair it or clear the durable state.
 
 NemoClaw cannot detect cross-sandbox WhatsApp conflicts the way it does for token-based channels.

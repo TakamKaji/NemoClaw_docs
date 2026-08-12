@@ -3572,6 +3572,16 @@ For a profile-backed session, resume requires the same catalog, preset, and reci
 Omit `--profile` to reuse that recorded selection, or pass the same profile explicitly; use `--fresh` to adopt a changed catalog definition.
 Legacy sessions without a profile-provenance record continue to resume normally, but cannot acquire a new `--profile` selection during resume.
 
+Before the configuration review, NemoClaw records the sandbox name and the selected provider and model as an incomplete choice.
+If onboarding stops at the review prompt, an interactive `--resume` run shows the prompt again.
+A non-interactive `--resume` run reuses the recorded choice and continues to inference setup.
+After you accept the review, NemoClaw records the choice before inference setup starts.
+If inference setup fails, `--resume` reuses the accepted provider, model, and sandbox name.
+If you reject the review, onboarding exits with a nonzero status and clears those recorded choices.
+Run `$$nemoclaw onboard` to make new choices after rejection.
+During a resume without terminal input, `--yes` or `NEMOCLAW_YES=1` also selects non-interactive resume behavior.
+For a new or fresh session, `--yes` and `NEMOCLAW_YES=1` accept supported confirmations but do not replace `--non-interactive`.
+
 <AgentOnly variant="openclaw">
 
 OpenClaw sessions also record the web search selection, messaging selection and non-secret settings, and resource profile.
@@ -4182,6 +4192,10 @@ Use `--no-sandbox-gpu`, `--no-gpu`, or `NEMOCLAW_SANDBOX_GPU=0` when you want to
 List all registered sandboxes with their model, provider, and policy presets.
 Pass `--json` for machine-readable output that includes a `schemaVersion`, the default sandbox, recovery metadata, and the sandbox inventory.
 Each sandbox row reports `activeSessionCount` as a nonnegative integer when the SSH-session probe is available and `null` when it is unavailable.
+Each sandbox row reports `agent` as a string in both text and JSON output, never `null`.
+The row reports `openclaw` when the registry records no agent for the sandbox.
+The row reports `unknown` for a sandbox that `$$nemoclaw list` recovers from the live OpenShell gateway.
+The gateway sandbox list does not expose the agent.
 The row does not include the former derived `connected` boolean.
 Sandboxes with an active SSH session are marked with a `●` indicator so you can tell at a glance which sandbox you are already connected to in another terminal.
 <AgentOnly variant="openclaw,hermes">
@@ -4413,8 +4427,8 @@ This keeps the wrapper from falling back to the unspecified default-session beha
 Conflict resolution between multiple selectors is delegated to the in-sandbox `openclaw agent` argv contract; the host-side guard only checks presence.
 
 ```bash
-$$nemoclaw my-assistant agent --agent work -m "Summarise README.md"
-$$nemoclaw my-assistant agent --agent work -m "Status update?"
+$$nemoclaw my-assistant agent --agent main -m "Summarise README.md"
+$$nemoclaw my-assistant agent --agent main -m "Status update?"
 $$nemoclaw my-assistant agent --session-id review-42 -m "Any new findings?"
 $$nemoclaw my-assistant agent --session-key intake-42 --json -m 'ping'
 $$nemoclaw dcode-sandbox agent --help
@@ -4578,6 +4592,30 @@ Host-side config and inference writes, snapshot mutation, sandbox destruction, a
 <AgentOnly variant="openclaw,hermes">
 
 Host-side gateway recovery uses the same per-sandbox serialization.
+
+</AgentOnly>
+
+<AgentOnly variant="hermes">
+
+For a current NemoClaw-managed Hermes image on the Docker driver, `shields status` is a recovery and reconciliation command, not only a display command.
+It first recovers any retained exact runtime provider state mutation, then applies and verifies the declared recursive posture.
+A result exits with status `0` only after the command verifies that posture.
+A status check can therefore complete work retained by an interrupted host process.
+
+If provider recovery restores lockdown while the persisted Shields posture still says mutable, status prints `ERROR (runtime-provider recovery restored lockdown)`, exits with status `2`, and tells you to retry the intended Shields transition.
+If live verification of a mutable default or timed Shields down posture fails, status prints `NOT CONFIGURED (DRIFTED...)` or `DOWN (DRIFTED...)`, exits with status `2`, and directs you to run `$$nemoclaw <name> shields up` to reconcile and verify lockdown.
+Status does not report `UP`, `DOWN`, or mutable-default with exit status `0` when the provider cannot verify the exact recursive posture.
+
+While an exact provider fence is active, ordinary direct-container, SSH, and OpenShell command transports are refused before a sandbox process starts.
+They report `Runtime provider state mutation owns direct-container execution for sandbox '<name>'; retry after the provider fence is released.`
+Recover and retry as follows:
+
+1. Let the active Shields or recovery command finish.
+2. Run `$$nemoclaw <name> shields status`.
+3. Retry the original command only after provider verification completes and the command exits with status `0`.
+
+Older managed Hermes images use the sealed-plan transition only when the current provider capability is proved absent.
+Custom images and legacy Dockerfile workflows remain on their existing transition contract and do not use `provider-state-mutation-v2`.
 
 </AgentOnly>
 
@@ -4809,6 +4847,7 @@ When the live shared route differs, text output prints both routes and JSON outp
 When `routeDrift.canConnect` is `false`, `connect` cannot safely restore the recorded route because provider-global identity differs or required route or gateway metadata is incomplete.
 Refer to [Use Shared Gateway Routes](../inference/manage-inference/use-shared-gateway-routes) for the route-sharing workflow.
 `openshellDriver` and `openshellVersion` are always strings (falling back to `"unknown"` when the registry has no value), so consumers can rely on `typeof` checks.
+`agent` is always a string and reports `openclaw` when the registry records no agent for the sandbox.
 `failureLayer` is `null` when no preflight failure was detected and otherwise one of `docker_unreachable`, `sandbox_container_stopped`, or `sandbox_dashboard_port_conflict`; when set, `inferenceHealth` is suppressed to `null` so automation does not see a stale remote-provider healthy status during a local outage.
 `dockerPaused` is `true` when NemoClaw detects that the Docker-driver sandbox container is paused.
 In that case, text output keeps OpenShell's authoritative phase but prints a `docker unpause <container>` recovery hint instead of sending you directly to rebuild.
@@ -5734,7 +5773,9 @@ For an OpenClaw WhatsApp sandbox, `--channel whatsapp` probes the sandbox to sep
 A paired channel with no observed inbound delivery exits non-zero with verdict `idle` so an unhealthy bridge cannot pass as healthy.
 The detailed WhatsApp probe stays focused on QR/session runtime diagnostics and does not include rendered-config comparison lines.
 For a Hermes WhatsApp sandbox, `--channel whatsapp` probes only whether the default gateway session path and the `profiles/dashboard-home` session path contain `creds.json`.
-If the dashboard path has credentials and the gateway path is empty, the report prints the supported `config set` command for the `platforms.whatsapp.extra.session_path` configuration key, including the new-configuration-key opt-in when generated configs do not already contain that key.
+If the dashboard path has credentials and the gateway path is empty, the report tells you to run `$$nemoclaw <sandbox> channels remove whatsapp` and then `$$nemoclaw <sandbox> channels add whatsapp`, because a rebuild restores the legacy session instead of dropping it.
+Pair again from the dashboard so credentials use `/sandbox/.hermes/platforms/whatsapp/session`.
+Rerun `$$nemoclaw <sandbox> channels status --channel whatsapp`.
 NemoClaw does not treat a Hermes session file as live inbound-health evidence.
 
 For Telegram, `--channel telegram` probes the sandbox to report the gateway process, Bot API reachability, and inbound delivery alongside the config comparison.
@@ -5744,7 +5785,16 @@ It reads the gateway's own startup and poll log breadcrumbs rather than issuing 
 The verdict reflects the most recent evidence in the log window, so a bridge that recovered after a blocked start reports `healthy` while one blocked again reports `unreachable`.
 Telegram health is probed only for OpenClaw sandboxes; a Hermes Telegram sandbox uses the basic config report.
 
-For registered non-WhatsApp channel details and the compact summary, the status output compares non-secret config inputs from the sandbox registry against the values rendered into the agent config, such as Telegram group policy in `openclaw.json` or mention mode in Hermes config.
+For OpenClaw Slack, `--channel slack` reports registration, policy coverage, the account runtime, Socket Mode transport, and the account probe.
+Add `--wait` to poll these conditions until Slack becomes operational, a terminal error occurs, or the timeout expires.
+The default timeout is 180 seconds, and `--timeout <seconds>` requires `--wait`.
+NemoClaw treats the timeout as the total budget for polling and live probes, limits each live probe to the remaining budget, and starts no probe at or after the deadline.
+Use `--json` with `--wait` for a structured readiness result with `readiness.state`, `readiness.category`, `readiness.reason`, `readiness.retryable`, `readiness.attempts`, `readiness.elapsedMs`, `readiness.lastTransitionAt`, and `readiness.lastObserved`.
+Slack `--wait` applies only to OpenClaw sandboxes and uses its manifest-defined check; other channel manifests return `readiness_not_supported` until they define one.
+For an OpenClaw sandbox, if Slack is paused with `channels stop`, the command skips the live probe and returns one terminal result with `readiness.reason` set to `channel_paused`.
+On timeout, the command exits nonzero with `readiness.state`, `readiness.category`, and `readiness.reason` set to `timeout`; its `readiness.retryable` mirrors the last observed state, whose category and reason preserve the underlying cause.
+
+For registered channel details and the compact summary, the status output compares non-secret config inputs from the sandbox registry against the values rendered into the agent config, such as Telegram group policy in `openclaw.json` or mention mode in Hermes config.
 Secret inputs, including tokens, are not printed.
 If the registry contains a non-secret expected value but NemoClaw cannot read or check the rendered source, the comparison is a warning and the detail includes `(not checked)`.
 Optional unset inputs remain informational.
@@ -5753,17 +5803,22 @@ Optional unset inputs remain informational.
 $$nemoclaw my-assistant channels status
 $$nemoclaw my-assistant channels status --channel whatsapp
 $$nemoclaw my-assistant channels status --channel telegram
+$$nemoclaw my-assistant channels status --channel slack --wait --timeout 180 --json
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--channel <channel>` | Channel to inspect in detail |
-| `--json` | Emit the status report as JSON (for an available detailed WhatsApp or Telegram probe, exit non-zero when the verdict is not `healthy` or `unknown`) |
+| `--wait` | Wait for the selected channel's manifest-defined readiness check (requires `--channel`) |
+| `--timeout <seconds>` | Stop waiting after this number of seconds (default: `180`; requires `--wait`) |
+| `--json` | Emit the status or readiness report as JSON; non-ready terminal and timeout results exit nonzero |
 
 Each live probe is bounded by an in-sandbox `openshell sandbox exec` with a hard timeout.
 The WhatsApp probe returns strict OpenClaw status JSON to the host, where NemoClaw allowlists pairing, liveness, connection-state, and timestamp fields before rendering the report and discards phone-number and free-text error fields.
 The Hermes WhatsApp probe returns only fixed session-path booleans to the host.
 The Telegram probe returns only matched gateway log lines to the host, where NemoClaw reduces them to fixed classifications without rendering the raw lines, message bodies, or tokens.
+The Slack probe returns OpenClaw status JSON to the host.
+NemoClaw reduces it to allowlisted account booleans, credential availability, probe success, fixed error categories, and timestamps; the rendered and JSON readiness reports omit tokens and free-text errors.
 
 </AgentOnly>
 
@@ -5979,6 +6034,8 @@ OpenClaw caches skill content per session, so the command also refreshes the Ope
 
 Hermes plugins are different from NemoClaw skills.
 `skill install` uploads agent skills, while Hermes plugin configuration is managed by the Hermes runtime and the NemoClaw Hermes plugin baked into the sandbox image.
+The NemoClaw Hermes plugin reloads installed skills when a new chat session starts.
+Start a new Hermes chat session after an install or update; a gateway restart is not required.
 
 </AgentOnly>
 <AgentOnly variant="deepagents">
@@ -6025,7 +6082,8 @@ For OpenClaw, the command also removes the OpenClaw home-directory mirror when p
 </AgentOnly>
 <AgentOnly variant="hermes">
 
-Run `$$nemoclaw <name> gateway restart` if prompted so the removal takes effect.
+Start a new Hermes chat session for the removal to take effect.
+A gateway restart is not required.
 
 </AgentOnly>
 <AgentOnly variant="deepagents">
@@ -6134,7 +6192,7 @@ NemoClaw forwards every flag the in-sandbox CLI accepts (`--agent`, `--all-agent
 
 ```bash
 $$nemoclaw my-assistant sessions list
-$$nemoclaw my-assistant sessions list --agent work --json
+$$nemoclaw my-assistant sessions list --agent main --json
 ```
 
 </AgentOnly>
@@ -6171,8 +6229,8 @@ Goes through `openshell sandbox exec` -> `openclaw gateway call sessions.reset`,
 
 ```bash
 $$nemoclaw my-assistant sessions reset main
-$$nemoclaw my-assistant sessions reset agent:work:telegram:t-1
-$$nemoclaw my-assistant sessions reset telegram:t-1 --agent work --reason new
+$$nemoclaw my-assistant sessions reset agent:main:telegram:t-1
+$$nemoclaw my-assistant sessions reset telegram:t-1 --agent main --reason new
 $$nemoclaw my-assistant sessions reset agent:main:main --json
 ```
 
@@ -6194,8 +6252,8 @@ The transcript on disk is removed by default; pass `--keep-transcript` to retain
 
 ```bash
 $$nemoclaw my-assistant sessions delete telegram:t-1
-$$nemoclaw my-assistant sessions delete agent:work:telegram:t-1
-$$nemoclaw my-assistant sessions delete telegram:t-1 --agent work --keep-transcript
+$$nemoclaw my-assistant sessions delete agent:main:telegram:t-1
+$$nemoclaw my-assistant sessions delete telegram:t-1 --agent main --keep-transcript
 $$nemoclaw my-assistant sessions delete agent:main:slack:c-9 --json
 ```
 
@@ -6223,7 +6281,7 @@ Pass one or more keys, as aliases or canonical `agent:<id>:<rest>` keys, to filt
 ```bash
 $$nemoclaw my-assistant sessions export
 $$nemoclaw my-assistant sessions export main --agent main
-$$nemoclaw my-assistant sessions export agent:work:telegram:t-1 --include-trajectory
+$$nemoclaw my-assistant sessions export agent:main:telegram:t-1 --include-trajectory
 $$nemoclaw my-assistant sessions export --format tar --out ./bundles/alpha.tgz --json
 ```
 
@@ -6816,6 +6874,9 @@ For gateway-based messaging agents, it also reports messaging overlap warnings w
 </AgentOnly>
 Use `$$nemoclaw <name> status` when you need one sandbox's live health and recovery guidance.
 Pass `--json` for machine-readable output with registered sandboxes, service state, inference routes, and health details.
+Each JSON sandbox row reports `agent` as a string, never `null`.
+The row reports `openclaw` when the registry records no agent for the sandbox.
+This command reads the registry without gateway recovery, so it never reports `unknown`.
 For each listed sandbox, the text output includes the configured inference provider and model plus the number of active SSH sessions when the session probe is available.
 Host-service PID lookup honors `NEMOCLAW_SANDBOX_NAME`, then `NEMOCLAW_SANDBOX`, then `SANDBOX_NAME`, then the registry default.
 
@@ -8537,6 +8598,7 @@ Run `$$nemoclaw onboard` to register a sandbox again.
 | Path | Purpose | Safe to delete |
 |---|---|---|
 | `~/.nemoclaw/state/` | Operational coordination and history for lifecycle locks, shields transitions, timers, and audit events, local routing, and port-forward helpers. | No. Deleting it can disrupt an active operation and discard security or recovery context. |
+| `~/.nemoclaw/state/runtime-provider-lifecycle/` | Owner-only durable transaction records, exact-target claims, recovery state, and release receipts for Docker runtime provider state mutations. The records bind the registered sandbox lifecycle, container and engine authority, mount namespace, state-root inode, normalized plan and projection, target and rollback postures, and transaction nonce. | No. A retained record is the authority that lets a later host process recover the exact transition and prevents another target from mutating the same runtime. Do not remove it manually. |
 | `~/.nemoclaw/snapshots/` | Copies of host `~/.openclaw` state and configured external roots created by blueprint migration and rollback flows. NemoClaw excludes known authentication-state files and strips recognized credential values from copied JSON, YAML, and `.env` files. | Only after you no longer need the corresponding rollback or restore point. The host CLI does not expose the direct runner's retention actions. |
 | `~/.nemoclaw/rebuild-backups/` | Host-side snapshots written by `backup-all`, `snapshot create`, and rebuild flows. | Only after you no longer need rollback or restore points. |
 | `~/.nemoclaw/backups/` | Workspace backups written by legacy backup helpers and some recovery flows. | Only after confirming you no longer need those workspace archives. |
@@ -9297,10 +9359,14 @@ Do not use `observedAt` as build identity.
 
 ## Interpret Docker storage
 
-The report rejects an unsupported `DOCKER_HOST` before it uses Docker daemon evidence.
+The report rejects an unsupported explicit `DOCKER_HOST` before it uses Docker daemon evidence.
 `host.docker.host_invalid` records whether the configured endpoint is invalid, `host.docker.endpoint_supported` is absent when a configured endpoint is not an absolute local `unix://` socket, and the blocking `host.docker.host_invalid` finding identifies that condition.
 TCP, SSH, relative Unix socket, and unsafe path values do not fall back to the default Docker socket.
-Unset `DOCKER_HOST` continues to use Docker's default local socket.
+When `DOCKER_HOST` is unset, NemoClaw first probes the Docker CLI's selected authority, including `DOCKER_CONTEXT` and its `DOCKER_CONFIG` directory when set, without a host override.
+If that authority is unreachable, NemoClaw probes a bounded set of local Unix sockets and accepts only an endpoint with valid server-version evidence.
+When it selects a fallback socket, NemoClaw clears the unreachable `DOCKER_CONTEXT` so later Docker commands use the selected `DOCKER_HOST`.
+A mixed set of reachable Docker and Podman fallbacks, or a fallback with an unknown server identity, produces no automatic `DOCKER_HOST` override.
+A reachable Podman endpoint remains classified as Podman and does not satisfy the standard Docker runtime requirement.
 
 The Docker storage capabilities separate the current host configuration from NemoClaw's supported remediation path.
 
@@ -11227,6 +11293,34 @@ For shields changes, the lock remains held through recursive state-directory upd
 If a concurrent config or shields command reports `Hermes config mutation is already in progress`, do not remove `/run/nemoclaw/hermes-config-mutation.lock` manually.
 Wait for the active config, shields, recovery, or restart command to finish, then retry.
 If the command says shields are up, run `$$nemoclaw <name> shields down` before `config set` or `inference set`.
+
+### A Hermes command reports that runtime provider state mutation owns direct-container execution
+
+A current managed Hermes image on the Docker driver can report this retryable refusal while an exact Shields provider fence is active:
+
+```text
+Runtime provider state mutation owns direct-container execution for sandbox '<name>'; retry after the provider fence is released.
+```
+
+The refused command did not start a process inside the sandbox.
+Do not bypass the fence with manual `docker exec`, OpenShell, or SSH commands, and do not delete `~/.nemoclaw/state/runtime-provider-lifecycle/`.
+Wait for the active Shields or recovery command to finish, then reconcile the retained authority from the host:
+
+```bash
+$$nemoclaw <name> shields status
+```
+
+Use the status result as follows:
+
+- If status reports verified `UP`, `DOWN`, or mutable-default posture and exits with status `0`, retry the original command.
+- If status reports `runtime-provider recovery restored lockdown`, retry the intended `shields up` or `shields down` transition because provider verification rejected the persisted mutable posture.
+- If status reports `DOWN (DRIFTED...)` or `NOT CONFIGURED (DRIFTED...)`, run `$$nemoclaw <name> shields up`.
+  Open a new shields-down window only after `shields status` reports `UP` and exits with status `0`.
+
+Hermes can also log `[SECURITY] Hermes startup held by an active runtime state mutation.` before it reads mutable state.
+Do not kill or manually restart the held entrypoint.
+Run `$$nemoclaw <name> shields status` from the host so NemoClaw can recover the exact retained target and authenticate the startup release.
+If recovery still fails, preserve the owner-only lifecycle ledger and the complete error for diagnosis instead of removing a marker or changing in-sandbox permissions.
 
 ### Hermes startup reports `HERMES_CONFIG_MUTATION_ORPHANED`
 
@@ -15157,12 +15251,6 @@ openclaw security audit --json | jq '.suppressedFindings'
 
 Remove the underlying risky condition when dashboard compatibility no longer requires it.
 
-Remove these suppressions only after the pinned OpenClaw audit contract test proves that OpenClaw natively classifies intentional loopback development HTTP without them, or after NemoClaw onboarding defaults `CHAT_UI_URL` to `https://localhost` with a generated local certificate.
-
-Regression contracts: `test/generate-openclaw-config-security-audit.test.ts` locks generated suppression scope, `test/openclaw-security-audit-suppressions-real.test.ts` locks the pinned OpenClaw check IDs and details, and `test/e2e/live/dashboard-remote-bind.test.ts` proves a clean-host remote bind leaves all three risky findings active.
-
-The preceding removal condition applies to all three contracts.
-
 ## Auto-Pair Client Allowlist
 
 The auto-pair watcher automatically approves device pairing requests from recognized clients, so you do not need to manually approve the Control UI.
@@ -15301,13 +15389,11 @@ The Hermes sandbox image build fails if either installed dependency has another 
 The base image also replaces the published `python-multipart==0.0.27` lock resolution with the hash-verified and attested `python-multipart==0.0.32`.
 The base image overlays checksum-pinned Node.js `24.18.1` archives for both supported architectures and installs exact uv `0.11.33`; build-time assertions reject version drift before Hermes is installed.
 
-The `BASE_IMAGE` argument in `agents/hermes/Dockerfile` pins patched multi-platform Open Container Initiative (OCI) index `sha256:57c091ab9b31c924eac0050e66c834c37df875154a254964302a31b119b50b96`.
-GitHub Actions workflow `.github/workflows/base-image.yaml` run `31006872948`, attempt 1, built and published that base image index from source commit `bd668121e918e7b1dda13062bed728f18150360e` after a push to `main`.
-The `linux/amd64` and `linux/arm64` manifests point to image configurations whose `org.opencontainers.image.source` labels identify repository `NVIDIA/NemoClaw`.
-The `org.opencontainers.image.revision` labels identify source commit `bd668121e918e7b1dda13062bed728f18150360e`.
-Each platform base image has Supply-chain Levels for Software Artifacts (SLSA) provenance tied to run `31006872948`, attempt 1, and that source commit.
-The OCI index has no software bill of materials (SBOM) attestation.
-GitHub Actions must build the Hermes sandbox image from that base image, and the required live end-to-end (E2E) checks must pass before approval.
+The `BASE_IMAGE` argument in `agents/hermes/Dockerfile` pins the patched multi-platform Open Container Initiative (OCI) index `sha256:3d54b928baef9df403227e846f73079d13ca8424a27cd5268ca97bac3f030b27`.
+GitHub Actions workflow `.github/workflows/base-image.yaml` run `31031662054`, attempt 1, built and published that replacement image from source commit `a7a7f3e470a75c404d316d2054445e16bb63b48c`, including the exact-source dashboard WhatsApp session-path patch.
+It supersedes index `sha256:57c091ab9b31c924eac0050e66c834c37df875154a254964302a31b119b50b96`, which workflow run `31006872948`, attempt 1, published from source commit `bd668121e918e7b1dda13062bed728f18150360e` after a push to `main`.
+The selected image's `linux/amd64` and `linux/arm64` base-image builds passed the exact-source patch guard, locked bridge install, bridge-to-Baileys option assertions, and controlled-proxy WebSocket `CONNECT` regression.
+GitHub Actions must build the Hermes sandbox image from the selected base image, and the required live end-to-end (E2E) checks must pass before approval.
 
 ## Reviewed identities
 
@@ -15520,21 +15606,41 @@ The `BASE_IMAGE` argument in `agents/hermes/Dockerfile` pins the following publi
 | Repository | `NVIDIA/NemoClaw` |
 | Workflow | `Images / Base Images` |
 | Workflow path | `.github/workflows/base-image.yaml` |
-| Trigger | Push to `main` |
-| Producer run | `31006872948`, attempt 1, completed successfully |
-| Source commit | `bd668121e918e7b1dda13062bed728f18150360e` |
-| OCI index | `sha256:57c091ab9b31c924eac0050e66c834c37df875154a254964302a31b119b50b96` |
+| Trigger | `workflow_dispatch` from `fix/hermes-whatsapp-session-path` |
+| Producer run | `31031662054`, attempt 1, completed successfully |
+| Source commit | `a7a7f3e470a75c404d316d2054445e16bb63b48c` |
+| OCI index | `sha256:3d54b928baef9df403227e846f73079d13ca8424a27cd5268ca97bac3f030b27` |
 
-| Architecture | Child manifest |
+The selected index resolves to these platform manifests and image-configuration labels:
+
+| Platform | Child manifest | `org.opencontainers.image.source` | `org.opencontainers.image.revision` |
+| --- | --- | --- | --- |
+| `linux/amd64` | `sha256:63b5a1944a4613f90fa8f9f92f6a3ccb2ceac6df23bcefad0282ed4167e6c09c` | `https://github.com/NVIDIA/NemoClaw` | `a7a7f3e470a75c404d316d2054445e16bb63b48c` |
+| `linux/arm64` | `sha256:f30b5c2529bbb5c06de38d0c1a7018c27d6c08d5a917503fa354300f12e5568c` | `https://github.com/NVIDIA/NemoClaw` | `a7a7f3e470a75c404d316d2054445e16bb63b48c` |
+
+Each child manifest has the following per-platform Supply-chain Levels for Software Artifacts (SLSA) provenance:
+
+| Platform | Attestation manifest | SLSA provenance layer | Builder ID |
+| --- | --- | --- | --- |
+| `linux/amd64` | `sha256:6797db760d6c894b624a4e40614b33a611ca02ed772323dd0b097f8ca782beab` | `sha256:f95cea632fa5006fc78c193f7e550d869423818e8ba3ab2b48a6518746a7a43c` | `https://github.com/NVIDIA/NemoClaw/actions/runs/31031662054/attempts/1` |
+| `linux/arm64` | `sha256:3237354f9fe66b71b2e5e2fb9f4c1983c9c9151c53ecfdf7cf3ecbfee4029944` | `sha256:1ca19a6f81b3709df3e05fc39fc40a0425ce6473036909be61fa274569e858c5` | `https://github.com/NVIDIA/NemoClaw/actions/runs/31031662054/attempts/1` |
+
+Both in-toto layers use predicate type `https://slsa.dev/provenance/v1` and bind source `https://github.com/NVIDIA/NemoClaw` to revision `a7a7f3e470a75c404d316d2054445e16bb63b48c`.
+The selected index has no index-level attestation manifest.
+Each platform attestation manifest contains only its SLSA provenance layer and has no software bill of materials (SBOM) layer.
+
+The selected build includes the exact-source dashboard WhatsApp session-path patch. Its amd64 and arm64 base-image builds passed the exact-source patch guard, locked bridge install, bridge-to-Baileys option assertions, and controlled-proxy WebSocket `CONNECT` regression.
+
+The replacement follows the security-refreshed multi-platform index published by run `31006872948`, attempt 1, from source commit `bd668121e918e7b1dda13062bed728f18150360e`:
+
+| Evidence | Value |
 | --- | --- |
-| amd64 | `sha256:cf6e95640faac8e5099cc9d267a6eb9b1f9192abbfcc9552a81a8ae22b4a47bb` |
-| arm64 | `sha256:92e7c982bc5106f4c3f551032418fb72375b4d37bff50e21baa3d0e861d7519e` |
+| OCI index | `sha256:57c091ab9b31c924eac0050e66c834c37df875154a254964302a31b119b50b96` |
+| amd64 child manifest | `sha256:cf6e95640faac8e5099cc9d267a6eb9b1f9192abbfcc9552a81a8ae22b4a47bb` |
+| arm64 child manifest | `sha256:92e7c982bc5106f4c3f551032418fb72375b4d37bff50e21baa3d0e861d7519e` |
 
-Each platform manifest points to an image configuration whose `org.opencontainers.image.source` label identifies repository `NVIDIA/NemoClaw` and whose `org.opencontainers.image.revision` label identifies source commit `bd668121e918e7b1dda13062bed728f18150360e`.
-Each platform base image also has SLSA provenance whose builder ID is `https://github.com/NVIDIA/NemoClaw/actions/runs/31006872948/attempts/1` and whose source is that repository and commit.
-The `linux/amd64` and `linux/arm64` base image histories each contain installed-version assertions for `aiohttp==3.14.3` and `cryptography==50.0.0`.
-The base image OCI index has no SBOM attestation.
-This absence is separate from the incomplete SBOM in the Hermes source archive.
+That security-refreshed image's platform manifests identify repository `NVIDIA/NemoClaw` and source commit `bd668121e918e7b1dda13062bed728f18150360e`; its platform histories contain installed-version assertions for `aiohttp==3.14.3` and `cryptography==50.0.0`.
+The `57c091ab` OCI index has no SBOM attestation. This absence is separate from the incomplete SBOM in the Hermes source archive.
 
 The Dockerfile change replaces the base image built from source commit `340c47857596e7cc347541a0b32fe9e24f201bcd` and identified by OCI index `sha256:956c3d0c812ee6caa56f3b6e307819925d920604adcf73c4a9e6229788967634`:
 
@@ -15584,7 +15690,7 @@ Each reviewed commit in the following table is an ancestor of `bd668121e918e7b1d
 | `HERMES-9` | High | Pin and test | The selected Python delta adds no advisory regression, and the affected multipart parser is replaced with attested `0.0.32` plus hash and runtime probes. |
 | `HERMES-10` | High | Pin and test | The exact-source patch updates Hermes metadata and its frozen lock together, selects `aiohttp==3.14.3`, `cryptography==50.0.0`, `mcp==1.28.1`, `Pillow==12.3.0`, `starlette==1.3.1`, and `tornado==6.5.7`, and fails the base image build on dependency inconsistency or installed-version drift. The `agents/hermes/Dockerfile` build checks `aiohttp==3.14.3` and `cryptography==50.0.0` in the Hermes sandbox image after messaging package installation. The check runs when `NEMOCLAW_MANAGED_IMAGE_CAPABILITY_UNION` is `0` or `1`. The base image separately checksum-pins Node.js `24.18.1` and checks uv `0.11.33`. |
 | `HERMES-11` | High | Migrate, test, and runtime-proof | Root npm audit reports zero production findings, and the WhatsApp bridge removes the Baileys RC9 critical, high, and medium advisory entries. Both architectures still require native bridge and message-path evidence. |
-| `HERMES-12` | High | Pin and runtime-proof | The `BASE_IMAGE` argument in `agents/hermes/Dockerfile` pins base image OCI index `sha256:57c091ab9b31c924eac0050e66c834c37df875154a254964302a31b119b50b96`. GitHub Actions workflow `.github/workflows/base-image.yaml` run `31006872948`, attempt 1, published that index from source commit `bd668121e918e7b1dda13062bed728f18150360e` after a push to `main`. The `linux/amd64` and `linux/arm64` image configurations identify repository `NVIDIA/NemoClaw` and source commit `bd668121e918e7b1dda13062bed728f18150360e`. Both platform base images have SLSA provenance tied to that workflow run and source commit. The `linux/amd64` and `linux/arm64` base image histories each check `aiohttp==3.14.3` and `cryptography==50.0.0`. The OCI index has no SBOM attestation. Source commit `bd668121e918e7b1dda13062bed728f18150360e` descends from WhatsApp commit `3f3eb6139e089c24397d6a499a10fcde4bdc84da` and base image input commits `265c18f856263c20cd4a3e89ca189fc102dbc95b`, `15069f9262d52b74d8916b7a0d7969a9ae4d3ee1`, `efc34999dd185c2e14ff5dc6997d75db26537f3a`, and `b6df720eebf5a01928dbed2f588691ba8de794f8`. `HERMES-22` requires live WhatsApp evidence from the Hermes sandbox image. |
+| `HERMES-12` | High | Pin and runtime-proof | Trusted workflow run `30779271312`, attempt 1, built source commit `340c47857596e7cc347541a0b32fe9e24f201bcd` and published OCI index `sha256:956c3d0c812ee6caa56f3b6e307819925d920604adcf73c4a9e6229788967634`. Run `31006872948`, attempt 1, published security-refreshed index `sha256:57c091ab9b31c924eac0050e66c834c37df875154a254964302a31b119b50b96` from source commit `bd668121e918e7b1dda13062bed728f18150360e`, whose platform histories check `aiohttp==3.14.3` and `cryptography==50.0.0`. Trusted workflow run `31031662054`, attempt 1, rebuilt source commit `a7a7f3e470a75c404d316d2054445e16bb63b48c` with the exact-source dashboard WhatsApp session-path patch and published replacement OCI index `sha256:3d54b928baef9df403227e846f73079d13ca8424a27cd5268ca97bac3f030b27`. The final Dockerfile pins that replacement index. The amd64 and arm64 base-image builds in the reviewed runs passed the exact-source patch guard, locked bridge install, bridge-to-Baileys option assertions, and the controlled-proxy WebSocket `CONNECT` regression; the live final-image WhatsApp evidence is recorded under `HERMES-22`. |
 | `HERMES-13` | Medium | Document bounded residual | Static `state_files` entries online-back up the default profile only. Cron or Discord ledgers created by a process launched under `profiles/<name>` remain in the raw `profiles` tar capture and can be inconsistent during a concurrent snapshot. Dynamic profile-local SQLite discovery is generic snapshot work outside this upgrade PR. |
 | `HERMES-14` | High | Migrate and test | The browser evaluation denylist changed from default-on to opt-in. Generated configuration explicitly writes `browser.restrict_evaluate: true`, including when managed browser-gateway settings are merged, so the upgrade does not broaden page-context access. |
 | `HERMES-15` | Medium | Migrate and test | The omitted gateway session-reset policy changed from bounded daily and idle expiry to no automatic reset. Generated configuration explicitly writes the complete outgoing reset and notification policy to preserve the retention bound without inheriting mutable dependency defaults. |
@@ -15594,7 +15700,7 @@ Each reviewed commit in the following table is an ancestor of `bd668121e918e7b1d
 | `HERMES-19` | High | Migrate and test | The dashboard has an isolated `HERMES_HOME`, so its allowlisted routing and policy mirror is a startup security boundary. A missing gateway config remains a benign cold-start no-op, while malformed, non-mapping, unreadable, or routing-free source config and invalid existing dashboard config fail startup without changing stale dashboard bytes. Sanitized errors never include raw PyYAML parser context or credential-bearing source lines. |
 | `HERMES-20` | High | Retarget, guard, test, and runtime-proof | Base SHA `fa96c91f` adds a Hermes 0.18 gateway-runtime-metadata patch whose central helper shape does not match Hermes 0.19. The retargeted exact-source guard preserves `_get_process_hermes_home()` while moving the managed default gateway's central PID, lock, and status helpers below `runtime`, hash-binds the patcher, and adds unit and Hermes sandbox image probes. The managed-gateway restart E2E remains the PR SHA runtime gate. |
 | `HERMES-21` | Medium | Document inherited bounded residual | The base workaround does not retarget direct upstream `--replace` cleanup, planned-stop/takeover markers, named-profile and multiplexer readers, service/boot/web/Windows consumers, or upstream backup and Docker paths. With Shields up, those direct paths can fail or observe stale state, but the same limitation exists on base SHA `fa96c91f`; the 0.19 selector retarget adds no regression to NemoClaw's supported host-managed default-gateway lifecycle. A complete relocation needs separate exact-source patches and runtime proof for every explicit consumer. |
-| `HERMES-22` | High | Patch, pin, test, and runtime-proof | Issue `#8087` showed that the Hermes WhatsApp WebSocket ignored the injected `HTTPS_PROXY`, attempted direct DNS resolution, and failed before OpenShell produced an Open Cybersecurity Schema Framework (OCSF) record. NemoClaw exact-source patches both Baileys proxy fields, locks the added proxy dependency graph, and fails the base image build when the patch drifts, a bridge-level `makeWASocket` mock does not receive the same proxy agent as `agent` and `fetchAgent`, or the pinned Baileys WebSocket transport does not send a `CONNECT web.whatsapp.com:443` request to a controlled HTTPS proxy. The mock also proves that both options remain unset without `HTTPS_PROXY`. Live Hermes WhatsApp E2E evidence for QR pairing, connected status, and audited WebSocket traffic through the OpenShell proxy remains a merge gate. |
+| `HERMES-22` | High | Patch, pin, test, and runtime-proof | Issue `#8087` showed that the Hermes WhatsApp WebSocket ignored the injected `HTTPS_PROXY`, attempted direct DNS resolution, and failed before OpenShell produced an Open Cybersecurity Schema Framework (OCSF) record. NemoClaw exact-source patches both Baileys proxy fields, locks the added proxy dependency graph, and fails the base image build when the patch drifts, a bridge-level `makeWASocket` mock does not receive the same proxy agent as `agent` and `fetchAgent`, or the pinned Baileys WebSocket transport does not send a `CONNECT web.whatsapp.com:443` request to a controlled HTTPS proxy. The mock also proves that both options remain unset without `HTTPS_PROXY`. Live Hermes WhatsApp evidence was captured manually on a final image built from this branch: dashboard QR pairing wrote credentials to `/sandbox/.hermes/platforms/whatsapp/session`, the bridge reported `{"status":"connected"}`, an inbound message from an allowlisted sender received an agent reply, and the OpenShell proxy audit admitted every WhatsApp flow under `policy:whatsapp`. Pull request `#8229` records that run and its reproduction steps. No target in this repository pairs a live WhatsApp account, so the trusted manual pull request E2E run remains the merge gate for that evidence. |
 
 Unresolved upgrade-created high-impact concerns: `0`.
 One Medium upgrade-created instance of the pre-existing named-profile raw-capture limitation and one inherited Medium direct-runtime-consumer limitation remain explicitly accepted for this upgrade scope.
@@ -15622,11 +15728,11 @@ The review records the following source and test evidence.
 The review records the following publication and registry evidence.
 
 - Hermes CI run `29768400292`, PyPI publication run `29768427462`, and Docker publication run `29768440304` completed successfully.
-- GitHub Actions workflow `.github/workflows/base-image.yaml` run `31006872948`, attempt 1, published the patched `linux/amd64` and `linux/arm64` base images.
+- GitHub Actions workflow `.github/workflows/base-image.yaml` run `31031662054`, attempt 1, published the selected patched `linux/amd64` and `linux/arm64` base images; run `31006872948`, attempt 1, published the preceding security-refreshed index.
 - PyPI Trusted Publisher attestations bind both `hermes-agent==0.19.0` artifacts to source commit `3ef6bbd201263d354fd83ec55b3c306ded2eb72a`.
 - The npm registry-integrity check matches the `hermes-agent==0.19.0` cross-check value recorded in this review.
-- OCI inspection records the immutable index, image-configuration source and revision labels, SLSA provenance, and build histories.
-- The OCI index has no SBOM attestation.
+- OCI inspection records the immutable index, both child manifests, image-configuration source and revision labels, per-platform SLSA provenance, and build histories.
+- The selected index has no index-level attestation manifest, and neither platform attestation manifest contains an SBOM layer.
 
 Before merge, these checks must pass:
 
@@ -16151,8 +16257,7 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
   The exact source shapes, replacement SRIs, tarball URLs, patched metadata, and provenance recipe fail closed on drift.
   The low `body-parser` and moderate Hono and `protobufjs` findings remain documented at the configured `high` threshold.
   Current NemoClaw closes the WeChat residual with `agents/openclaw/wechat-runtime/package-lock.json` and post-install graph verification.
-- `src/lib/messaging/channels/manifests.test.ts` remains within the repository test-file line budget.
-  This OpenClaw dependency upgrade does not require a split to satisfy that budget.
+- `src/lib/messaging/channels/manifests.test.ts` remains below the shared `test-size:check` threshold and does not need extraction in this dependency bump.
 - The npm audit result in this note remains a point-in-time snapshot.
   Default PR and main CI rematerialize the production-compatible graph from the reviewed local archives, audit it and the committed mcporter lock with `npm audit --omit=dev --json` through the reviewed evaluator, upload the raw reports and normalized policy results, and fail on unaccepted findings at the configured `high` threshold.
   The separate `wechat-runtime-audit` gate uses Node `22.19.0` and npm `10.9.4`, installs the committed WeChat production lock with scripts disabled, fails on any low-or-higher production advisory, verifies registry signatures, exercises the reviewed archive through a copied writable cache, and uploads its evidence.
@@ -16184,7 +16289,7 @@ No real Microsoft Teams tenant proof is included in this PR. The work remains tr
 
 Review date: 2026-07-21
 
-Last updated: 2026-08-07
+Last updated: 2026-08-11
 
 ## Decision
 
@@ -16816,6 +16921,25 @@ Regression coverage lives in `test/openclaw-2026-7-startup-compat.test.ts` and
 Remove the legacy cache repair after every supported upgrade source stops
 seeding the file or OpenClaw can migrate it across split users and a protected
 parent without a warning.
+
+## Gateway Security Audit Suppression Boundary
+
+NemoClaw's generated OpenClaw audit configuration keeps intentional loopback
+`allowInsecureAuth` findings and provenance-known loopback device-auth opt-out
+findings visible as accepted findings.
+`test/generate-openclaw-config-security-audit.test.ts` locks the generated
+suppression scope, and `test/openclaw-security-audit-suppressions-real.test.ts`
+locks the pinned OpenClaw check IDs and details.
+`test/e2e/live/dashboard-remote-bind.test.ts` proves that a clean-host remote
+bind leaves the device-auth, insecure-auth, and Host-header fallback findings
+active.
+
+Remove the `allowInsecureAuth` suppressions only after the pinned OpenClaw audit
+contract proves that OpenClaw natively classifies intentional loopback
+development HTTP without them, or after NemoClaw onboarding defaults
+`CHAT_UI_URL` to `https://localhost` with a generated local certificate.
+Remove the device-auth suppressions only after managed onboarding no longer
+applies the loopback device-auth compatibility opt-out.
 
 ## Existing security and runtime contracts
 
@@ -18737,12 +18861,9 @@ projects. Reviewed condition-only jobs may be skipped when the empty-selector di
 select them, including Launchable, Jetson, DGX Spark, retired-selector compatibility, reporting,
 and scorecard jobs.
 
-The managed image lifecycle job is not a required PR check and does not gate or roll back promotion.
-When the base-image workflow publishes managed images from `main`, this job runs after `promote` moves the OpenClaw cohort pointer.
-It exercises each published `linux/amd64` digest reference through onboarding, agent turns, gateway restart recovery, and destroy.
-The references cover OpenClaw, Hermes, and LangChain Deep Agents Code.
-If verification fails, the workflow does not roll back the promoted cohort pointer.
-Changes that can affect rootless Podman still require the latest PR commit's rootless Podman CPU lifecycle check with Docker disabled.
+Changes that can affect managed activation also require the current head's exact all-agent managed
+runtime activation check. Changes that can affect rootless Podman also require the current head's
+rootless Podman CPU lifecycle check with Docker disabled.
 
 The gate fails closed for missing, expired, duplicate, or malformed evidence. It also rejects a
 stale head or base, a workflow mismatch, nonempty selectors, an unreviewed skipped job, an
@@ -19066,15 +19187,15 @@ The Dockerfile removes compilers and network probes from the runtime image.
 
 ## Image Digest Pinning
 
-The blueprint references the sandbox image by an immutable `@sha256:` digest instead of a mutable tag such as `:latest`.
-A registry compromise or accidental force-push cannot silently swap the sandbox image.
+The managed blueprint references the sandbox image by an immutable `@sha256:` digest instead of a mutable tag such as `:latest`.
+A registry-side tag change cannot silently select another managed sandbox image.
 
 | Aspect | Detail |
 |---|---|
-| Default | `nemoclaw-blueprint/blueprint.yaml` pins the sandbox image by digest. A CI regression test blocks any mutable-tag reference from merging. |
-| What you can change | Contributors bumping the sandbox image must update the digest in `blueprint.yaml`. Release tooling should rewrite the digest automatically. |
+| Default | NemoClaw selects the managed sandbox image by its exact digest. |
+| What you can change | Use the onboarding `--from` path when you need to build from a reviewed custom image. Locally built custom images do not use the managed registry digest. |
 | Risk if relaxed | Reverting to a mutable tag (`:latest`) allows a registry-side change to replace the sandbox image without any blueprint update, which is a supply-chain risk. |
-| Recommendation | Always reference the sandbox image by digest. If you build a custom image with the onboarding `--from` path, the digest constraint does not apply to your local build. |
+| Recommendation | Keep the managed digest-pinned image unless you need a reviewed custom image. Pin the custom image's base and dependencies before you build it. |
 
 <AgentOnly variant="openclaw">
 
@@ -19583,6 +19704,10 @@ The lifecycle boundary maintains these invariants.
 - A mutable path, status file, process ID, command line, or listener alone never grants authority.
 - Process decisions bind the observed process ID to its start identity, parent chain, user identity, PID namespace, executable shape, and listener ownership where the topology exposes those signals.
 - Filesystem transitions open trusted parents by descriptor, reject symlinks and unsafe hard links, bound traversal and input size, and verify the resulting inode state.
+- A current managed Hermes image on the Docker driver accepts a runtime provider state mutation only through a qualified Docker executable and endpoint authority bound to the registered sandbox lifecycle and exact runtime target.
+- The owner-only runtime provider lifecycle ledger survives host process exit, excludes a second target, and remains authoritative until exact recovery and release complete.
+- An active provider fence drains an earlier privileged sandbox execution lease and rejects later direct-container, SSH, and OpenShell command transports before command resolution or process spawn.
+- Hermes startup cannot read mutable state or admit the gateway while the image-owned startup gate reports an active, malformed, or unauthenticated runtime provider state mutation.
 - A failed or ambiguous proof stops the operation without reporting recovery or a successful Shields up transition.
 - The OpenShell-managed topology authenticates the host action but does not create gateway and agent UID isolation.
 
@@ -19596,6 +19721,13 @@ A successful build does not replace review of privilege, process identity, descr
 | Component | Execution and privilege | Trusted input | Security responsibility |
 |---|---|---|---|
 | `scripts/state-dir-guard.py` | Current OpenClaw and Hermes images install a root-owned, mode `0500` copy at `/usr/local/lib/nemoclaw/state-dir-guard.py` and a generated plan at `/usr/local/share/nemoclaw/state-lock-plan.json`. A historical image that has the helper but no plan uses its co-bundled helper. An agent manifest with `state_lock_plan_in_image: false` selects the trusted host CLI copy over standard input to `python3 -I -` and a manifest-derived plan through authenticated root execution. Historical images that contain neither installed file use the same execution path. | Fixed paths and a bounded action contract. Current and host-injected transitions use a strict versioned path plan derived from the selected agent manifest. A historical co-bundled helper uses its reviewed legacy inventory. | Applies descriptor-rooted state-directory posture changes, rejects link and mount substitution, bounds traversal, and verifies the committed modes and ownership. The host refuses a filesystem transition for an image that contains the generated plan if the installed helper is missing or the plan differs from the current agent manifest. |
+| `src/lib/shields/hermes-runtime-state-mutation.ts` | Runs in the host CLI after the Shields coordinator holds the per-sandbox transition authority. | The registered managed Hermes workload, lifecycle generation, exact root-owned image capability, current `AgentDefinition`, and a Docker provider that implements runtime provider state mutation. | Selects `provider-state-mutation-v2`, recovers a retained exact target before acquiring another one, preserves a restrictive fence after same-locked failure, rolls a failed same-mutable transition back to locked posture, and releases only after fresh activation proof. An older managed image falls back only when the capability is proved absent; an invalid present capability fails closed. |
+| `src/lib/onboard/runtime-provider/docker-operation-authority.ts` | Runs in the host CLI under the operator account and invokes Docker without a shell from a fixed working directory and sanitized environment. | One qualified absolute Docker executable and its absolute interpreter chain; an absolute-only fixed `PATH`; the effective PATH-selected `docker-credential-*` executables and their interpreter chains; the effective SSH executable for an `ssh://` endpoint; the exact context, host, TLS, and endpoint bindings; and the non-`PATH` execution-environment digest. The complete `PATH` enters authority identity for host-local inference and `ssh://`. A local `sandbox-lifecycle` authority omits helper-free added directories from persisted identity while still binding selected delegated helpers. | Revalidates executable, interpreter, delegated-command, and engine-endpoint metadata before provider actions; rejects authority drift and unverified remote TCP; and prevents ambient Docker configuration or command delegation from redirecting a fenced runtime provider state mutation. |
+| `src/lib/onboard/runtime-provider/persisted-engine-lifecycle.ts` and `~/.nemoclaw/state/runtime-provider-lifecycle/` | The host CLI manages an owner-only private directory and durable artifacts under the operator account. | An exact runtime target claim and phase-bound transaction, release receipt, or tombstone whose sandbox lifecycle, engine binding, container, state root, plan, projection, target, rollback, and nonce match. | Preserves recovery authority across host process restart, excludes a second target, advances only the exact transaction through `prepared`, `mutation-authorized`, `fence-established`, and `completed` phases, and releases only the matching claim. |
+| `src/lib/sandbox/privileged-exec.ts` and `src/lib/adapters/sandbox/command-transport.ts` | Run in the host CLI and hold a privileged sandbox execution lease through command completion and transport cleanup. | The canonical per-sandbox host transition lock, the durable runtime target claim, and the exact registered container identity. | Drains an earlier execution lease before provider fencing and rejects later direct-container, OpenShell, and SSH execution before argument resolution or process spawn. One OpenShell lease covers its direct Docker fallback so transport selection cannot cross the fence. |
+| `scripts/runtime-state-mutation-control.py` | The current managed Hermes image installs a root-owned, mode `0500` copy, invoked as root through the qualified Docker provider authority. | Fixed actions; exact container, engine, mount-namespace, state-root, plan, projection, posture, and nonce bindings; installed controller and publisher identities; and stable process evidence. | Establishes and verifies the in-container fence, stops the bound entrypoint and sandbox processes, invokes only the fixed Hermes publisher, starts only the bound entrypoint, requires a fresh healthy gateway and authenticated startup checkpoint, and retains restrictive state when release is not proved. |
+| `scripts/runtime_state_mutation_hermes_publisher.py` | The current managed Hermes image installs a root-owned, mode `0500` copy that only the runtime provider state mutation controller imports. | The root-owned controller marker, nonce-bound canonical plan and projection, installed state-lock plan, exact state-root descriptor, and requested posture. | Applies the normalized Hermes recursive posture, publishes fresh protected inodes where required, maintains its root-only journal, verifies the result, and returns a bounded receipt to the controller. |
+| `scripts/runtime-state-mutation-startup-gate.py` and `agents/hermes/start.sh` | The gate is root-owned and mode `0555`; the Hermes entrypoint invokes it before sourcing helpers or reading mutable state. | The exact parent process, root-owned controller handoff, active runtime provider state mutation identity, candidate checkpoint, and authenticated release for the same target. | Holds or refuses startup on active, malformed, uninspectable, or unauthenticated state, publishes a checkpoint only after the complete Hermes topology is healthy, and resumes only the controller-authenticated candidate. |
 | `scripts/lib/normalize_mutable_config_perms.py` | The installed copy is root-owned and mode `0555`; startup invokes it under the entrypoint identity, and only root can reclaim a root-owned tree. | The fixed OpenClaw config path, the resolved sandbox identity, and an exact `root:root 0700/0600` mutable-drift signature under the expected sandbox-owned parent. | Restores the mutable `2770/660` contract, pins every privileged handoff by descriptor, and rejects ambiguous posture, links, mount substitution, metadata races, and sealed config. |
 | `scripts/openclaw-config-guard.py` | The installed copy is root-owned and mode `0500`; direct root PID 1 or the authenticated host transaction invokes it. | Bounded strict JSON for writes, stable captured config bytes for restart validation, and fixed installed parser paths for existing JSON5 config. | Seals and unseals OpenClaw config with no-follow descriptors, stable inode checks, atomic replacement, hash coherence, and recoverable transaction journals. |
 | `scripts/managed-gateway-control.py` | The installed copy is root-owned and mode `0500`; the host invokes it through sanitized registry-scoped direct-container execution. | A fixed action, a 64-character nonce, fixed installed helpers, and a live OpenShell process tree observed through `/proc`. | Authenticates the host action, proves the managed supervisor and gateway identity, holds a root-owned mode `0600` lifecycle lock, publishes one root-owned mode `0444` exact-exit authorization bound to the gateway and live root controller identities, signals through a pidfd, waits for the normal respawn loop, and verifies listener and HTTP health. |
@@ -19623,6 +19755,14 @@ flowchart LR
     Managed --> Config
     HostLock --> State[State directory guard]
     HostLock --> Verify[Shields lock verifier]
+    HostLock --> Mutation[Hermes runtime provider state mutation]
+    Mutation --> Ledger[Durable lifecycle ledger]
+    Mutation --> DockerAuthority[Qualified Docker authority]
+    DockerAuthority --> ProviderControl[Root runtime provider state mutation controller]
+    ProviderControl --> Publisher[Hermes state publisher]
+    ProviderControl --> StartupGate[Hermes startup gate]
+    Publisher --> Verify
+    StartupGate --> Gateway
     Config --> Gateway[Proven gateway process]
     State --> Verify
 ```
@@ -19636,6 +19776,11 @@ Terminal agents do not run these gateway branches; their Shields transitions use
 Shields mutations acquire the host transition lock before changing network policy, config posture, timer authority, or host state.
 The coordinator applies the selected agent's config transition, invokes `state-dir-guard.py`, verifies the resulting posture, then commits host state and audit output.
 Rollback keeps the same lock and transaction token so a stale callback cannot adopt the transition.
+
+For `provider-state-mutation-v2`, the coordinator first recovers any retained exact target, then acquires and repeatedly asserts the durable provider fence around publication and fresh Hermes activation.
+An in-flight privileged execution lease drains before the fence becomes active, and later ordinary command transports are rejected before they resolve or spawn a sandbox command.
+The fixed publisher applies the exact recursive target, the startup gate authenticates the candidate after the complete topology is healthy, and only then can the provider record release and let ordinary execution resume.
+If the host process exits, the durable ledger and in-container fence remain the recovery authority for the next Shields command.
 
 ## Filesystem and Descriptor Proofs
 
@@ -19679,6 +19824,10 @@ The macOS VM compatibility path accepts a nonroot NemoClaw PID 1 when the VM own
 The guard first proves either the live NemoClaw PID 1 shape, a readiness lease bound to the current PID 1, or the complete OpenShell-managed supervisor shape.
 Remove this path when the minimum supported OpenShell macOS VM preserves root ownership for the readiness lease.
 
+The Docker runtime provider state mutation path applies only to a current NemoClaw-managed Hermes image with the exact installed capability and a registered lifecycle generation.
+An older managed image uses the sealed-plan path only after exact capability absence is proved.
+Custom images and legacy Dockerfile workflows remain on their existing transition contract, and a present but invalid managed capability fails closed instead of falling back.
+
 ## Review and Removal Conditions
 
 Reviewers must re-check this page when a lifecycle helper, shields coordinator, config guard, installed mode, process proof, or test seam changes.
@@ -19690,9 +19839,10 @@ The following conditions govern current compatibility code and architecture work
 - Remove JSON5 restart validation only when every supported OpenClaw config is guaranteed to be strict JSON; NemoClaw write transactions already reject JSON5-only syntax.
 - Decompose the host shields coordinator only with behavior-preserving changes that keep policy, config, timer, rollback, state, and audit ordering under one typed transaction contract.
 - Keep the managed controller's source-path and fake-root overrides disabled unless the explicit source test flag is present, and keep installed helpers bound to fixed production paths.
+- Re-review the qualified Docker authority, durable provider ledger, privileged execution lease, provider controller, Hermes publisher, and startup gate together when any exact-target field, phase, mode, process proof, release condition, or retry boundary changes.
 
 The agent manifest declaration drives both generated image-plan selection and the derived `AgentDefinition` used by host wiring.
 Final-image validation must cover the recovery-capable OpenClaw and Hermes images.
-It checks helper owners and modes, root and gateway supplementary groups, root execution of the read-only `probe` path, and refusal before helper entry when the sandbox user attempts execution.
+It checks helper owners and modes, the exact Hermes provider capability and publisher descriptor, root and gateway supplementary groups, root execution of the read-only `probe` path, and refusal before helper entry when the sandbox user attempts execution.
 Deep Agents uses the host-injected helper path instead of an installed recovery artifact.
 Host wiring tests validate helper selection and plan handoff, while the shared helper tests validate the descriptor-safe behavior; installed-helper metadata checks do not cover Deep Agents.
