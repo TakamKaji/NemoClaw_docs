@@ -2443,8 +2443,12 @@ Use these details when your first-run path needs more control.
     ```
 
     The onboard flow starts both port forwards automatically.
+    For a new sandbox, NemoClaw reserves the selected dashboard loopback port through sandbox preparation and the image build.
+    If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources.
     If OpenShell reports `sandbox is not ready`, NemoClaw waits 5 seconds and retries the affected forward up to three times.
     These retries preserve the existing sandbox and selected host port.
+    NemoClaw releases the reservation immediately before OpenShell starts the dashboard forward.
+    If forwarding then fails, onboarding removes the new sandbox and tells you to resolve the reported error before retrying.
     The Hermes dashboard URL does not include an OpenClaw `#token=` fragment.
     `nemohermes my-hermes dashboard-url --quiet` returns `http://127.0.0.1:18789/` when the default local forward is active.
     Check the API health endpoint from the host.
@@ -3203,9 +3207,12 @@ Use these details when your first-run path needs more control.
     The wizard starts a background dashboard port forward and prints its URL in the ready summary.
     The default host port is `18789`.
     When that port is occupied, NemoClaw uses the next free dashboard port, such as `18790`, and includes the port in the URL.
+    For a new sandbox, NemoClaw reserves the selected loopback port through sandbox preparation and the image build.
+    If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources.
     If OpenShell reports `sandbox is not ready`, NemoClaw waits 5 seconds and retries the dashboard forward up to three times.
     These retries preserve the existing sandbox and selected port.
-    If the selected port becomes occupied after the sandbox build begins, onboarding rolls back the new sandbox and asks you to retry rather than print an unreachable URL.
+    NemoClaw releases the reservation immediately before OpenShell starts the dashboard forward.
+    If forwarding then fails, onboarding removes the new sandbox and tells you to resolve the reported error before retrying.
     The installation transcript does not print the gateway token.
     Use `nemoclaw my-gpt-claw dashboard-url --quiet` to print the complete authenticated URL explicitly.
 
@@ -5553,7 +5560,8 @@ For Local Ollama strict tool-call validation, NemoClaw uses the missing-tool-cal
 - The response contains no tool-call JSON in plain message text.
 - The response does not stop at the output token limit after producing only reasoning.
 
-If a response stops at the output token limit after producing only reasoning, NemoClaw retries once with a larger output token limit.
+If a response stops at the output token limit after producing only reasoning, NemoClaw retries with a 1024-token output limit and then, when reasoning still uses the full output token limit, with a 4096-token output limit and a doubled request deadline.
+When reasoning also uses the full 4096-token output limit, onboarding stops and reports `reasoning used the full output-token budget before a tool call` alongside `missing structured tool call`.
 NemoClaw waits 5, 15, and 30 seconds before the second, third, and fourth validation requests.
 If four consecutive responses meet these conditions, onboarding stops and reports `missing structured tool call` without displaying the response body.
 NemoClaw does not apply the missing-tool-call retry schedule to other compatible endpoints.
@@ -6325,6 +6333,12 @@ NemoClaw treats an active or uninspectable `earlyoom` service as an unmet two-no
 It does not stop, disable, or reconfigure that service.
 An explicit pair or preset stops when this requirement is not met.
 
+NemoClaw treats the Docker readiness requirement as met only when `host.docker.storage_incompatible` is the host's sole blocking finding.
+The report must contain no fatal finding.
+The host must also report `host.docker.storage_remediation_available`.
+Every other required capability must have the `present` state.
+For these capability definitions, refer to [System Readiness](../../reference/system-readiness).
+
 Refer to the [NVIDIA DGX Spark clustering guide](https://docs.nvidia.com/dgx/dgx-spark/spark-clustering.html) for the physical connection workflow.
 The NemoClaw checks above remain the exact profile requirements.
 
@@ -6958,6 +6972,19 @@ Promotion requires broader validation of the pinned Python frontend and the `ste
 The fixed recipe intentionally rejects model and serve-argument overrides; use another catalog profile instead of modifying its validated resource boundary.
 </Warning>
 
+<Note title="Reading Reasoning and Sizing max_tokens for Direct Callers">
+Nemotron 3.5 Lightning is a reasoning model that emits a hidden reasoning trace before its answer.
+Two behaviors surprise direct callers of the managed vLLM endpoint; the OpenClaw agent path is unaffected because it already requests a large budget.
+
+- **Read reasoning from `reasoning`, not `reasoning_content`.**
+  The pinned vLLM runtime renamed the deprecated `reasoning_content` response field to `reasoning`, so `choices[].message.reasoning_content` is `null` even for prompts that reasoned heavily.
+  The reasoning is not discarded — read `choices[].message.reasoning` (and the `delta.reasoning` field when streaming).
+- **Send a generous `max_tokens` (at least `1024`, and more for hard prompts).**
+  The reasoning trace counts against `max_tokens`.
+  With a modest budget the model can spend the entire budget on reasoning before it reaches the answer, returning an empty `content` with `finish_reason=length`.
+  A larger budget lets the answer follow the reasoning.
+</Note>
+
 Muse Glimmer is an additional single-DGX Spark choice and does not change the Qwen default.
 Select its stable catalog ID after confirming that `$$nemoclaw profiles list` reports it as compatible.
 
@@ -7445,10 +7472,10 @@ Set `NEMOCLAW_PREFERRED_API=openai-responses` before onboarding to select `/v1/r
 Set `NEMOCLAW_PREFERRED_API=openai-completions` to skip the Responses probe and validate Chat Completions only.
 The Responses streaming check waits up to 5 seconds for `response.output_text.delta` before onboarding falls back to Chat Completions.
 Some Chat Completions validation requests require a structured tool call.
-If such a request reaches the output-token limit after producing only reasoning content, NemoClaw retries once with a larger token budget.
+If such a request reaches the output-token limit after producing only reasoning content, NemoClaw retries with a 1024-token output limit and then, when reasoning still uses the full limit, with a 4096-token output limit and a doubled request deadline.
 This applies to local runtimes such as Ollama and vLLM.
-Onboarding continues only when the retry returns a structured tool call.
-If the retry fails or times out, validation stops without another Chat Completions attempt.
+Onboarding continues only when a retry returns a structured tool call.
+If the last retry fails or times out, validation stops without another Chat Completions attempt.
 
 <AgentOnly variant="deepagents">
 
@@ -7479,7 +7506,7 @@ This is the API surface that the managed OpenAI frontend uses at runtime.
 ## Compatible Endpoint Probes
 
 Compatible endpoint validation sends a real inference request because many proxies do not expose `/models`.
-For an OpenAI-compatible endpoint, a reasoning model that returns only reasoning content can receive a retry with a larger response budget before NemoClaw reports failure.
+For an OpenAI-compatible endpoint, a reasoning model that returns only reasoning content can receive retries with larger output token limits before NemoClaw reports failure.
 Route, configuration, and authentication failures still fail immediately.
 
 During one onboarding invocation, NemoClaw can reuse one successful Chat Completions validation instead of sending the same immediate host-side request.
@@ -11744,11 +11771,25 @@ If a support workflow asks you to pass the maintained tag explicitly, clear any 
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_INSTALL_REF= NEMOCLAW_INSTALL_TAG=lkg bash
 ```
 
-Before upgrade work, the installer prepares the current NemoClaw CLI without replacing OpenShell and requires a fresh backup of every registered sandbox.
+During the automatic upgrade path, the installer prepares the current NemoClaw CLI without replacing OpenShell and requires a fresh backup of every registered sandbox.
 If any sandbox is skipped or fails, the installer exits before it changes the gateway.
 After backup, the installer requires any existing OpenShell executable it will use to report a version, then compares that version with the supported range declared by the prepared current source.
 It retires the running gateway before replacing an out-of-range OpenShell installation, keeps the gateway when the installed version is supported, and stops without retiring it when the installed version or supported range cannot be validated.
-If the installed OpenShell release cannot retire its gateway through a supported lifecycle command or the verified NemoClaw-owned gateway PID, the installer also stops after backup with the sandbox backups preserved.
+On Linux, failed OpenShell lifecycle commands cause the installer to check a verified NemoClaw-managed gateway PID file for any configured gateway port.
+For the default gateway on port `8080`, the installer first checks a verified active `nemoclaw-openshell-gateway.service`, then checks the PID file.
+The service path requires an active `nemoclaw-openshell-gateway.service` with a trusted unit path, NemoClaw-managed marker, file owner, and `ExecStart` binary.
+After the service or PID-file check confirms the gateway process is stopped, the installer tries to remove the selected OpenShell registration.
+If registration removal fails, the installer warns that onboarding will replace the stale registration.
+If neither fallback can verify and stop the process, the installer stops after backup, preserves every sandbox backup, and reports the failed operation.
+After the automatic path retires an out-of-range gateway, it forces installation of the OpenShell version pinned by the prepared source before sandbox recovery.
+This mandatory installation applies to source and managed install modes and cannot remain deferred after gateway retirement.
+If the forced installation fails, the installer does not stage a gateway service or start sandbox recovery, preserves the backups, and reports how to retry.
+
+For any registered-sandbox upgrade that you already prepared manually, set `NEMOCLAW_OPENSHELL_UPGRADE_PREPARED=1` only after you back up every registered sandbox and retire the gateway.
+This environment variable asserts that you completed those steps, so the installer skips the repeated backup and gateway-retirement phase before it checks whether OpenShell is installed or whether its version is in range.
+It reuses the latest backups, forces installation of the OpenShell version pinned by the prepared source, and starts recovery only after that installation succeeds.
+If the forced installation fails, rerun the installer with `NEMOCLAW_OPENSHELL_UPGRADE_PREPARED=1` to reuse the prepared state and retry the OpenShell installation.
+Outside these forced paths, an in-range source checkout preserves an existing OpenShell installation and installs OpenShell only when it is missing.
 
 After the host CLI and OpenShell update, the installer runs `$$nemoclaw upgrade-sandboxes --auto` to reconcile the existing sandboxes.
 
@@ -11814,12 +11855,73 @@ Runtime changes outside the manifest-defined state paths, such as packages insta
 # SPDX-License-Identifier: Apache-2.0
 title: "Understand Sandbox State"
 sidebar-title: "Understand Sandbox State"
-description: "What agent workspace and state files are, where they live, and how they persist across sandbox restarts."
-description-agent: "Explains what OpenClaw workspace files, Hermes state, and Deep Agents state are, where they live, and how they persist. Use when preparing to edit, snapshot, or transfer sandbox state."
-keywords: ["nemoclaw workspace files", "deepagents state", "soul.md", "agents.md", "sandbox persistence"]
+description: "What agent workspace, sandbox state, and read-only host mounts are, where they live, and how they persist."
+description-agent: "Explains OpenClaw workspace files, Hermes state, Deep Agents state, and read-only host mounts. Use when preparing to edit, mount, snapshot, or transfer sandbox state."
+keywords: ["nemoclaw workspace files", "deepagents state", "soul.md", "agents.md", "sandbox persistence", "read-only host mount"]
 content:
   type: "concept"
 ---
+NemoClaw sandboxes keep agent workspace and state files across ordinary restarts.
+You can also expose selected host directories for live, read-only access when copying files into the sandbox is not appropriate.
+
+## Mount a Host Directory for Read-Only Access
+
+On Linux and Windows Subsystem for Linux 2 (WSL2), onboarding can expose an existing host directory inside a sandbox.
+This operation is supported only with a NemoClaw-managed Docker-driver gateway.
+The same command works with OpenClaw, Hermes, and LangChain Deep Agents Code sandboxes.
+
+<Warning>
+The mount crosses the sandbox boundary and gives every sandbox process read access to the complete host directory tree.
+Read-only access prevents sandbox writes, but it does not protect confidential host files from being read.
+Do not mount a directory that contains credentials, private keys, or other files the agent must not read.
+</Warning>
+
+Before onboarding, confirm that each source is an existing absolute host directory with no symbolic link in any path component.
+Choose a normalized absolute target strictly below `/sandbox`, such as `/sandbox/project`.
+
+Repeat `--host-mount` to expose more than one directory:
+
+```bash
+$$nemoclaw onboard \
+  --host-mount /home/user/project:/sandbox/project \
+  --host-mount /home/user/reference:/sandbox/reference
+```
+
+Onboarding rejects relative paths, missing source directories, symbolic link path components, targets outside `/sandbox`, duplicate sources, and duplicate targets.
+NemoClaw rejects a mount declaration that contains control characters, Unicode formatting controls, or Unicode line and paragraph separators.
+This validation happens before onboarding or a diagnostic report displays either path.
+Every accepted host mount is read-only, and the command does not provide a read-write option.
+
+The sandbox reads the live host directory instead of a copied snapshot.
+Host-side file changes remain visible inside the sandbox while the mount exists.
+
+Onboarding enables the OpenShell Docker bind-mount capability only when a requested or registered host mount requires it.
+NemoClaw stores accepted mount declarations in the sandbox registry and reuses them during `$$nemoclaw <name> rebuild`.
+If onboarding stops before sandbox creation, `$$nemoclaw onboard --resume` reuses the recorded declarations.
+Destroying the sandbox removes its registry entry and the corresponding mount declaration, but it does not delete host files.
+
+After onboarding, inspect the registered host mounts:
+
+```bash
+$$nemoclaw <name> status
+```
+
+The `Host mounts` section lists each source and target with `(read-only)`.
+Connect to the sandbox:
+
+```bash
+$$nemoclaw <name> connect
+```
+
+At the sandbox prompt, inspect the mount options from the Linux mount table:
+
+```bash
+awk '$2 == "/sandbox/project" { print $2, $4 }' /proc/mounts
+```
+
+The mount is active when the output includes `/sandbox/project` and the `ro` option.
+Read a known file under `/sandbox/project` to confirm that the expected host directory is visible.
+
 <AgentOnly variant="openclaw">
 
 OpenClaw stores its personality, user context, and behavioral configuration in a set of Markdown files inside the sandbox.
