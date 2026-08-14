@@ -141,13 +141,15 @@
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-verify-stale
 │       │   ├── SKILL.md
-│       │   └── reference
-│       │       ├── brev-provisioning.md
-│       │       ├── by-design.md
-│       │       ├── candidate-selection.md
-│       │       ├── environment-and-reproducer.md
-│       │       ├── reproduction-rubrics.md
-│       │       └── scoring-comments-and-logging.md
+│       │   ├── reference
+│       │   │   ├── brev-provisioning.md
+│       │   │   ├── by-design.md
+│       │   │   ├── candidate-selection.md
+│       │   │   ├── environment-and-reproducer.md
+│       │   │   ├── reproduction-rubrics.md
+│       │   │   └── scoring-comments-and-logging.md
+│       │   └── scripts
+│       │       └── redact-evidence.py
 │       ├── nemoclaw-skills-guide
 │       │   ├── SKILL.md
 │       │   └── evals
@@ -443,6 +445,7 @@
 │   │   ├── 2026-08-10.mdx
 │   │   ├── 2026-08-11.mdx
 │   │   ├── 2026-08-12.mdx
+│   │   ├── 2026-08-13.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -571,25 +574,10 @@
 │       ├── configure-corporate-ca-trust.mdx
 │       ├── credential-rotation.mdx
 │       ├── credential-storage.mdx
-│       ├── e2e-weather-plugin-fixture-dependency-review.md
-│       ├── fern-5.80.1-dependency-review.md
-│       ├── fern-5.92.4-dependency-review.md
 │       ├── filesystem-controls.mdx
 │       ├── gateway-authentication-controls.mdx
-│       ├── hermes-0.19.0-dependency-review.md
-│       ├── managed-base-perl-5.44-dependency-review.md
-│       ├── openclaw-2026.6.10-dependency-review.md
-│       ├── openclaw-2026.7.1-dependency-review.md
 │       ├── openclaw-controls.mdx
-│       ├── openshell-0.0.101-migration-review.md
-│       ├── openshell-0.0.71-gateway-auth-review.mdx
-│       ├── openshell-0.0.72-compatibility-review.mdx
-│       ├── openshell-0.0.85-migration-review.md
-│       ├── openshell-0.0.99-migration-review.md
 │       ├── process-controls.mdx
-│       ├── sandbox-base-2026-07-25-dependency-review.md
-│       ├── sandbox-base-2026-07-27-native-package-review.md
-│       ├── sandbox-base-libexpat-jq-2026-07-24-dependency-review.md
 │       └── tcb-boundary.mdx
 ├── fern
 │   ├── AGENTS.md
@@ -3297,4 +3285,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-268 directories, 3030 files
+269 directories, 3017 files
