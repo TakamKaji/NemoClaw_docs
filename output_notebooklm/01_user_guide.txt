@@ -889,7 +889,7 @@ $$nemoclaw headless-agent recover
 ```
 
 `recover`, `start`, and `connect --probe-only` do not restart the shared host OpenShell gateway.
-If they report a host gateway RPC error, follow the printed `openshell status`, named gateway start, or onboarding guidance.
+If they report a host gateway RPC error, follow the printed host gateway recovery guidance.
 
 </AgentOnly>
 <AgentOnly variant="deepagents">
@@ -2134,7 +2134,7 @@ docker info
 
 <Warning title="OpenShell Lifecycle">
 For NemoClaw-managed environments, use `$$nemoclaw onboard` when you need to create or recreate the OpenShell gateway or sandbox.
-Avoid `openshell self-update`, `npm update -g openshell`, `openshell gateway start --recreate`, or `openshell sandbox create` directly unless you intend to manage OpenShell separately and then rerun `$$nemoclaw onboard`.
+Avoid `openshell self-update`, `npm update -g openshell`, or `openshell sandbox create` directly unless you intend to manage OpenShell separately and then rerun `$$nemoclaw onboard`.
 </Warning>
 
 <Note title="Docker Storage Driver">
@@ -2387,8 +2387,20 @@ Use these details when your first-run path needs more control.
 
   <Accordion title="Onboarding and Integration Details">
     The wizard asks for an inference provider, model, required credential, and sandbox name before it prints the review summary.
-    After confirmation, NemoClaw registers inference, prompts for optional Tavily Search and supported messaging channels, builds and starts the sandbox, sets up Hermes, and applies the selected network policy tier and presets.
-    At any prompt, press Enter to accept the default shown in `[brackets]`, type `back` to return to the previous prompt, or type `exit` to quit.
+    The review offers these actions:
+
+    - **Apply configuration** continues to provider registration.
+    - **Edit inference provider or model** returns to provider and model selection.
+    - **Edit sandbox name** prompts for the sandbox name again.
+    - **Exit onboarding** stops onboarding before provider registration.
+
+    When you edit inference, NemoClaw clears the credential staged for the discarded selection.
+    NemoClaw preserves the sandbox name.
+    When you edit the sandbox name, NemoClaw preserves the inference selection.
+    The sandbox prompt shows the prior name as its default.
+    After you apply the configuration, routine editing ends.
+    If inference setup fails and offers a `back` recovery action, you can return to provider and model selection and then review the updated configuration again.
+    NemoClaw registers inference, prompts for optional Tavily Search and supported messaging channels, builds and starts the sandbox, sets up Hermes, and applies the selected network policy tier and presets.
 
     The default Hermes sandbox name is `hermes`.
     Use a distinct name, such as `my-hermes`, when you run Hermes and OpenClaw sandboxes side by side.
@@ -2410,7 +2422,7 @@ Use these details when your first-run path needs more control.
     NemoClaw removes `nous-web` from the effective managed-tool selection while preserving selected Nous image, audio, browser, and code tools.
     API-key mode is inference-only and does not enable managed tool gateways.
 
-    After you select a provider and model, review the summary and confirm the build.
+    After you select a provider and model, review the summary and apply the configuration.
     NemoClaw writes Hermes configuration into `/sandbox/.hermes`, routes model traffic through `inference.local`, and starts the Hermes gateway inside the sandbox.
     The Hermes image includes runtime dependencies for supported NemoClaw messaging integrations, the API service, and its health endpoint.
     The base image does not include unsupported Hermes integrations.
@@ -2477,8 +2489,8 @@ Use these details when your first-run path needs more control.
     The onboard flow starts both port forwards automatically.
     For a new sandbox, NemoClaw reserves the selected dashboard loopback port through sandbox preparation and the image build.
     If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources.
-    If OpenShell reports `sandbox is not ready`, NemoClaw waits 5 seconds and retries the affected forward up to three times.
-    These retries preserve the existing sandbox and selected host port.
+    If OpenShell returns the exact `sandbox is not ready` response, NemoClaw waits 5 seconds and retries the affected forward up to 12 times.
+    The readiness-specific delays total at most 1 minute and preserve the existing sandbox and selected host port.
     NemoClaw releases the reservation immediately before OpenShell starts the dashboard forward.
     If forwarding then fails, onboarding removes the new sandbox and tells you to resolve the reported error before retrying.
     The Hermes dashboard URL does not include an OpenClaw `#token=` fragment.
@@ -2678,8 +2690,21 @@ nemoclaw onboard --agent deepagents
 nemoclaw onboard --agent langchain
 ```
 
-The wizard asks for an inference provider, model, required credential, sandbox name, and policy tier before it prints the review summary.
-At any prompt, press Enter to accept the default shown in `[brackets]`, type `back` to return to the previous prompt, or type `exit` to quit.
+The wizard asks for an inference provider, model, required credential, and sandbox name before it prints the review summary.
+The review offers these actions:
+
+- **Apply configuration** continues to provider registration.
+- **Edit inference provider or model** returns to provider and model selection.
+- **Edit sandbox name** prompts for the sandbox name again.
+- **Exit onboarding** stops onboarding before provider registration.
+
+When you edit inference, NemoClaw clears the credential staged for the discarded selection.
+NemoClaw preserves the sandbox name.
+When you edit the sandbox name, NemoClaw preserves the inference selection.
+The sandbox prompt shows the prior name as its default.
+After you apply the configuration, routine editing ends.
+If inference setup fails and offers a `back` recovery action, you can return to provider and model selection and then review the updated configuration again.
+Provider registration, inference setup, policy selection, and sandbox creation then continue forward.
 The default Deep Agents sandbox name is `deepagents-code`.
 Use a distinct name, such as `my-deepagents`, when you run Deep Agents, Hermes, and OpenClaw sandboxes side by side.
 Refer to [Choose an Inference Provider](../inference/learn-and-choose/choose-inference-provider) for provider-specific prompts.
@@ -3088,9 +3113,21 @@ Use these details when your first-run path needs more control.
     The wizard runs preflight checks, starts or reuses the OpenShell gateway, asks for an inference provider and model, collects required credentials, and asks for a sandbox name.
     It prints a review summary before it registers the provider with OpenShell.
 
-    After confirmation, NemoClaw registers inference, prompts for optional web search and messaging channels, builds and starts the sandbox, sets up OpenClaw, and applies the selected network policy tier and presets.
+    The review offers these actions:
 
-    At any prompt, press Enter to accept the default shown in `[brackets]`, type `back` to return to the previous prompt, or type `exit` to quit.
+    - **Apply configuration** continues to provider registration.
+    - **Edit inference provider or model** returns to provider and model selection.
+    - **Edit sandbox name** prompts for the sandbox name again.
+    - **Exit onboarding** stops onboarding before provider registration.
+
+    When you edit inference, NemoClaw clears the credential staged for the discarded selection.
+    NemoClaw preserves the sandbox name.
+    When you edit the sandbox name, NemoClaw preserves the inference selection.
+    The sandbox prompt shows the prior name as its default.
+
+    After you apply the configuration, routine editing ends.
+    If inference setup fails and offers a `back` recovery action, you can return to provider and model selection and then review the updated configuration again.
+    NemoClaw registers inference, prompts for optional web search and messaging channels, builds and starts the sandbox, sets up OpenClaw, and applies the selected network policy tier and presets.
 
     <Note>
     Onboarding builds the sandbox image with a managed `NEMOCLAW_DISABLE_DEVICE_AUTH=1` compatibility setting so the dashboard is usable during setup.
@@ -3163,15 +3200,23 @@ Use these details when your first-run path needs more control.
       Note:          Sandbox build typically takes 5–15 minutes on this host.
       ──────────────────────────────────────────────────
       Web search and messaging channels will be prompted next.
-      Apply this configuration? [Y/n]:
+      Choose an action:
+        1) Apply configuration
+        2) Edit inference provider or model
+        3) Edit sandbox name
+        4) Exit onboarding
+      Choose [1]:
     ```
 
-    The default is `Y`.
-    Press Enter to accept the configuration.
-    If you answer `n`, onboarding exits with a nonzero status and clears the recorded provider, model, and sandbox name.
-    The rejected run does not register a new gateway credential.
-    Run `nemoclaw onboard` to make new choices.
-    Non-interactive runs print the summary and skip the prompt.
+    The default is option 1.
+    Press Enter to apply the configuration.
+    Option 2 returns to provider and model selection.
+    NemoClaw removes the staged credential for the discarded selection from the onboarding process.
+    It preserves the sandbox name.
+    Option 3 asks for the sandbox name again.
+    It uses the prior name as the default and preserves the inference selection.
+    Option 4 exits with a nonzero status without registering a new gateway credential.
+    Non-interactive runs print the summary and skip the action menu.
   </Accordion>
 
   <Accordion title="Web Search Messaging and Network Policies">
@@ -3268,8 +3313,8 @@ Use these details when your first-run path needs more control.
     When that port is occupied, NemoClaw uses the next free dashboard port, such as `18790`, and includes the port in the URL.
     For a new sandbox, NemoClaw reserves the selected loopback port through sandbox preparation and the image build.
     If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources.
-    If OpenShell reports `sandbox is not ready`, NemoClaw waits 5 seconds and retries the dashboard forward up to three times.
-    These retries preserve the existing sandbox and selected port.
+    If OpenShell returns the exact `sandbox is not ready` response, NemoClaw waits 5 seconds and retries the dashboard forward up to 12 times.
+    The readiness-specific delays total at most 1 minute and preserve the existing sandbox and selected port.
     NemoClaw releases the reservation immediately before OpenShell starts the dashboard forward.
     If forwarding then fails, onboarding removes the new sandbox and tells you to resolve the reported error before retrying.
     The installation transcript does not print the gateway token.
@@ -3786,7 +3831,7 @@ Accept the N1x Express prompt or set `NEMOCLAW_PROVIDER=install-vllm` to provide
 | Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station. N1x offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
 | Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Appears as option 2 in DGX Spark Express. Direct installation can use the dedicated installer flag. The profile does not appear in the provider menu. | `/v1/chat/completions`. |
 | Existing llama.cpp | You already operate an authenticated llama.cpp server on loopback port `8081`. | Experimental. Always available for explicit selection and attaches only after cooperative fingerprinting succeeds. | `/v1/chat/completions`. |
-| Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Appears on a qualified DGX Spark host and supports explicit non-interactive selection. | `/v1/chat/completions`. |
+| Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Lists compatible profiles by priority on a qualified DGX Spark host and supports exact recipe selection in non-interactive onboarding. | `/v1/chat/completions`. |
 | NVIDIA NIM | You want NemoClaw to pull and manage a validated NIM container on a NIM-capable NVIDIA GPU. | Unavailable on N1x. On other hosts, this path is Experimental and requires `NEMOCLAW_EXPERIMENTAL=1`. | `/v1/chat/completions`. |
 </AgentOnly>
 
@@ -3797,7 +3842,7 @@ Accept the N1x Express prompt or set `NEMOCLAW_PROVIDER=install-vllm` to provide
 | Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station. N1x offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
 | Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Appears as option 2 in DGX Spark Express. Direct installation can use the dedicated installer flag. The profile does not appear in the provider menu. | `/v1/chat/completions`. |
 | Existing llama.cpp | You already operate an authenticated llama.cpp server on loopback port `8081`. | Experimental. Always available for explicit selection and attaches only after cooperative fingerprinting succeeds. | `/v1/chat/completions`. |
-| Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Appears on a qualified DGX Spark host and supports explicit non-interactive selection. | `/v1/chat/completions`. |
+| Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Lists compatible profiles by priority on a qualified DGX Spark host and supports exact recipe selection in non-interactive onboarding. | `/v1/chat/completions`. |
 | NVIDIA NIM | You want NemoClaw to pull and manage a validated NIM container on a NIM-capable NVIDIA GPU. | Unavailable on N1x. On other hosts, this path is Experimental and requires `NEMOCLAW_EXPERIMENTAL=1`. | `/v1/chat/completions`. |
 </AgentOnly>
 
@@ -3923,9 +3968,10 @@ After a successful full uninstall, `docker container inspect nemoclaw-vllm` must
 
 ## Choose llama.cpp
 
-Choose llama.cpp when you already operate an authenticated server or want NemoClaw to materialize the experimental NVIDIA Nemotron recipe on DGX Spark.
+Choose llama.cpp when you already operate an authenticated server or want NemoClaw to materialize an experimental managed profile on DGX Spark.
 The existing-server path owns only provider registration and routing.
 The managed path owns the exact YAML-selected model, launch, Docker lifecycle, diagnostics, and cleanup.
+Muse Glimmer is the recommended managed profile, and NVIDIA Nemotron remains available as the next lower-priority choice.
 
 Refer to [Set Up llama.cpp](set-up-llama-cpp).
 
@@ -4440,6 +4486,8 @@ Blocked special-purpose targets include documentation, translation, benchmarking
 It also rejects public hostnames that resolve to a blocked address.
 
 A direct blueprint run rejects endpoint URLs that contain userinfo, such as an embedded username or password, before DNS resolution.
+Custom endpoint onboarding rejects endpoint URLs that contain userinfo, query, or fragment components instead of stripping those components.
+NemoClaw does not forward those components to the endpoint.
 Configure the provider credential separately instead of putting it in the endpoint URL.
 
 Managed provider defaults that do not provide an explicit custom endpoint through these paths are unaffected.
@@ -5100,14 +5148,14 @@ NEMOCLAW_PROVIDER=anthropicCompatible \
 # SPDX-License-Identifier: Apache-2.0
 title: "Set Up llama.cpp"
 sidebar-title: "Set Up llama.cpp"
-description: "Attach an existing llama.cpp server or use the experimental managed NVIDIA Nemotron recipe on DGX Spark."
-description-agent: "Sets up llama.cpp for NemoClaw. Use for an authenticated existing server or the experimental declarative managed recipe on DGX Spark."
-keywords: ["nemoclaw llama.cpp", "llama.cpp dgx spark", "managed llama.cpp", "nemotron gguf"]
+description: "Attach an existing llama.cpp server or select an experimental managed llama.cpp profile."
+description-agent: "Sets up llama.cpp for NemoClaw. Use for an authenticated existing server or an experimental declarative managed profile."
+keywords: ["nemoclaw llama.cpp", "llama.cpp dgx spark", "managed llama.cpp", "muse glimmer gguf", "nemotron gguf"]
 content:
   type: "how_to"
 ---
 NemoClaw provides two first-class llama.cpp paths.
-You can attach an authenticated server that you operate, or let NemoClaw materialize one repository-owned recipe on DGX Spark.
+You can attach an authenticated server that you operate, or let NemoClaw select and materialize a compatible repository-owned profile.
 Both paths are experimental and use OpenAI Chat Completions through `https://inference.local/v1`.
 
 ## Choose a llama.cpp Path
@@ -5115,11 +5163,11 @@ Both paths are experimental and use OpenAI Chat Completions through `https://inf
 | Path | NemoClaw manages | You manage | Use it when |
 |---|---|---|---|
 | Existing server | Provider registration, route validation, and sandbox traffic through `inference.local`. | The server binary or container, GGUF file, launch configuration, credential, upgrades, and lifecycle. | Your authenticated server already satisfies the llama.cpp fingerprint contract on loopback port `8081`. |
-| Managed DGX Spark | The exact YAML-selected image, GGUF acquisition and verification, launch configuration, credential, Docker lifecycle, diagnostics, and cleanup. | The qualified Linux host, Docker Engine, NVIDIA runtime prerequisites, storage, and any required Hugging Face credential. | You want the experimental NVIDIA Nemotron recipe without managing llama-server directly. |
+| Managed DGX Spark | The exact YAML-selected image, GGUF acquisition and verification, launch configuration, credential, Docker lifecycle, diagnostics, and cleanup. | The qualified Linux host, Docker Engine, NVIDIA runtime prerequisites, storage, and any required Hugging Face credential. | You want the experimental Muse Glimmer or NVIDIA Nemotron profile without managing `llama-server` directly. |
 
 Compared with other local options, Ollama emphasizes a simple local model workflow, while managed vLLM provides host-specific NVIDIA GPU profiles and broader model selection.
 NVIDIA NIM provides NVIDIA-packaged inference containers for validated NIM-capable GPUs.
-Managed llama.cpp instead runs one exact GGUF recipe with one request slot and no general launch-flag overrides.
+Managed llama.cpp instead runs an exact repository-owned GGUF recipe with one request slot and no general launch-flag overrides.
 Refer to [Choose a Local Inference Server](choose-local-inference-server) for the complete comparison.
 
 ## Attach an Existing llama.cpp Server
@@ -5175,7 +5223,8 @@ That path supports operator-selected endpoints and ports without claiming llama.
 ## Install Managed llama.cpp on DGX Spark
 
 Use this experimental path when you want NemoClaw to manage one declarative llama.cpp recipe on one DGX Spark.
-The default recipe serves NVIDIA Nemotron 3 Nano 30B-A3B through the OpenAI Chat Completions API.
+The recommended recipe serves Meta Muse Glimmer 30B through the OpenAI Chat Completions API.
+The NVIDIA Nemotron 3 Nano 30B-A3B recipe remains available as a lower-priority profile.
 
 <Note>
 This path is an experimental implementation.
@@ -5183,6 +5232,7 @@ It does not establish a supported agent, model, and runtime tuple until the prot
 The protected qualification runner requires Docker Engine `28.3.3` or newer and the trusted daemon's default protected NAT and firewall behavior; it re-queries the live daemon and consumes a fresh single-use authority immediately before each temporary loopback publication.
 That requirement supersedes older Docker 27 qualification evidence.
 Ordinary managed onboarding does not publish a Docker port: it retains its no-publication container contract and uses the host-owned private bridge, so this runner-specific version floor does not apply to onboarding.
+The Muse Glimmer profile remains Experimental after bounded physical DGX Spark qualification of text, separated reasoning, and one structured tool call.
 </Note>
 
 Before you start, confirm these prerequisites:
@@ -5207,30 +5257,71 @@ It creates an owner-only API key, a host-loopback listener on port `8081`, and a
 Only one managed llama.cpp runtime can exist per Docker authority, regardless of the owning OpenShell gateway or sandbox.
 </Warning>
 
-Run interactive onboarding on the DGX Spark and select **NVIDIA Nemotron with managed llama.cpp (DGX Spark)**:
+Run interactive onboarding on the DGX Spark:
 
 ```bash
 $$nemoclaw onboard
 ```
 
+NemoClaw lists compatible managed llama.cpp profiles in descending YAML `priority` order.
+During interactive onboarding without an explicit provider request, the menu ignores `NEMOCLAW_LLAMACPP_RECIPE` and marks the unique highest-priority compatible profile as `(recommended)`.
+The recommended profile appears as **Managed llama.cpp: Meta Muse Glimmer 30B on one DGX Spark (recommended)**.
+The NVIDIA Nemotron profile appears next without the recommendation marker.
+Select any listed profile to install its exact repository-owned recipe.
+The selected menu entry determines the exact recipe even when `NEMOCLAW_LLAMACPP_RECIPE` names another recipe.
+
 For non-interactive onboarding, select the repository-owned recipe explicitly:
 
 ```bash
 NEMOCLAW_PROVIDER=install-llama-cpp \
-NEMOCLAW_LLAMACPP_RECIPE=llama-cpp.nemotron-3-nano-30b-a3b.spark-single.v1 \
+NEMOCLAW_LLAMACPP_RECIPE=llama-cpp.muse-glimmer-30b.spark-single.v1 \
 NEMOCLAW_SANDBOX_NAME=my-assistant \
   $$nemoclaw onboard --non-interactive --yes-i-accept-third-party-software
 ```
 
-When `NEMOCLAW_LLAMACPP_RECIPE` is unset, NemoClaw selects the one shipped managed llama.cpp recipe.
-Set the variable explicitly in automation so the selected recipe is visible in the invocation.
+Use `llama-cpp.nemotron-3-nano-30b-a3b.spark-single.v1` to select the lower-priority NVIDIA Nemotron recipe explicitly.
+
+For non-interactive onboarding or an explicit `install-llama-cpp` provider request, an unset `NEMOCLAW_LLAMACPP_RECIPE` selects the unique highest-priority compatible automatic profile.
+If more than one compatible automatic profile has the highest priority, automatic non-interactive selection stops instead of selecting by catalog order.
+Interactive onboarding lists the tied profiles without a recommendation so you can select an exact recipe.
+For non-interactive onboarding or an explicit provider request, set `NEMOCLAW_LLAMACPP_RECIPE` to an exact recipe ID to select a compatible lower-priority profile or make the selection visible in automation.
+An unknown recipe, an incompatible host, or more than one compatible profile for the requested recipe stops onboarding before installation effects.
 Do not set `NEMOCLAW_MODEL` for this path.
 The repository YAML recipe is authoritative for the exact model file, revision, digest, image, launch settings, resource limits, readiness probes, and disabled surfaces.
 NemoClaw does not provide hidden model, port, image, or launch-flag overrides for the managed path.
 
+The shipped NVIDIA Nemotron recipe continues to use the `nemotron-v3-embedded` chat template.
+A repository recipe that uses an image-owned Jinja template must declare this typed contract:
+
+```yaml
+serve:
+  chatTemplate: container-jinja-file
+  chatTemplateFile: /usr/local/share/nemoclaw/llama-cpp/chat-templates/model-canonical.jinja
+  reasoning:
+    format: deepseek
+    mode: auto
+```
+
+The template path must stay directly under `/usr/local/share/nemoclaw/llama-cpp/chat-templates/`.
+Its base name must start with an alphanumeric character and contain at most 128 alphanumeric, `.`, `_`, or `-` characters before the `.jinja` suffix.
+Subdirectories, path traversal, and host paths are invalid.
+The optional `reasoning` declaration supports only `format: deepseek` with `mode: auto`.
+The `nemotron-v3-embedded` contract rejects both `chatTemplateFile` and `reasoning`; recipes cannot supply arbitrary template or reasoning flags.
+
+The Muse Glimmer recipe uses the Jinja chat template embedded in its GGUF file and pins low reasoning strength:
+
+```yaml
+serve:
+  chatTemplate: model-embedded-jinja
+  chatTemplateArguments:
+    reasoningStrength: low
+```
+
+The typed contract accepts `low`, `medium`, `high`, or `xhigh`, but the selected recipe fixes the value and does not expose an onboarding override.
+
 Onboarding performs these actions:
 
-- Resolves the recipe against a fresh DGX Spark readiness report.
+- Resolves the selected recipe and profile against a fresh host readiness report.
 - Reuses locally present pinned downloader, runtime, and probe images, and pulls only the missing digest-pinned images declared by the recipe.
 - Reuses a verified GGUF from the shared `~/.cache/huggingface/` cache, or acquires the exact file through the existing Hugging Face mechanism when it is absent or invalid.
 - Verifies the GGUF size and SHA-256 digest before it starts the runtime.
@@ -5241,6 +5332,9 @@ Onboarding performs these actions:
 The runtime cannot download a model and has no egress on its internal Docker network.
 The recipe disables the Web UI, slot inspection, server tools, agent mode, Model Context Protocol proxy, router, and multimodal projection.
 The API key enters the container through an owner-only read-only file, not a process argument.
+
+The Muse Glimmer profile enables text responses, reasoning, and structured tool calls.
+It does not load a multimodal projector or a DFlash draft model because multimodal projection and speculative decoding remain disabled.
 
 Podman and Kubernetes do not provide the required host-local-inference capability for this path.
 Selecting either runtime fails before model acquisition or runtime mutation and never falls back to Docker.
@@ -5393,6 +5487,9 @@ When the log contains readable output from this run, the error includes a redact
 The owner-only log contains unredacted router output.
 Review the log before you share it.
 NemoClaw does not provide log-only cleanup.
+When `destroy` removes the last registered Model Router sandbox that uses a host port, it also stops the Model Router process and frees that port.
+If the stop fails, destroy still completes and prints a warning with the manual stop command.
+While another registered Model Router sandbox uses the same host port, destroying one Model Router sandbox keeps that Model Router process running.
 A successful [uninstall](../../manage-sandboxes/operate-sandboxes/uninstall-nemoclaw) stops the selected Model Router and removes its log with the selected gateway's operational state.
 Review the uninstall scope before you use it for log removal.
 
@@ -5598,15 +5695,18 @@ NemoClaw detects Ollama on the host and can install, start, or upgrade it on sup
 During onboarding, if Ollama is installed but not started, NemoClaw starts it for you.
 On macOS and Linux, the wizard can offer to install Ollama when it is not present.
 
-When either the Ollama CLI or running daemon is below the minimum version for the starter models, currently `0.7.0`, the wizard displays an explicit **Upgrade Ollama** entry.
+When either the Ollama CLI or running daemon is below `0.32.9`, the wizard displays an explicit **Upgrade Ollama** entry.
+Older versions can return tool calls as message text instead of structured tool calls, which causes onboarding validation to stop.
 The wizard checks `ollama --version` and `/api/version` on port `11434` independently, so the entry appears when either side is stale.
+If NemoClaw detects an installed CLI or local running daemon but cannot read its version, onboarding uses the upgrade path instead of reusing it.
 
 On macOS, the wizard uses `brew upgrade ollama` for the platform upgrade path.
 On Linux, the wizard uses the official `https://ollama.com/install.sh` path.
 Linux upgrades use the sudo-driven system path because a user-local fallback would leave an existing system daemon serving the stale binary.
 If sudo is unavailable in a non-interactive run, rerun interactively or upgrade Ollama manually.
 
-After an upgrade, NemoClaw probes the running daemon again and stops if its reported version remains below the minimum.
+After an upgrade, NemoClaw probes the running daemon again.
+If the version remains below the minimum or cannot be read, interactive onboarding returns to provider selection, and non-interactive onboarding exits.
 Fresh installs skip this second probe because the bundled installers provide a daemon at or above the minimum.
 
 The version gate does not apply to Windows-host Ollama reached from Docker Desktop through `host.docker.internal`.
@@ -5869,7 +5969,10 @@ This retry also applies to tight-VRAM hosts where model warm-up can spill from G
 
 ## Release GPU Memory
 
-When you switch away from Ollama, stop host services, or destroy an Ollama-backed sandbox, NemoClaw asks Ollama to unload each currently loaded model by sending `keep_alive: 0`.
+When you destroy an Ollama-backed sandbox or stop host services, NemoClaw asks Ollama to unload each currently loaded model by sending `keep_alive: 0`.
+When you stop a single Ollama-backed sandbox, NemoClaw unloads only that sandbox's own model, and leaves it loaded when another Ollama-backed sandbox uses the same model.
+When you re-onboard an existing Ollama-backed sandbox onto a different model, NemoClaw unloads the model it replaced, with the same sibling protection.
+A re-onboard that keeps the same model leaves it loaded, because the new route can still be served by the same Ollama daemon.
 This cleanup runs on a best-effort basis and does not delete downloaded model files.
 
 ## Related Topics
@@ -6105,7 +6208,7 @@ NEMOCLAW_PROVIDER=custom \
 | Variable | Purpose |
 |---|---|
 | `NEMOCLAW_PROVIDER` | Set to `custom`. |
-| `NEMOCLAW_ENDPOINT_URL` | Base URL of the server. |
+| `NEMOCLAW_ENDPOINT_URL` | Base URL of the server, without userinfo, query, or fragment components. |
 | `NEMOCLAW_MODEL` | Model ID reported by the server. |
 | `NEMOCLAW_COMPATIBLE_AUTH_MODE` | Set to `none` to explicitly select no authentication for an HTTP endpoint using `localhost`, `127.0.0.1`, or `[::1]` and port `8000`, `11434`, or `11435`. |
 | `NEMOCLAW_REASONING` | Enables reasoning-only validation with the case-insensitive true values `true`, `1`, `yes`, and `y`. |
@@ -6969,7 +7072,8 @@ Managed profiles and model-specific recipes use immutable image digests:
 
 - DGX Spark and DGX Station models without a model-specific runtime use the `linux/arm64` digest `sha256:9204569b17ee4c0eff75194b8e6e458479c8aee18953b5ab9cf359fcdac659e2` with a compressed layer size of `9.60 GB` under `nvcr.io/nvidia/vllm:26.05.post1-py3`.
   N1x uses the same image.
-- The DGX Spark Muse Glimmer recipe uses the `linux/arm64` digest `sha256:ab0f5fc3bb81b9257a9aee801abcb0eeb94bb0523b57b2bb79349dc61e7c1e25` with a compressed layer size of `10.51 GB` under `vllm/vllm-openai`.
+- The DGX Spark Muse Glimmer recipe uses the `linux/arm64` post-merge vLLM nightly digest `sha256:677afd5bf3b4bb9881f91e107af7098f8410726b4c05b25cb4a815900b398204` with a compressed layer size of `9.70 GB` under `vllm/vllm-openai`.
+  The image was built from vLLM commit `ac7509e2b1db40fec2f03dde1ed4e9dfdc2338c9`, which contains merged Muse Glimmer support commit `6adad08767583f52eb4d2122111af0bf638ed5e6`.
   It pins Hugging Face revision `d35cb79050f419c457611b1cee5c5d15b176f285` for the approximately `25.45 GB` model download.
 - The DGX Spark Nemotron 3.5 Lightning recipe uses the `linux/arm64` digest `sha256:3af90144a0926e5c5fe46ee16e5201e763dd854538b9d7ce433755f11dadaf78` with a compressed layer size of approximately `12.69 GB` under `vllm/vllm-openai`.
   It pins Hugging Face revision `0dcd680e5585c791728c83342b311d0a0026dbeb` for the approximately `21.56 GB` model download.
@@ -7070,7 +7174,7 @@ Pressing **Enter**, entering `n` or `no`, or entering any other response stops b
 
 <Warning>
 `--yes` and `NEMOCLAW_YES=1` do not change managed vLLM storage-warning handling.
-Express installation and other non-interactive setup treat a verified warning that Docker image storage or model-cache storage is insufficient as advisory, so NemoClaw prints the warning and continues the guarded download.
+Express installation and other non-interactive setup stop after a verified warning that Docker image storage or model-cache storage is insufficient, before the guarded download starts.
 Interactive setup still requires you to enter `y` or `yes` for a verified insufficient-capacity warning.
 
 An inconclusive model-cache warning also requires explicit confirmation interactively, and non-interactive setup stops with guidance to rerun interactively.
@@ -7148,15 +7252,19 @@ $$nemoclaw onboard --profile vllm.dgx-spark-gb10.single.muse-glimmer-30b-nvfp4-w
 The profile serves `Inferact/Muse-Glimmer-30B-NVFP4-W4A4` with the `muse-glimmer` alias.
 The registered recipe configures a 32,768-token context window, 1 concurrent sequence, a 4,096-token batch limit, and 0.75 GPU-memory utilization.
 It uses `muse_glimmer` for reasoning and tool-call parsing and sets `--generation-config auto`.
-The pinned model and runtime were validated on one physical DGX Spark for a direct chat request, separated reasoning, a required structured tool call, and an OpenClaw TUI chat turn without fallback.
-Vision was not part of that validation.
+The pinned post-merge runtime image was verified on one physical DGX Spark.
+The managed `/v1/models` endpoint reported `muse-glimmer`.
+A direct chat request returned exact text `391`, and a reasoning request returned separated reasoning in `message.reasoning`.
+A required structured tool request returned a named tool call.
+A real OpenClaw TUI turn used one prompt and returned `391` through provider `inference` and model `muse-glimmer`.
+A managed stop and start preserved the exact image digest and managed inference route.
 The fixed profile does not enable DFlash, pass `--quantization` or `--trust-remote-code`, or install `fastsafetensors`.
 It rejects model and serve-argument overrides so its validated resource boundary remains reproducible.
 
 <Warning title="Experimental Muse Glimmer vLLM Profile">
-This profile uses a candidate runtime image that contains Muse Glimmer changes not yet merged into upstream vLLM.
-Treat it as Experimental until the upstream vLLM support is merged and NemoClaw qualifies a replacement runtime.
-DFlash speculative decoding fails with the pinned runtime and is outside NemoClaw's validated scope, so the registered profile does not enable it.
+This profile pins a post-merge vLLM nightly image and remains Experimental.
+Physical qualification covered only the bounded verification above.
+Vision and DFlash speculative decoding are disabled and outside this profile's scope.
 </Warning>
 
 NemoClaw creates or reuses the Muse Glimmer bearer key in the owner-only `~/.nemoclaw/dual-station-vllm-api-key` host file before confirmation.
@@ -7631,6 +7739,9 @@ The exact request depends on the provider API that the agent uses.
 
 When credential validation fails, the onboarding wizard lets you re-enter the API key, choose another provider, retry, or exit.
 NemoClaw retries transient upstream failures before it reports a provider failure.
+After a fatal provider or inference-validation failure before sandbox creation, NemoClaw attempts to release an unowned NemoClaw-managed OpenShell gateway and remove its registration so provider credentials do not remain in a live process.
+It preserves a gateway that another registered sandbox uses, an external supervisor owns, or whose teardown authority cannot be proven.
+If listener release cannot be confirmed, NemoClaw keeps the gateway registration for recovery and reports the remaining listener.
 
 The `nvapi-` prefix check applies only to `NVIDIA_INFERENCE_API_KEY`.
 OpenRouter keys must be non-empty and begin with `sk-or-`.
@@ -10294,7 +10405,10 @@ Deployment ordering remains responsible for external changes that OpenShell and 
 These commands do not restart, replace, or reap the shared host OpenShell gateway process.
 If the host gateway RPC returns an error while these sandbox-scoped commands run, they surface the error with explicit next-step guidance and exit rather than swapping the shared gateway out from under other sandboxes.
 
-To repair the host gateway itself, use `openshell status`, `openshell gateway start --name <gateway>`, or run `$$nemoclaw onboard` again.
+The OpenShell CLI has no command that starts a gateway, and `openshell status` only reports the gateway state.
+If NemoClaw starts the gateway on your host, run `$$nemoclaw onboard` again to repair the host gateway itself.
+If a deployment outside NemoClaw owns the gateway process, start the gateway with that deployment, then run `openshell gateway select <gateway>`.
+NemoClaw prints the applicable recovery guidance when a sandbox-scoped command reports that the host gateway is down.
 Other workflows, including onboarding, rebuild, and `doctor --fix`, can explicitly recover the named host gateway when their operation requires it.
 `$$nemoclaw <name> gateway restart` instead restarts only the supported agent gateway inside the named sandbox.
 </AgentOnly>
