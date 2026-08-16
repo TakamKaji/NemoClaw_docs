@@ -5487,9 +5487,34 @@ When the log contains readable output from this run, the error includes a redact
 The owner-only log contains unredacted router output.
 Review the log before you share it.
 NemoClaw does not provide log-only cleanup.
-When `destroy` removes the last registered Model Router sandbox that uses a host port, it also stops the Model Router process and frees that port.
-If the stop fails, destroy still completes and prints a warning with the manual stop command.
-While another registered Model Router sandbox uses the same host port, destroying one Model Router sandbox keeps that Model Router process running.
+
+## Router and Sandbox Lifecycle Locks
+
+Routed onboarding already holds the onboarding session lock when it acquires the selected gateway route lock, then the current-user lock for the selected Model Router port.
+The port lock is shared across the current user's NemoClaw gateways.
+Onboarding holds all three locks through router setup and sandbox registry publication.
+Before sandbox deletion, `destroy` captures the current onboarding session identity.
+Model Router destruction takes the gateway route lock, then the current-user Model Router port lock, and then tries the onboarding session lock without waiting.
+After acquiring the session lock, `destroy` rechecks the captured identity before the peer check or process stop.
+If another onboarding run owns the session lock, or the identity changed, `destroy` skips Model Router teardown and warns.
+It leaves the Model Router process and current onboarding session unchanged.
+When `destroy` removes a Model Router sandbox, it checks the bounded set of NemoClaw gateway registries under the host state directory for a same-port peer.
+If no same-port peer remains, NemoClaw stops only a process whose command line still identifies the Model Router on that port.
+NemoClaw clears the matching Model Router process and credential recovery identity only after the stop succeeds or a complete process scan and health probe confirm that the router is absent.
+The final sandbox-name cleanup also checks the captured session identity.
+Other sandbox destroy paths use a non-blocking session update.
+If onboarding owns the lock or the captured session identity changed, `destroy` leaves the current session unchanged.
+If the captured session still names the destroyed sandbox but uses another router port, `destroy` clears only the sandbox association and preserves the router process and credential recovery identity.
+If the process inventory is unavailable, the completed scan finds no matching process while the port remains healthy, or the stop fails, `destroy` still completes and keeps the recovery identity.
+If `destroy` warns that it could not identify or stop a listener for the deleted sandbox, follow these steps:
+
+1. Inspect the current listener process immediately before you stop anything.
+2. Stop it only if its command line identifies the Model Router on the named port.
+3. Do not stop the router recorded by a preserved session for another port.
+4. Do not stop a previously reported process ID if its command line no longer matches.
+
+While another registered Model Router sandbox in any host gateway registry uses the same port, destroying one Model Router sandbox keeps the process running.
+A Model Router sandbox on another port does not keep the process running.
 A successful [uninstall](../../manage-sandboxes/operate-sandboxes/uninstall-nemoclaw) stops the selected Model Router and removes its log with the selected gateway's operational state.
 Review the uninstall scope before you use it for log removal.
 
@@ -7935,6 +7960,36 @@ NemoClaw validates the selected provider and model before creating the sandbox.
 NemoClaw validates Gemini inference through its OpenAI-compatible Chat Completions path.
 When you enter a custom Gemini model ID, NemoClaw checks Google's native model catalog and accepts IDs with or without the `models/` prefix.
 It skips the Responses API probe because Gemini does not support `/v1/responses`.
+When NemoClaw reads the native Google model catalog, it keeps only models that support `generateContent`.
+Embedding-only models are filtered out of the catalog, so they do not appear as onboarding choices.
+
+## Troubleshooting
+
+Model validation can fail with these messages:
+
+- `Could not validate model against https://generativelanguage.googleapis.com/v1beta/models: <reason>`
+  NemoClaw could not read the Google model catalog.
+  The `<reason>` value identifies an authentication, network, response, or pagination failure.
+  Verify `GEMINI_API_KEY`, host access to `generativelanguage.googleapis.com`, and the reported response.
+- `Model '<model>' is not available from Google Gemini. Checked https://generativelanguage.googleapis.com/v1beta/models.`
+  The catalog did not contain the model ID.
+  This message also appears when the catalog omits `models`, because NemoClaw treats the response as an empty catalog.
+  Check the ID for typing errors.
+  Custom IDs can include or omit the `models/` prefix.
+  Embedding-only models do not appear because they do not support `generateContent`.
+- `Unexpected Gemini model catalog response: expected a top-level models array`
+  The Google model catalog returned a non-null `models` value that is not an array.
+  Retry the request, then inspect the Google service or proxy response if the error continues.
+- `Gemini model catalog pagination repeated page token '<token>'`
+  The catalog repeated a `nextPageToken`, so NemoClaw stopped reading pages.
+  Retry the request, then inspect the Google service or proxy response if the error continues.
+- `Gemini model catalog pagination exceeded <count> pages`
+  The catalog exhausted the 25-page `GEMINI_MODEL_CATALOG_MAX_PAGES` limit.
+  Retry the request, then inspect the Google service or proxy response if the error continues.
+- `Onboard inference smoke check failed.`
+  The validation request failed.
+  The output shows the provider, model, and API base URL.
+  Compare these values with your configuration.
 
 ## Related Topics
 
@@ -12227,7 +12282,7 @@ If OpenShell resource cleanup fails, uninstall exits nonzero and preserves the m
 If marked Linux unit cleanup fails, uninstall exits nonzero before it scans for or stops a remaining gateway process or continues with later Docker and gateway-state cleanup.
 OpenShell resource and Linux unit cleanup can partially complete before either failure.
 After selected sandbox cleanup succeeds, uninstall removes those entries from `sandboxes.json` before gateway registration and Linux unit cleanup.
-If a later step fails, the retry skips gateway selection and resumes the remaining cleanup.
+If a later step fails, the retry skips the completed sandbox deletions and resumes the remaining cleanup.
 Resolve the reported error.
 Inspect the remaining gateways with `openshell gateway list`.
 Rerun `NEMOCLAW_GATEWAY_PORT=<port> $$nemoclaw uninstall` with the gateway port from the failed uninstall.
@@ -12238,19 +12293,45 @@ Uninstall does not stop an `openshell-gateway` process that another non-root use
 It names the owner and process ID, leaves that process running, and continues with the remaining cleanup.
 If no other cleanup fails, uninstall exits with status `0` even though that process can keep its port in use.
 Uninstall still tries to stop a `root`-owned process and the gateway process that this installation recorded.
-If either of those stops fails, uninstall prints `sudo kill -9 <pid>` for the process.
+If either stop fails, uninstall reports the process without printing a reusable privileged kill command.
+Do not signal a PID from saved output.
+Immediately before a privileged stop, verify that the live process owner and `openshell-gateway` command line match the exact gateway name and port.
+Also prove that the PID file, runtime marker, and loaded sandbox namespace still match the selected state directory.
+Rerun uninstall after the process stops.
 A gateway-scoped uninstall and every `--all-gateway-ports` pass exit nonzero after that failure.
 A single full uninstall reports the process and continues.
-Before scoped cleanup stops a Docker gateway process, including a managed default gateway service, NemoClaw requires two Docker namespace proofs.
-The selected Docker gateway configuration and any running gateway process must use the state-root-specific OpenShell sandbox namespace that NemoClaw generated.
+Before each sandbox deletion during scoped Docker cleanup, NemoClaw proves the selected configuration and running gateway identity again and passes the selected gateway name to OpenShell.
+The configuration and running process must use the state-root-specific OpenShell sandbox namespace that NemoClaw generated.
+For a NemoClaw-managed gateway, the live proof also binds the process owner, PID file, runtime marker, and command line to the exact gateway name and port.
+For an externally supervised gateway, NemoClaw proves the configured state.
+It binds the supervisor's current main process to its owner, loaded sandbox namespace, declared executable, selected gateway name, and selected port.
+When NemoClaw can prove an owner-private, generated configuration and complete JWT bundle that predate state-root scoping, restart keeps the legacy gateway ID, JWT bundle, and Docker driver's `default` namespace.
+That compatibility keeps the gateway able to find existing containers and keeps their non-expiring sandbox JWT issuer valid.
+NemoClaw regenerates the other gateway settings from the current runtime configuration.
+For a proven legacy Podman gateway, NemoClaw preserves the gateway ID that existing sandbox JWTs use; the supported Podman schema has no `sandbox_namespace` setting to preserve.
+If the existing identity is ambiguous or unsafe, or durable gateway state remains without its configuration, restart fails closed without rewriting the configuration or JWT bundle.
+Fresh state roots and already scoped configurations continue to use the state-root-specific identity.
+The legacy `default` namespace is not isolated across gateways, so it cannot satisfy the scoped-uninstall proof while sibling gateways remain.
+Scoped uninstall stops before it deletes a sandbox, registry row, or gateway registration and preserves the selected gateway's runtime evidence and local state.
 Because the supported OpenShell Podman schema does not expose `sandbox_namespace`, scoped Podman uninstall fails closed before signaling and preserves the gateway runtime evidence and local state.
 Full single-gateway Podman uninstall continues to use normal graceful teardown.
-For Docker, if either proof is absent, uninstall exits nonzero before it signals the host gateway.
+For Docker, if any proof is absent, uninstall exits nonzero before it signals the host gateway.
 NemoClaw preserves the gateway runtime evidence and local state.
 Keep that state intact.
-Restore the selected Docker gateway through the supported install or onboarding recovery flow so it restarts with the generated configuration.
+For an already scoped gateway with stale runtime evidence, restore it through the supported install or onboarding recovery flow, verify the generated identity, and retry.
+A proven legacy gateway is not silently converted by onboarding.
+To retire one, first remove sibling gateways through their own proven scoped cleanup, verify that only the legacy gateway remains, and then use the full single-gateway uninstall path.
+For an ambiguous or incomplete identity, stop the gateway and restore the exact generated `openshell-gateway.toml` and complete `jwt/` directory from a dedicated host-level backup path, represented here as `<gateway-identity-backup>`.
+The backup must have been captured from that gateway's exact state directory before the failure and kept under the owning user's exclusive access.
+Keep the `<gateway-identity-backup>` directory and its nested `jwt/` directory at mode `0700`, and keep the configuration and JWT files at mode `0600`.
+The default gateway stores them under `~/.local/state/nemoclaw/openshell-docker-gateway/`; a non-default gateway uses `~/.local/state/nemoclaw/openshell-docker-gateway-<port>/`.
+Restore them as the owning user.
+Keep the gateway state root and its `jwt/` directory at mode `0700`, and do not grant group or other access to the configuration or JWT files.
+NemoClaw does not reconstruct gateway identity from sandbox snapshots or `backup-all`; if no matching gateway-state backup exists, keep the state intact rather than attempting a scoped cleanup.
 Verify every gateway with `openshell gateway list`.
-Retry the scoped uninstall.
+Retain `<gateway-identity-backup>` only until that command reports the restored gateway and the affected existing sandboxes authenticate successfully.
+Then remove that dedicated backup directory as the owning user and verify its absence by replacing the placeholder in `test ! -e '<gateway-identity-backup>'` with the full backup path.
+If verification fails, keep the backup under the same access restrictions and stop.
 Do not add `sandbox_namespace` manually to a live gateway configuration because the running process can still be using its previous namespace.
 
 <Note>
@@ -12505,9 +12586,33 @@ You can also expose selected host directories for live, read-only access when co
 
 ## Mount a Host Directory for Read-Only Access
 
-On Linux and Windows Subsystem for Linux 2 (WSL2), onboarding can expose an existing host directory inside a sandbox.
-This operation is supported only with a NemoClaw-managed Docker-driver gateway.
+Onboarding can expose an existing host directory inside a sandbox when the selected runtime provider and host platform support read-only host mounts.
 The same command works with OpenClaw, Hermes, and LangChain Deep Agents Code sandboxes.
+
+### Runtime Support
+
+The runtime provider and host platform determine whether NemoClaw can create the mount:
+
+| Runtime Provider | Host Platform | Status |
+|---|---|---|
+| Docker | Linux or Windows Subsystem for Linux 2 (WSL2) | Supported with a NemoClaw-managed Docker-driver gateway. |
+| Docker | macOS or native Windows | Unsupported. |
+| Kubernetes | Any host | Unsupported because host directories are node-local and require separately qualified scheduling, policy, and security rules. |
+| Podman | Any host | Unsupported because read-only host mounts have not passed runtime-provider qualification. |
+| OpenShell MXC | Any host | Unsupported because OpenShell MXC does not expose a qualified native host-sharing contract. |
+
+When you request `--host-mount`, NemoClaw checks the selected runtime provider and host platform before it records onboarding state or changes runtime resources.
+NemoClaw reports the reason that the unsupported provider declares.
+For a supported provider on an unqualified host, NemoClaw reports that the host platform is not qualified.
+NemoClaw does not fall back to Docker bind-mount configuration.
+
+A runtime-provider implementation must meet these requirements before it can declare support:
+
+- Declare qualified host platforms when supported, or declare an explicit reason when unsupported.
+- Preserve the source, target, symbolic-link, duplication, and read-only validation described on this page.
+- Revalidate the source path identity immediately before sandbox creation.
+- Implement provider-specific create configuration and host-side activation without a Docker fallback.
+- Test requested and persisted mounts across onboarding, resume, rebuild, and failure paths.
 
 <Warning>
 The mount crosses the sandbox boundary and gives every sandbox process read access to the complete host directory tree.
