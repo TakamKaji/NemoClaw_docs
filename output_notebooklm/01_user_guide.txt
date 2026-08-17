@@ -2529,6 +2529,9 @@ Use these details when your first-run path needs more control.
     ```bash
     nemohermes inference set --model <model> --provider <provider>
     ```
+
+    If the in-sandbox config write or integrity hash update fails, `nemohermes inference set` exits with status `1` after committing the OpenShell route and NemoClaw registry.
+    Run the printed `nemohermes <sandbox-name> rebuild` command to make the in-sandbox Hermes configuration match the committed route.
   </Accordion>
 </AccordionGroup>
 
@@ -5084,12 +5087,17 @@ OpenClaw uses the native Anthropic Messages frontend for this provider.
 NemoClaw validates the endpoint with a non-streaming `/v1/messages` request and then a `stream: true` request to the same path.
 
 The streaming check requires exactly one `message_start`, at least one `content_block_delta`, and one `message_stop` in a well-formed server-sent event sequence.
+It also forces the endpoint to call the `emit_ok` validation tool.
+The stream must contain a native `tool_use` content block named `emit_ok` and finish the request with `stop_reason: tool_use`.
+JSON-shaped assistant text does not satisfy either requirement, even when it names `emit_ok` and contains valid JSON.
+NemoClaw reports `anthropic-streaming-missing-tool-use` when the native block is absent and `anthropic-streaming-missing-tool-use-stop-reason` when the matching stop reason is absent.
 An endpoint whose non-streaming response works but whose streaming response is malformed fails during onboarding.
 
-Set `NEMOCLAW_REASONING=true` to skip the streaming check for a reasoning-only model.
-Agent runs still use streaming, so this setting moves any streaming defect to runtime.
+Set `NEMOCLAW_REASONING=true` to skip both the streaming sequence and forced tool-call checks for a reasoning-only model.
+Agent runs still use streaming and native tool calls, so this setting moves either defect to runtime.
 
 Refer to [Onboarding fails with duplicate Anthropic message_start events](../../reference/troubleshooting#onboarding-fails-with-duplicate-anthropic-message_start-events) when the streaming validation fails with duplicate start events.
+Refer to [Onboarding rejects an Anthropic-compatible tool call](../../reference/troubleshooting#onboarding-rejects-an-anthropic-compatible-tool-call) when the endpoint returns a tool request as assistant text or omits the tool-use stop reason.
 
 </AgentOnly>
 
@@ -5100,6 +5108,7 @@ Refer to [Onboarding fails with duplicate Anthropic message_start events](../../
 Hermes uses the managed OpenAI Chat Completions frontend at `https://inference.local/v1` for this provider.
 NemoClaw validates `/v1/chat/completions`, verifies the same path during inference setup, and registers it with OpenShell as `type=openai` using `OPENAI_BASE_URL`.
 The route keeps `COMPATIBLE_ANTHROPIC_API_KEY` as its credential binding.
+The OpenClaw-only native Anthropic `emit_ok` streaming check does not run on this route.
 
 This path avoids duplicate Anthropic SSE `message_start` events.
 If the endpoint only implements Anthropic Messages, onboarding stops instead of creating a Hermes sandbox with an unusable runtime route.
@@ -5115,6 +5124,7 @@ AWS Bedrock routes keep their existing OpenAI-compatible adapter behavior.
 
 Deep Agents Code supports only OpenAI-compatible inference for this provider.
 NemoClaw validates `/v1/chat/completions`, coerces the route to `openai-completions`, and writes `https://inference.local/v1` as the provider base URL in `/sandbox/.deepagents/config.toml`.
+The OpenClaw-only native Anthropic `emit_ok` streaming check does not run on this route.
 
 If the endpoint implements only Anthropic Messages, onboarding stops instead of creating a Deep Agents sandbox with an unusable runtime route.
 
@@ -7670,6 +7680,11 @@ Run the rebuild before relying on the running agent.
 
 Use `--no-verify` only when OpenShell cannot verify the target provider at switch time and you have already confirmed its provider and credential.
 This flag does not bypass shared-gateway compatibility checks.
+When you explicitly supply a direct compatible endpoint at `http://host.openshell.internal:<port>`, NemoClaw skips OpenShell's host-side provider probe because that hostname resolves only inside the sandbox network.
+It then sends one validation request from the target sandbox before persisting the route in NemoClaw state; the request allows up to 16 output tokens.
+If that request fails, NemoClaw attempts to restore the previous OpenShell selection and remove a provider that this switch created.
+If the error reports that rollback could not complete, rerun onboarding before using the route or retrying the switch.
+Endpoint-shape and shared-gateway compatibility checks still apply.
 
 </AgentOnly>
 
@@ -7808,9 +7823,13 @@ The managed Deep Agents runtime keeps `use_responses_api = false` and uses Chat 
 
 For OpenClaw, NemoClaw sends a non-streaming request to `/v1/messages`, then sends a streaming request to the same path.
 The streaming check requires exactly one `message_start`, at least one `content_block_delta`, and one `message_stop` event.
+The streaming request also forces the `emit_ok` tool through Anthropic's `tool_choice` field.
+Validation requires a native `tool_use` content block named `emit_ok` and a later `message_delta` with `stop_reason: tool_use`.
+Text that merely contains JSON shaped like a tool request remains assistant text and fails validation.
+The corresponding diagnostics are `anthropic-streaming-missing-tool-use` and `anthropic-streaming-missing-tool-use-stop-reason`.
 
-Set `NEMOCLAW_REASONING=true` to skip the streaming check for a reasoning-only endpoint.
-Agent runs still use streaming, so this setting moves a streaming defect from onboarding to runtime.
+Set `NEMOCLAW_REASONING=true` to skip both the streaming sequence and forced tool-call checks for a reasoning-only endpoint.
+Agent runs still use streaming and native tool calls, so this setting moves either defect from onboarding to runtime.
 
 </AgentOnly>
 
@@ -7818,6 +7837,7 @@ Agent runs still use streaming, so this setting moves a streaming defect from on
 
 For Hermes and other agents that use only OpenAI-compatible inference, NemoClaw validates `/v1/chat/completions` for a custom Anthropic selection.
 This is the API surface that the managed OpenAI frontend uses at runtime.
+These routes keep their existing Chat Completions tool-call validation and do not run the OpenClaw native Anthropic `emit_ok` streaming check.
 
 </AgentOnly>
 
@@ -7852,6 +7872,7 @@ Verify that route from inside the sandbox after onboarding.
 - [Verify the Sandbox Inference Route](verify-inference-route) to test the route the agent uses.
 <AgentOnly variant="openclaw">
 - [Troubleshooting](../../reference/troubleshooting#tool-calls-appear-as-assistant-text) when a local server returns tool calls as text.
+- [Troubleshooting Anthropic-compatible tool-call validation](../../reference/troubleshooting#onboarding-rejects-an-anthropic-compatible-tool-call) when the forced native tool probe fails during onboarding.
 </AgentOnly>
 - [Set Up an OpenAI-Compatible Endpoint](../custom-endpoints/set-up-openai-compatible-endpoint) for custom endpoint setup.
 
@@ -11525,6 +11546,19 @@ The re-add flow prompts for the service-account JSON again when it is not alread
 ## Verify the Channel
 
 After the rebuild, send a direct message from an allowed or paired account and confirm that OpenClaw replies.
+If an unknown sender receives a pairing code, approve it through the registered OpenClaw sandbox that has a selected owning managed gateway:
+
+```bash
+nemoclaw my-assistant exec -- openclaw pairing approve googlechat <code>
+```
+
+After OpenClaw commits the sender to its owner allowlist, NemoClaw verifies the mutable config permissions and automatically restarts that selected gateway.
+An exit status of `0` means activation completed, so the sender's next message should receive a reply without another manual restart.
+If permission cleanup or gateway restart fails after the approval commits, `exec` exits with status `1` and reports that the approval was not rolled back.
+For a selected owning gateway, it prints the managed recovery command; correct any reported permission problem, then run `nemoclaw my-assistant gateway restart` before testing the next message.
+If no owning managed gateway is registered, NemoClaw does not attempt activation or print that command; register and select the sandbox's owning gateway before recovery.
+Do not submit the pairing code again unless OpenClaw reports that it was not accepted.
+
 If the webhook returns an error, verify that the public endpoint still ends in `/googlechat`, the dedicated tunnel and webhook proxy are running, and the Google Chat API configuration contains the exact same URL.
 
 Refer to [Manage Messaging Channels](manage-messaging-channels) to stop, start, or remove Google Chat after setup.
@@ -12234,6 +12268,7 @@ Resolve the reported error, inspect the remaining models and runtimes, and rerun
 Without `--delete-models`, uninstall preserves both model stores.
 When sibling gateway environments remain, uninstall preserves both model stores even if you pass `--delete-models`.
 An all-gateway-port sweep deletes them only after every selected gateway cleanup succeeds and no sibling environment remains.
+For a full uninstall of the portable experimental profile, `--delete-models` preserves every Podman image.
 The flag does not scan arbitrary directories or delete model caches on remote peers.
 
 ## Uninstall Every Gateway Port
@@ -12265,12 +12300,13 @@ $$nemoclaw uninstall --all-gateway-ports
 
 When the sweep finds more than one port, it lists the ports, confirms once, then uninstalls each port in turn and the currently selected port last.
 When it finds only the selected port, it uses the standard uninstall confirmation and runs that port once.
-Running the selected port last lets that final pass remove the shared CLI, services, images, providers, configuration, models, and swap once no other environment needs them.
+Outside portable cleanup, running the selected port last lets that final pass remove the shared CLI, services, images, providers, configuration, models, and swap once no other environment needs them.
 `--delete-models`, `--destroy-user-data`, and `--keep-openshell` apply to every port in the sweep.
 If the sweep cannot enumerate the gateway state roots safely, it exits before uninstalling any port.
 The sweep cannot select an unidentified environment until its gateway port can be determined.
 If one port fails to uninstall, the sweep reports that port, continues with the remaining ports, and exits nonzero.
 The failed port still counts as a live environment, so the final pass keeps the shared host resources instead of removing state that the surviving environment needs.
+For the portable experimental profile, this preservation includes the shared Podman resources, current-user selectors, `~/.config/nemoclaw/portable/containers.conf`, and lifecycle receipts.
 The sweep does not roll back cleanup that completed before a failure.
 Resolve the reported error, inspect the remaining gateways with `openshell gateway list`, and rerun the sweep or the reported per-port command.
 Default-port uninstall removes NemoClaw-managed entries in `openshell/gateway.env`.
@@ -12314,7 +12350,56 @@ Fresh state roots and already scoped configurations continue to use the state-ro
 The legacy `default` namespace is not isolated across gateways, so it cannot satisfy the scoped-uninstall proof while sibling gateways remain.
 Scoped uninstall stops before it deletes a sandbox, registry row, or gateway registration and preserves the selected gateway's runtime evidence and local state.
 Because the supported OpenShell Podman schema does not expose `sandbox_namespace`, scoped Podman uninstall fails closed before signaling and preserves the gateway runtime evidence and local state.
-Full single-gateway Podman uninstall continues to use normal graceful teardown.
+A full uninstall for the portable experimental profile detects ownership only from durable lifecycle state.
+It records the initial lifecycle receipts and sandbox registry state for comparison.
+NemoClaw first acquires the process-bound portable host lock at `~/.nemoclaw-portable-host.lock`.
+This host-wide fence coordinates portable onboarding, rebuild, and uninstall.
+It then acquires every receipt lifecycle lock in sorted order before it acquires the process-bound sandbox registry lock.
+Portable lock acquisition fails before cleanup unless NemoClaw can establish the current Linux process's exact boot identity and process start tick.
+A live lock owner with that exact identity is never displaced because of the lock's age.
+A contender waits only for the bounded acquisition interval and exits nonzero if the lock remains held.
+With every lock held, NemoClaw verifies that the recorded receipts and registry state have not changed.
+This one-to-one ownership check applies only to NemoClaw's host `sandboxes.json`.
+Each receipt must have one current matching row in that file, and the file must contain no extra sandbox row.
+Missing, mismatched, or extra rows make NemoClaw exit nonzero before it changes a container or host state.
+An unrelated row, including a non-portable row, makes ownership ambiguous and triggers this fail-closed result before any effect, even with `--destroy-user-data`.
+An unrelated sandbox registered only with OpenShell is outside that host registry and remains usable.
+NemoClaw holds those same sorted lifecycle locks and the process-bound registry lock throughout exact Podman container removal, exact-name OpenShell sandbox deletion, portable registry removal, selector cleanup, and the final retirement operation for the receipts, sandbox registry rows, and `~/.config/nemoclaw/portable/containers.conf`.
+Before it retires `~/.config/nemoclaw/portable/containers.conf` or lifecycle receipts, NemoClaw revalidates the current user's local Podman socket authority and lifecycle generation.
+It also revalidates the exact receipt-owned sandbox containers, their expected OpenShell labels and current running state, and the managed portable registry container.
+NemoClaw uses the pinned local Podman socket to remove only the exact receipt-owned sandbox containers.
+Before every exact receipt-name OpenShell sandbox deletion, NemoClaw runs `openshell status -g <gateway>` to prove that the gateway name recorded by the matching registry row is connected.
+It then runs `openshell sandbox delete -g <gateway> <sandbox>` for that exact gateway and sandbox name.
+After deletion, bounded `openshell sandbox get -g <gateway> <sandbox>` probes must verify that the exact sandbox is absent.
+It never relies on or switches the globally selected gateway, and it never falls back to implicit deletion.
+A same-name sandbox on another gateway remains untouched.
+It never uses `openshell sandbox delete --all` during portable OpenShell cleanup.
+If explicit deletion reports an exact receipt sandbox as absent, cleanup continues only because the gateway-scoped status probe proved that exact gateway is connected and reachable.
+A missing gateway, missing provider, transport failure, verification timeout, generic or ambiguous `NotFound` result, or absence that the status probe cannot prove is fatal.
+Uninstall exits nonzero and preserves the portable registry row and container, selectors, receipts, `~/.config/nemoclaw/portable/containers.conf`, gateway state, shared OpenShell provider and gateway registrations, and unrelated OpenShell-only sandboxes.
+Portable cleanup retires only the exact receipt-owned portable resources.
+It preserves model stores and images, shared OpenShell provider and gateway registrations, the gateway service and process, shared OpenShell binaries and configuration, and unrelated OpenShell-registered sandboxes.
+Before it removes the portable registry container or selectors, NemoClaw verifies that the original lifecycle receipts and sandbox registry state have not changed.
+If either changed, uninstall exits nonzero before later gateway-state or `~/.config/nemoclaw/portable/containers.conf` deletion.
+After that verification, NemoClaw removes the prevalidated portable registry container by its exact ID.
+It unsets the current-user systemd manager values that the portable profile installs, `CONTAINERS_CONF` and `NETAVARK_FW`, only when their current values match NemoClaw's recorded or derived portable projection; it inspects and preserves `CONTAINER_HOST`, `CONTAINER_CONNECTION`, and `CONTAINER_SSHKEY` because the portable profile does not own those values.
+NemoClaw preserves unrelated or changed selector values.
+It skips the generic Docker availability probe and all generic Docker container, image, and volume cleanup.
+It does not remove the user's Podman installation, storage, networks, or unrelated containers.
+It does not disable a user-managed socket.
+On every successful portable cleanup, the final retirement operation removes the exact portable lifecycle receipts, their matching `sandboxes.json` rows, and `~/.config/nemoclaw/portable/containers.conf`, regardless of `--destroy-user-data`.
+Other preserved user data follows the normal `--destroy-user-data` behavior.
+After NemoClaw releases the locks, later uninstall-plan cleanup never recursively revisits the canonical receipt, sandbox registry, or `~/.config/nemoclaw/portable/containers.conf` paths.
+This preserves any new lifecycle generation published after lock release.
+After successful portable cleanup with `--destroy-user-data`, the sole residual regular file under `~/.nemoclaw/` is `~/.nemoclaw/portable-uninstall-retirement.json`, written at mode `0600` under a current-UID-owned, mode-`0700` `~/.nemoclaw/` directory.
+Another same-user process can change the record, so this protection assumes cooperative NemoClaw writers under that UID.
+NemoClaw retains the record until a later completed onboarding durably supersedes it.
+It contains a random local cleanup ID, receipt basenames derived from SHA-256 hashes of sandbox names, and length-framed, transaction-scoped, dictionary-testable pseudonymous fingerprints, but no raw sandbox or gateway names, absolute paths, environment values, configuration bytes, or secrets.
+A repeat invocation remains on portable cleanup and performs no Docker probe or mutation, implicit OpenShell cleanup, or model cleanup.
+If NemoClaw cannot prove the required portable authority or complete a cleanup step, uninstall exits nonzero.
+It preserves any existing durable retirement record and any remaining receipts, `~/.config/nemoclaw/portable/containers.conf`, gateway state, and other retry evidence, even with `--destroy-user-data`.
+Resolve the reported authority or cleanup error, keep the preserved state intact, and rerun the same full uninstall command.
+This cleanup does not change Docker uninstall, externally supervised gateways, `--keep-openshell`, scoped sibling-gateway cleanup, or non-portable profiles.
 For Docker, if any proof is absent, uninstall exits nonzero before it signals the host gateway.
 NemoClaw preserves the gateway runtime evidence and local state.
 Keep that state intact.
@@ -12338,7 +12423,7 @@ Do not add `sandbox_namespace` manually to a live gateway configuration because 
 In this section, `<selected-state-root>` is `~/.nemoclaw/` for the default gateway or `~/.nemoclaw/gateways/<port>/` for a non-default gateway.
 For the default gateway, the uninstall command preserves `~/.nemoclaw/rebuild-backups/`, `~/.nemoclaw/backups/`, and `~/.nemoclaw/sandboxes.json` by default.
 A non-default gateway uses the corresponding entries under `~/.nemoclaw/gateways/<port>/`.
-When uninstall confirms that no sibling gateways remain, it also removes the shared CLI, services, images, providers, configuration, models, and swap.
+Outside portable cleanup, when uninstall confirms that no sibling gateways remain, it also removes the shared CLI, services, images, providers, configuration, models, and swap.
 During full uninstall, a managed distributed-vLLM receipt makes NemoClaw first revalidate the recorded plan and every cluster node, GPU, container, and SSH peer identity.
 It then removes only the exact receipt-owned containers.
 The managed-cluster receipt is host-global under `~/.nemoclaw/`.
@@ -12370,7 +12455,7 @@ For non-interactive runs using `--yes`, `NEMOCLAW_NON_INTERACTIVE=1`, or a non-T
 
 `--yes` stays non-destructive by design and never purges preserved user data on its own.
 After a successful or already-absent sandbox deletion, preserving other `sandboxes.json` entries does not preserve the selected sandbox entry or its gateway registration.
-After uninstall confirms that no sibling gateways remain, it also removes the provider registrations and Docker image that the recorded sandboxes depend on.
+Outside portable cleanup, after uninstall confirms that no sibling gateways remain, it also removes the provider registrations and Docker image that the recorded sandboxes depend on.
 
 Uninstall warns that those records cannot be recovered automatically on reinstall, and the remediation is `$$nemoclaw <name> destroy` followed by `$$nemoclaw onboard`.
 </Note>

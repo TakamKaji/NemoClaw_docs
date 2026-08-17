@@ -151,6 +151,10 @@
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-triage
 │       │   └── SKILL.md
+│       ├── nemoclaw-maintainer-validate-launchable
+│       │   ├── SKILL.md
+│       │   └── agents
+│       │       └── openai.yaml
 │       ├── nemoclaw-maintainer-verify-stale
 │       │   ├── SKILL.md
 │       │   ├── reference
@@ -3297,4 +3301,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-274 directories, 3024 files
+276 directories, 3026 files

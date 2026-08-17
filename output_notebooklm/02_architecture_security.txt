@@ -67,6 +67,28 @@ Subscribe to notifications on that page to receive alerts when new bulletins are
 
 Component-level threat models for security-critical NemoClaw subsystems are documented here so a reviewer or auditor can understand what each subsystem is designed to prevent, which surfaces it protects, and where its guarantees end.
 
+### Portable Uninstall Retirement Record (`#9189`)
+
+**Summary.** Portable uninstall retains `~/.nemoclaw/portable-uninstall-retirement.json` after `--destroy-user-data`.
+The current user owns its mode-`0700` parent and the mode-`0600` record.
+A later completed onboarding removes the record only after its new authority is durable.
+
+**Threat.** A host crash can interrupt receipt, sandbox registry, or portable configuration removal.
+Without a durable discriminator, a retry can enter generic Docker, OpenShell, or model cleanup and remove resources outside the portable receipts.
+
+**Guarantee.** The record keeps every retry on receipt-owned portable cleanup.
+It contains a random cleanup ID, receipt basenames derived from SHA-256 hashes of sandbox names, safe relative target identities, and length-framed transaction-scoped SHA-256 content fingerprints.
+The fingerprints are dictionary-testable pseudonymous local data.
+The record contains no raw sandbox or gateway names, absolute paths, environment values, configuration bytes, credentials, or secrets.
+NemoClaw holds one process-bound host fence across every cooperative onboarding, rebuild, and uninstall writer while it publishes or supersedes the record.
+
+**Where the guarantee ends.** NemoClaw state owned by the same operating-system user is not a trust boundary against a malicious process running as that user.
+Such a process can change the state before or after a checked filesystem operation.
+NemoClaw detects mismatched file identities and fingerprints and exits without restoring or removing the ambiguous generation.
+This control covers cooperating NemoClaw processes, crashes, retries, and recycled process IDs.
+
+**Enforced by:** `src/lib/state/portable-uninstall-retirement.test.ts`, `src/lib/actions/uninstall/portable-runtime-cleanup.test.ts`, `src/lib/onboard/portable-resume-lock-boundary.test.ts`, and `src/lib/state/registry-lock.test.ts` cover crash boundaries, async ownership, lock generations, record contents, and completed-onboarding supersession.
+
 ### Ollama Auth Proxy Loopback Bind Probe (`#6014`)
 
 **Summary.** The Ollama auth proxy is the token-authenticated network gate in front of a locally-running Ollama backend on every topology where `shouldFrontOllamaWithProxy()` returns true (native Linux, macOS, WSL with a native dockerd runtime). Ollama itself has no built-in authentication. The proxy adds a bearer-token check on its own listen port and forwards to Ollama on the backend port.
@@ -4571,6 +4593,11 @@ When cleanup succeeds, `exec` returns the remote command's exit code.
 If cleanup cannot inspect, restore, or verify that contract, it fails closed and prints `OpenClaw permission cleanup failed (...)` to `stderr`.
 In that case, `exec` returns the cleanup failure instead of the remote command's status.
 
+For a registered OpenClaw sandbox with a selected owning managed gateway, a successful direct `openclaw pairing approve googlechat <code>` command also restarts that gateway after cleanup so the new sender allowlist applies to the next message.
+If cleanup or restart fails after the approval commits, `exec` exits with status `1` and reports that the approval was not rolled back.
+When an owning gateway was selected, correct any reported cleanup problem, then run `$$nemoclaw <name> gateway restart` before testing the next message.
+Without an owning managed gateway, NemoClaw does not attempt activation or print a managed restart command; unregistered and non-OpenClaw sandboxes also do not receive the automatic restart.
+
 </AgentOnly>
 <AgentOnly variant="hermes">
 
@@ -5119,7 +5146,9 @@ The route probe treats any final HTTP status from `200` through `499` as reachab
 The request uses the live gateway route's provider and model, and falls back to the recorded values when the live route is unreadable.
 When the live provider and model match the recorded route, the request also uses the sandbox's recorded API family, including `openai-responses`.
 During route drift, NemoClaw does not carry the sandbox's recorded API family to the live provider and model.
-Each run sends one 16-token request through the stored provider credential, so `status` waits up to 30 seconds for it and consumes provider tokens on a hosted route.
+An ordinary run sends one 16-token request through the stored provider credential, with a 30-second timeout, and consumes provider tokens on a hosted route.
+When the same `status` run recovers a managed gateway, it retries the route and inference request together up to three total attempts, with a two-second delay between failed attempts.
+Each attempt can consume another 16 tokens on a hosted route.
 When NemoClaw sends an inference request, `inferenceHealth.subprobes` reports the route probe result as the `route reachability` hop, so a failing verdict still shows that the route itself answered.
 `inferenceHealth.failureLabel` reports why the inference request failed:
 
@@ -5395,6 +5424,11 @@ Use `--` to separate `exec` options from the command you want to run inside the 
 After the remote command exits, NemoClaw verifies and, when needed, restores the mutable OpenClaw config permission contract.
 When cleanup succeeds, `exec` preserves the remote command's exit code.
 When cleanup fails closed, `exec` returns the cleanup failure and reports both statuses on `stderr`.
+
+A successful direct `openclaw pairing approve googlechat <code>` command in a registered OpenClaw sandbox with a selected owning managed gateway restarts that gateway after cleanup, so the new sender allowlist applies to the next message.
+If the approval commits but cleanup or restart fails, `exec` exits with status `1` and reports that the approval was not rolled back.
+When an owning gateway was selected, it directs you to run `$$nemoclaw <name> gateway restart` after correcting any cleanup problem.
+Without an owning managed gateway, NemoClaw does not attempt activation or print a managed restart command; unregistered and non-OpenClaw sandboxes do not receive the automatic restart.
 
 </AgentOnly>
 <AgentOnly variant="hermes">
@@ -7344,10 +7378,30 @@ NemoClaw resolves the OpenShell gateway from the target sandbox's recorded gatew
 Do not run `openshell inference set` directly on a shared NemoClaw gateway because that bypasses registry compatibility checks and can break other sandboxes.
 When either flag is missing, `$$nemoclaw inference set` reports both required flags without suggesting a raw OpenShell command.
 The command updates the host registry immediately after the gateway route changes.
+
+</AgentOnly>
+
+<AgentOnly variant="openclaw">
+
 If the in-sandbox config sync fails, NemoClaw keeps the gateway and registry aligned, warns that the running image may still need a rebuild, and points you to `$$nemoclaw <name> rebuild`.
+
+</AgentOnly>
+
+<AgentOnly variant="hermes">
+
+If the in-sandbox config write or integrity hash update fails, the OpenShell route and NemoClaw registry remain committed, but the command exits with status `1` and points you to `$$nemoclaw <name> rebuild`.
+
+</AgentOnly>
+
+<AgentOnly variant="openclaw,hermes">
 
 Supported provider names are `nvidia-prod`, `nvidia-nim`, `nvidia-router`, `openai-api`, `anthropic-prod`, `compatible-anthropic-endpoint`, `gemini-api`, `compatible-endpoint`, `hermes-provider`, `ollama-local`, and `vllm-local`.
 Use `--no-verify` only when OpenShell cannot verify the provider at switch time but you have already confirmed the provider and credential.
+When you explicitly supply a direct compatible endpoint at `http://host.openshell.internal:<port>`, NemoClaw skips OpenShell's host-side provider probe because that hostname resolves only inside the sandbox network.
+Before it persists the route in the NemoClaw registry or agent config, the command sends one validation request from the target sandbox with a 16-token output limit.
+If that request fails, the command attempts to restore the previous OpenShell selection and remove a provider that this switch created.
+If the error reports that rollback could not complete, rerun onboarding before using the route or retrying the switch.
+Endpoint-shape and shared-gateway compatibility checks still apply.
 When switching to `compatible-endpoint` or `compatible-anthropic-endpoint` from a different provider family, pass `--endpoint-url` with the trusted custom provider URL and, except for the Hermes case below, `--inference-api` with its API family so NemoClaw can persist a complete route identity for rebuild and shared-gateway checks.
 For a Hermes `compatible-anthropic-endpoint` target, `--inference-api` may be omitted because NemoClaw deterministically selects `openai-completions`; an explicit different API family is rejected.
 NemoClaw rejects loopback, link-local, private, and internal endpoint addresses, including public hostnames that resolve to a private address.
@@ -7500,7 +7554,7 @@ $$nemoclaw gc [--dry-run] [--yes|-y|--force]
 
 ### `$$nemoclaw uninstall`
 
-Run `uninstall.sh` to remove NemoClaw sandboxes, local gateway resources, related images and containers, and local state.
+Run `uninstall.sh` to uninstall NemoClaw. Unless this section explicitly describes portable cleanup, its resource-removal statements apply outside portable cleanup.
 The CLI runs the local `uninstall.sh` shipped with the installed npm package.
 If that local script is missing, the CLI does not auto-fetch a remote copy.
 It prints the versioned URL of the matching `uninstall.sh` so you can download, review, and run it manually.
@@ -7520,7 +7574,7 @@ If Docker is unavailable or a resource does not match its persisted ownership st
 Host-local cleanup can partially complete before an error.
 Restore Docker access or resolve the named ownership conflict, inspect the remaining container and network, and retry uninstall.
 Managed llama.cpp and vLLM model files remain in the shared Hugging Face cache by default.
-With `--delete-models`, uninstall deletes every model in the local Ollama inventory and all non-credential data in the current user's shared `~/.cache/huggingface/` cache.
+Outside portable cleanup, `--delete-models` deletes every model in the local Ollama inventory and all non-credential data in the current user's shared `~/.cache/huggingface/` cache.
 This opt-in can delete cached files that other applications installed or use.
 It preserves the Hugging Face `token` and `stored_tokens` authentication files.
 NemoClaw stops and verifies its managed local and distributed model runtimes before it deletes non-credential data from the local Hugging Face cache.
@@ -7535,16 +7589,16 @@ Refer to [Declare the OpenShell Gateway Lifecycle Authority](../deployment/gatew
 
 </AgentOnly>
 
-Uninstall also stops any orphaned `openshell` host processes left behind by previous onboard or destroy cycles, including `openshell sandbox create`, `openshell ssh-proxy`, and SSH sessions spawned by OpenShell.
+Outside portable cleanup, uninstall also stops any orphaned `openshell` host processes left behind by previous onboard or destroy cycles, including `openshell sandbox create`, `openshell ssh-proxy`, and SSH sessions spawned by OpenShell.
 Earlier releases only stopped `openshell forward` processes, so those orphans accumulated across runs.
 
-For Local Ollama setups, uninstall also stops matching Ollama auth proxy processes before deleting `~/.nemoclaw` state so stale proxy listeners do not block a later reinstall.
+Outside portable cleanup, uninstall also stops matching Ollama auth proxy processes before deleting `~/.nemoclaw` state so stale proxy listeners do not block a later reinstall.
 When sibling gateways remain, uninstall leaves the shared proxy running for them.
 
 For Hermes setups, uninstall inspects the selected gateway's managed port-forward watcher state, stops each verified watcher process and its sandbox-scoped forward, and leaves sibling gateway state untouched.
 If any watcher or forward cleanup cannot be confirmed, uninstall exits nonzero and preserves the selected gateway's watcher state so you can retry cleanup.
 
-On Linux, uninstall removes `~/.local/state/nemoclaw` unless you pass `--keep-openshell`, the gateway is externally supervised, or another gateway-port environment remains on the host.
+Outside portable cleanup, Linux uninstall removes `~/.local/state/nemoclaw` unless you pass `--keep-openshell`, the gateway is externally supervised, or another gateway-port environment remains on the host.
 That directory contains NemoClaw-owned Docker-driver gateway configuration and SQLite data, audit logs, VM-driver state, and standalone-fallback gateway PID files.
 Uninstall preserves it when the managed or externally supervised gateway process remains because that process depends on the state.
 When another gateway-port environment remains, uninstall removes only the selected gateway port's subdirectory of that directory and keeps the other ports' subdirectories.
@@ -7556,8 +7610,8 @@ Uninstall does not otherwise target the declared external directory.
 |---|---|
 | `--yes` | Skip the confirmation prompt |
 | `--keep-openshell` | Leave OpenShell binaries, NemoClaw-managed gateway service files, and local gateway state in place, and do not stop the host gateway process |
-| `--delete-models` | Delete every model reported by the host's local Ollama inventory and all non-credential data in the current user's shared `~/.cache/huggingface/` cache after managed model runtimes stop. Hugging Face authentication files remain. |
-| `--destroy-user-data` | Also remove preserved user data (`rebuild-backups/`, `backups/`, `sandboxes.json`) |
+| `--delete-models` | Outside portable cleanup, delete every model reported by the host's local Ollama inventory and all non-credential data in the current user's shared `~/.cache/huggingface/` cache after managed model runtimes stop. Hugging Face authentication files remain. Portable cleanup preserves both model stores and every Podman image. |
+| `--destroy-user-data` | Also remove preserved user data (`rebuild-backups/`, `backups/`, `sandboxes.json`). Portable cleanup still retains its recovery record until later completed onboarding durably supersedes it. |
 | `--all-gateway-ports` | Uninstall every gateway port on the host, not only the port `NEMOCLAW_GATEWAY_PORT` selects |
 | `--gateway <name>` | Optional consistency check; must match the name derived from `NEMOCLAW_GATEWAY_PORT` |
 
@@ -7610,7 +7664,7 @@ Fresh state roots and already scoped configurations continue to use the state-ro
 The legacy `default` namespace is not isolated across gateways, so it cannot satisfy the scoped-uninstall proof while sibling gateways remain.
 Scoped uninstall stops before it deletes a sandbox, registry row, or gateway registration and preserves the selected gateway's runtime evidence and local state.
 Because the supported OpenShell Podman schema does not expose `sandbox_namespace`, scoped Podman uninstall fails closed before signaling and preserves the gateway runtime evidence and local state.
-Full single-gateway Podman uninstall continues to use normal graceful teardown.
+Full single-gateway Podman uninstall for the portable experimental profile uses exact receipt-owned durable retirement and preserves shared OpenShell providers, the gateway service and process, binaries, configuration, model stores, and Podman images under the [portable authority, retry, and preservation contract](../manage-sandboxes/operate-sandboxes/uninstall-nemoclaw).
 For Docker, if any proof is absent, uninstall exits nonzero before it signals the host gateway.
 NemoClaw preserves the gateway runtime evidence and local state.
 Keep that state intact.
@@ -7641,8 +7695,8 @@ The sweep enumerates the default state root and the non-default roots under `~/.
 When the sweep finds more than one port, it confirms once against the resulting port list, then uninstalls each other port before the port `NEMOCLAW_GATEWAY_PORT` selects.
 When it finds only the selected port, it uses the standard uninstall confirmation without a port list and runs that port once.
 Each port runs as its own uninstall so that every port-scoped value, including the state root, registry file, gateway name, and Docker resource names, resolves from that port rather than from the calling environment.
-The selected port runs last so its pass can remove the shared host resources once no other environment remains.
-`--delete-models`, `--destroy-user-data`, and `--keep-openshell` apply to every port; `--gateway` remains a check against the selected port only.
+Outside portable cleanup, the selected port runs last so its pass can remove the shared host resources once no other environment remains.
+`--delete-models`, `--destroy-user-data`, and `--keep-openshell` apply to every port, subject to the portable preservation contract; `--gateway` remains a check against the selected port only.
 A failure to enumerate the gateway state roots safely stops the sweep before any port uninstall begins.
 The sweep cannot select an unidentified environment until its gateway port can be determined.
 A port that fails to uninstall is reported, the sweep continues, and the exit code is nonzero.
@@ -7661,7 +7715,7 @@ The default gateway uses `~/.nemoclaw/`; a non-default gateway uses `~/.nemoclaw
 | `backups/` | Host-side workspace backups that `scripts/backup-workspace.sh` writes. Refer to [Transfer State Manually](../manage-sandboxes/state-and-backups/transfer-state-manually). |
 | `sandboxes.json` | Host-side sandbox registry. NemoClaw uses it to map sandbox names back to their persistence directories when you reinstall. |
 
-When uninstall confirms that no sibling gateways remain, it also removes shared host resources such as the gateway source clone, runtime state, and the Ollama auth proxy PID file.
+Outside portable cleanup, when uninstall confirms that no sibling gateways remain, it also removes shared host resources such as the gateway source clone, runtime state, and the Ollama auth proxy PID file.
 When sibling gateways remain, it removes only the selected gateway's resources and port-scoped state while preserving those shared host resources.
 If the OpenShell command is unavailable or its gateway list cannot be read, uninstall cannot confirm that the selected gateway is the last one, so it uses the same scoped path and preserves the shared resources.
 When the command itself is unavailable, uninstall exits nonzero before OpenShell cleanup so you can restore the command and retry.
@@ -7676,7 +7730,7 @@ Decision matrix:
 | Context | Behaviour |
 |---|---|
 | Interactive TTY, preserved entries present, no env override | Prompts `Also remove them? [y/N]`. Default `N` keeps the entries. |
-| Interactive TTY, user answers `y` | Removes the preserved entries in the selected gateway's state root; a single-gateway uninstall also removes the remaining shared state. |
+| Interactive TTY, user answers `y` | Removes the preserved entries in the selected gateway's state root; outside portable cleanup, a single-gateway uninstall also removes the remaining shared state. Portable cleanup preserves shared OpenShell resources and its retirement record. |
 | Non-interactive (`--yes`, `NEMOCLAW_NON_INTERACTIVE=1`, or non-TTY shell) | Preserves the entries and prints a one-line notice. |
 | `--destroy-user-data` | Skips the secondary user-data prompt and removes the preserved entries in the selected gateway's state root. The global `Proceed?` confirmation still applies unless `--yes` is also passed. |
 | `NEMOCLAW_UNINSTALL_DESTROY_USER_DATA=1` | Skips the secondary user-data prompt and removes the preserved entries. The global `Proceed?` confirmation still applies unless `--yes` is also passed. |
@@ -7686,8 +7740,8 @@ Reinstall NemoClaw and re-onboard the sandbox before `$$nemoclaw <name> snapshot
 
 The preserved `sandboxes.json` file does not make the recorded sandboxes recoverable on its own.
 Uninstall deletes the selected sandboxes and attempts to remove the local gateway registration.
-After uninstall confirms that no sibling gateways remain, it also deletes provider registrations.
-For a NemoClaw-managed gateway, it also removes the Docker image.
+Outside portable cleanup, after uninstall confirms that no sibling gateways remain, it also deletes provider registrations.
+Outside portable cleanup, a NemoClaw-managed gateway also removes the Docker image.
 For an externally supervised gateway, it preserves Docker resources, but the registry still cannot recover deleted sandbox and provider resources.
 Uninstall warns about this at preserve time.
 After reinstalling, the installer reports such records as not found on their recorded gateway instead of claiming they were recovered; run `$$nemoclaw <name> destroy` to clear a stranded record, then `$$nemoclaw onboard` to rebuild it.
@@ -7766,26 +7820,34 @@ The command requires the exact feature gate `NEMOCLAW_EXPERIMENTAL_VOICE_GATEWAY
 Any other value stops the command before argument parsing, credential reads, or listener creation.
 Other experimental feature gates do not enable this command.
 
-Before you start the adapter, provision these two credential files outside the repository:
+Before starting the adapter, the bounded voice-gateway launcher opens two owner-only regular files without following symbolic links and maps only these inherited file descriptors into the child process:
 
-- `--deployment-credential-file` authenticates the configured runtime deployment during session admission.
-- `--openclaw-credential-file` authenticates NemoClaw to the configured OpenClaw agent gateway with `operator.read` and `operator.write` scopes.
+- Descriptor `3` supplies the deployment credential used during session admission.
+- Descriptor `4` supplies the OpenClaw credential with `operator.read` and `operator.write` scopes.
 
-Both paths must be absolute paths to owner-only regular files.
-The command rejects symbolic links, access by group or other users, malformed values, and oversized values.
-The deployment owns each file location, lifetime, rotation, and removal.
-Stopping the command does not remove either file.
-The command reads both files only at startup and does not reload them.
-To rotate either credential, stop the command, replace the file, and start the command again.
-Removing a file does not revoke the credential in a running process.
+The descriptor numbers are fixed and are not configurable flags.
+The command rejects missing, duplicate, non-regular, wrong-owner, group-accessible, malformed, and oversized inputs.
+It reads each descriptor once and closes both before accepting traffic.
+Both credential values remain in process memory until the voice-gateway process stops.
+The launcher does not place credential source paths or values in arguments or environment variables.
+It intentionally inherits only credential descriptors `3` and `4` across this exec, then closes its parent copies.
+To rotate either credential, stop the command and restart it with newly opened descriptors.
 NemoClaw does not send the OpenClaw credential to the runtime.
+The trusted caller selects each credential source path and invokes the launcher.
+That caller must create, replace, and remove each source file and revoke old credential values.
+The launcher opens each source file, maps the inherited child descriptors, and closes its parent copies.
+The child validates, reads, and closes descriptors `3` and `4` before it accepts traffic.
+Closing the descriptors or stopping the gateway does not remove a source file or revoke its credential.
 
-Start the adapter with trusted operator-selected values:
+The launcher is an internal library boundary for trusted external integrations, not another CLI command and not part of normal NemoClaw managed startup.
+Callers use the shipped `runVoiceGatewayLaunch()` action with trusted source paths and runtime fields; package-contract coverage launches the real internal command through that production entry point and verifies descriptor cleanup and restart-based credential rotation.
+If parent descriptor cleanup fails and bounded termination does not observe child exit, the action throws `VoiceGatewayTerminationUnconfirmedError` with the retained child handle and original cleanup failure.
+The trusted caller must recognize that error, terminate and reap its `child`, and confirm exit before starting another gateway.
+The launcher emits the following child-process contract with no credential paths or values in its arguments or environment.
+Do not run this child command directly because it requires the launcher's descriptor mapping.
 
-```bash
+```text
 NEMOCLAW_EXPERIMENTAL_VOICE_GATEWAY=1 $$nemoclaw internal voice-gateway serve \
-  --deployment-credential-file /absolute/private/path/deployment-bearer \
-  --openclaw-credential-file /absolute/private/path/openclaw-bearer \
   --gateway-url ws://127.0.0.1:18789/ws \
   --runtime-identity <deployment-identity> \
   --runtime-profile <runtime-profile-id> \
@@ -8277,9 +8339,15 @@ Set the onboarding variables before running `$$nemoclaw onboard` if a slow conne
 |----------|---------|---------|
 | `NEMOCLAW_OLLAMA_PULL_TIMEOUT` | `1800` (30 minutes) | Wall-clock timeout for `ollama pull` during onboard, in seconds. Accepts integer or float values. Already-downloaded layers are kept; re-running the pull resumes them. |
 | `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` | `180` | Wall-clock timeout for the inference-server validation probe during onboard, in seconds. Raise on slow networks or for very large prompts. |
-| `NEMOCLAW_SANDBOX_READY_TIMEOUT` | `180` | Wall-clock timeout for post-create readiness, in seconds. Raise when the sandbox image build, gateway upload, or in-sandbox boot exceeds the default (typical on 70B+ models, first-time gateway uploads over slow links, or DGX Station / remote-VM first runs). Ordinary onboarding deletes the partially created sandbox when the deadline expires and prints the retry hint. Portable OpenClaw onboarding instead preserves the sandbox when NemoClaw cannot verify its exact runtime identity. |
+| `NEMOCLAW_SANDBOX_READY_TIMEOUT` | `180` | Wall-clock timeout for post-create readiness, in seconds. Raise the timeout when the sandbox image build, gateway upload, or in-sandbox boot exceeds the default (typical on 70B+ models, first-time gateway uploads over slow links, or DGX Station / remote-VM first runs). Ordinary onboarding deletes the partially created sandbox when the deadline expires and prints the retry hint. Portable OpenClaw onboarding instead preserves the sandbox when NemoClaw cannot verify its exact runtime identity. |
 | `NEMOCLAW_SANDBOX_READY_ERROR_DEBOUNCE` | `30` | Consecutive `Error`-phase polls the post-create readiness wait tolerates before treating `Error` as terminal. Polling starts at 250ms and backs off to a 2-second cap, while `NEMOCLAW_SANDBOX_READY_TIMEOUT` remains the overall deadline. The gateway can briefly report a just-created sandbox in `Error` while it re-registers the sandbox (seen on DGX Spark); the debounce lets that transient recover to `Ready`. `Failed` and `CrashLoopBackOff` always fail immediately. Set to `1` to restore fast-fail on the first `Error` poll. |
 | `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` | `30`, `90`, or `120`, depending on the recovery phase | Wall-clock timeout for OpenShell command re-registration after policy application, plus gateway health and re-registration during managed OpenClaw or Hermes recovery. A valid finite, nonnegative value overrides the internal budget for the current recovery phase. |
+
+<AgentOnly variant="openclaw,hermes">
+
+For newly created OpenClaw and Hermes sandboxes, `NEMOCLAW_SANDBOX_READY_TIMEOUT` also covers the durable sandbox ID and no-op command checks that follow the OpenShell `Ready` state.
+
+</AgentOnly>
 
 An unset, blank, invalid, or negative `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` value uses 30 seconds for OpenClaw gateway health and 90 seconds for Hermes gateway health.
 Recreated-sandbox OpenShell registration uses 120 seconds when the recovery path does not supply another budget.
@@ -8972,11 +9040,13 @@ Share redacted diagnostics only.
 
 ## Files
 
+Unless a row says otherwise, full-uninstall removal behavior in this table applies outside portable cleanup.
 | Path | Purpose | Safe to delete |
 |---|---|---|
 | `~/.nemoclaw/config.json` | Host-level CLI configuration and defaults created by onboarding or config commands. | Only if you want NemoClaw to forget host defaults and rebuild them on the next setup. |
 | `~/.nemoclaw/credentials.json` | Legacy plaintext credential file from earlier releases. Onboarding stages allowlisted values, registers them with the OpenShell gateway, and securely deletes the file only after verifying their migration. Current releases do not create this file. | No; run `$$nemoclaw onboard` to complete migration and cleanup so you do not lose a credential that is not yet registered with the gateway. |
 | `~/.nemoclaw/sandboxes.json` | Current sandbox registry used by `$$nemoclaw list`, default sandbox selection, rebuild, and recovery commands. See [Malformed Registry File](#malformed-registry-file) when a command reports that this file is not valid JSON. | No. Deleting it makes the host forget existing sandboxes and can block state-preserving recovery. |
+| `~/.nemoclaw/portable-uninstall-retirement.json` | Current-user-owned portable cleanup recovery authority, written at mode `0600` under the current-user-owned, mode-`0700` `~/.nemoclaw/` directory. It binds exact cleanup targets and remains after cleanup until a later completed onboarding durably supersedes it. Its hashes are dictionary-testable pseudonymous fingerprints, not secrets. | No while cleanup, retry, or supersession recovery may be needed. Do not remove it manually; later completed onboarding retires it. |
 | `~/.nemoclaw/onboard-session.json` | Resume marker for an onboarding attempt that failed before completion. | Yes, when you intentionally want to discard the failed session and start over. Prefer `$$nemoclaw onboard --fresh` when available. |
 | `~/.nemoclaw/usage-notice.json` | Records the third-party software notice version in `acceptedVersion` and the acceptance time in `acceptedAt`. Install, onboarding, and rebuild flows consult this file and prompt again when its recorded version differs from the current notice or the file is absent. | Yes; deleting it makes the next applicable install, onboarding, or rebuild flow prompt for acceptance again. |
 | `~/.nemoclaw/ollama-proxy-token` | Host-global auth token used by the host-side Ollama auth proxy. Every gateway port on the host uses this one file. | Yes, but rerun onboarding for every gateway port that uses Local Ollama afterward, because a new token invalidates the shared proxy for all of them. |
@@ -9067,7 +9137,7 @@ Listing works on native Windows, but migration snapshot creation and deletion do
 
 ## Uninstall Behavior
 
-`$$nemoclaw uninstall --yes` removes active NemoClaw runtime resources but preserves the user data needed for recovery by default.
+Outside portable cleanup, `$$nemoclaw uninstall --yes` removes active NemoClaw runtime resources but preserves the user data needed for recovery by default.
 Preserved entries include `rebuild-backups/`, `backups/`, and `sandboxes.json`.
 Preserved `sandboxes.json` records are not automatically recoverable after reinstall, because uninstall removes the gateway registration, provider registrations, and Docker image they reference; uninstall warns about this at preserve time, and a later reinstall reports such records as not found on their recorded gateway with `$$nemoclaw <name> destroy` / `$$nemoclaw onboard` remediation.
 Interactive uninstall prompts before removing preserved state.
@@ -9076,14 +9146,16 @@ For non-interactive runs, pass `--destroy-user-data` only when you accept losing
 Uninstall scopes cleanup to one gateway port: it operates on the selected state root and leaves every other `~/.nemoclaw/gateways/<port>/` root and its gateway in place.
 It names the environments it left behind and prints the command that removes one of them.
 Pass `--all-gateway-ports`, or set `NEMOCLAW_UNINSTALL_ALL_GATEWAY_PORTS=1`, to remove every gateway port in one run.
-The shared host state is eligible for removal only when `--keep-openshell` is absent, no port fails or survives, and the selected gateway is not externally supervised.
+Outside portable cleanup, the shared host state is eligible for removal only when `--keep-openshell` is absent, no port fails or survives, and the selected gateway is not externally supervised.
+
+Portable cleanup instead retires only exact receipt-owned portable resources. It preserves model stores, Podman images, shared OpenShell providers and gateway registrations, the gateway service and process, and shared OpenShell binaries and configuration. It retains `~/.nemoclaw/portable-uninstall-retirement.json` even with `--destroy-user-data` so a retry or later completed onboarding can finish recovery.
 
 Before full uninstall deletes shared state, it removes only an exact authenticated host-local vLLM container and exact NemoClaw-owned llama.cpp container and network.
 Catalog-selected host-local vLLM also requires its exact owner-only runtime receipt; legacy authenticated containers without catalog profile labels retain their existing cleanup behavior.
 It refuses the remaining uninstall steps when Docker is unavailable or persisted ownership cannot be proved.
 Resolve the reported Docker or ownership error and rerun uninstall with the state still present.
 The shared Hugging Face cache used by managed vLLM and managed llama.cpp remains in place by default.
-With `--delete-models`, full uninstall deletes every model in the local Ollama inventory and all non-credential data in the current user's shared Hugging Face cache.
+Outside portable cleanup, `--delete-models` deletes every model in the local Ollama inventory and all non-credential data in the current user's shared Hugging Face cache.
 The flag can delete cached files that other applications installed or use.
 It preserves the Hugging Face `token` and `stored_tokens` authentication files.
 NemoClaw deletes the non-credential cache data only after managed model runtimes stop and only when no sibling gateway remains.
@@ -9641,7 +9713,7 @@ Each row below is a launch-facing capability claim that NemoClaw makes in docs, 
 | Capability | Status | Notes |
 |------------|--------|-------|
 | Guided onboarding | Tested | Single-command interactive wizard (`$$nemoclaw onboard`) that walks the user through inference provider selection, credential setup, and sandbox creation or update. It opens the agent dashboard when the selected runtime provides one. Non-interactive mode is supported with `--non-interactive` and `NEMOCLAW_*` environment variables for CI and scripted installs. |
-| Sandboxed execution | Tested with limitations | Landlock, seccomp, network namespace isolation, no-new-privileges, privilege dropping, and process limits (ulimit -u 512 at `scripts/lib/sandbox-init.sh:237`) are tested and on by default. The `DANGEROUS_CAPS` list at `scripts/lib/sandbox-init.sh:288-299` drops cap_sys_admin, cap_sys_ptrace, cap_net_raw, cap_dac_override, cap_sys_chroot, cap_fsetid, cap_setfcap, cap_mknod, cap_audit_write, cap_net_bind_service with `capsh --drop` when CAP_SETPCAP is present. Limitation (active issue #3280): the fail-closed bounding-set gate is opt-in via `NEMOCLAW_REQUIRE_CAP_DROP=1`; the default is warn-and-continue so hosts without CAP_SETPCAP still boot, which means dangerous caps can remain in the bounding set on some hosts even though the effective set is empty. |
+| Sandboxed execution | Tested with limitations | Landlock, seccomp, network namespace isolation, no-new-privileges, privilege dropping, and process limits (nproc 512 at `scripts/lib/sandbox-rlimits.sh:8`) are tested and on by default. The `DANGEROUS_CAPS` list at `scripts/lib/sandbox-init.sh:275-286` drops cap_sys_admin, cap_sys_ptrace, cap_net_raw, cap_dac_override, cap_sys_chroot, cap_fsetid, cap_setfcap, cap_mknod, cap_audit_write, cap_net_bind_service with `capsh --drop` when CAP_SETPCAP is present. Limitation (active issue #3280): the fail-closed bounding-set gate is opt-in via `NEMOCLAW_REQUIRE_CAP_DROP=1`; the default is warn-and-continue so hosts without CAP_SETPCAP still boot, which means dangerous caps can remain in the bounding set on some hosts even though the effective set is empty. |
 | Routed inference | Tested | Provider-routed model calls through the OpenShell gateway, transparent to the agent. The agent uses `inference.local` inside the sandbox; provider credentials stay on the host. Supports every entry in the Providers table. |
 | Declarative network policy | Tested | YAML-defined egress with policy presets. Presets include `slack`, `discord`, `telegram`, `weather`, `openclaw-pricing`, `huggingface`, `npm`, `pypi`, `brew`, and others. Hot-reloadable at runtime with `$$nemoclaw <name> policy add`. |
 | Snapshot and restore | Tested | Create, list, and restore named snapshots of sandbox state with the `$$nemoclaw <name> snapshot` subcommands (`create`, `list`, `restore`). Credential stripping is enforced on capture. Unsafe symlinks are rejected on restore. |
@@ -12545,6 +12617,18 @@ Onboarding ends with:
 This is a separate budget from `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT`.
 It covers the readiness wait that follows sandbox creation, including in-sandbox boot, OpenClaw start, and policy load.
 It does not cover the inference probe.
+
+<AgentOnly variant="openclaw,hermes">
+
+For a newly created OpenClaw or Hermes sandbox, `Ready` is not the final acceptance signal.
+Within this same budget, NemoClaw also requires OpenShell to return a durable sandbox ID and accept `openshell sandbox exec --name <sandbox> -- true`.
+NemoClaw keeps waiting only when OpenShell returns its exact `sandbox is not ready` response.
+A missing or malformed ID, or another command failure, stops the wait.
+Ordinary onboarding then follows the failed-creation cleanup path.
+Portable OpenClaw onboarding preserves the sandbox as described below.
+
+</AgentOnly>
+
 The 180-second default fits typical workstations but can be exceeded when:
 
 - The host is building or uploading the sandbox image for the first time (cold caches, slow link).
@@ -12695,6 +12779,27 @@ If JSON still appears as text, confirm that vLLM started with automatic tool cho
 
 <AgentOnly variant="openclaw">
 
+### Onboarding rejects an Anthropic-compatible tool call
+
+Validation for an OpenClaw **Other Anthropic-compatible endpoint** selection can fail with either of these diagnostics:
+
+```text
+anthropic-streaming-missing-tool-use
+anthropic-streaming-missing-tool-use-stop-reason
+```
+
+After an ordinary `/v1/messages` request succeeds, NemoClaw sends a streaming request that forces the endpoint to call the `emit_ok` validation tool.
+The response must include a native Anthropic `tool_use` content block named `emit_ok` and a later `message_delta` with `stop_reason: tool_use`.
+NemoClaw checks these observations independently: the first diagnostic means the named native block is absent, and the second means the stream does not finish the tool request with the required stop reason.
+
+A text delta containing JSON such as `{"name":"emit_ok","arguments":{"value":"OK"}}` is still assistant text.
+NemoClaw rejects it instead of treating it as a tool call because OpenClaw cannot dispatch text as a native Anthropic tool request.
+Fix the endpoint's Anthropic tool parser or chat template so it emits native protocol events, then run onboarding again.
+
+This check applies only to OpenClaw custom Anthropic routes.
+Hermes and Deep Agents Code keep their existing `/v1/chat/completions` validation and do not run the native Anthropic `emit_ok` probe.
+For a reasoning-only endpoint, `NEMOCLAW_REASONING=true` skips the streaming sequence and forced tool-call checks; OpenClaw still needs streaming and native tool calls at runtime, so use this only when the selected model cannot complete the onboarding probe.
+
 ### Onboarding fails with duplicate Anthropic message_start events
 
 Validation for an OpenClaw **Other Anthropic-compatible endpoint** selection ends with an error like:
@@ -12704,6 +12809,7 @@ Anthropic Messages API (streaming): duplicate message_start
 ```
 
 For OpenClaw custom Anthropic routes, NemoClaw sends a `stream: true` request to `/v1/messages` and validates the SSE event sequence (exactly one `message_start`, at least one `content_block_delta`, and a `message_stop`).
+The same request forces the `emit_ok` tool and separately requires a native `tool_use` block plus `stop_reason: tool_use`; JSON-shaped assistant text does not satisfy that tool-call contract.
 This error means the streaming layer on the endpoint or gateway is malformed even though its non-streaming responses are valid.
 A working non-streaming response does not imply that streaming works.
 Some inference gateways proxy plain requests correctly but corrupt the SSE stream, for example by emitting `message_start` twice for one request.
@@ -12716,8 +12822,8 @@ An older Hermes sandbox that still uses native Anthropic Messages can report tha
 Fix the streaming layer on the endpoint or gateway, or onboard with a different Anthropic-compatible endpoint.
 The official Anthropic provider does not run this check and is not affected.
 If an OpenClaw sandbox created by an older release fails at runtime with an empty final response on an Anthropic-compatible endpoint, re-run `$$nemoclaw onboard` so the streaming check can diagnose the endpoint.
-If the endpoint serves a reasoning-only model, set `NEMOCLAW_REASONING=true` to skip the streaming check.
-Streaming defects then surface at runtime instead of during onboarding.
+If the endpoint serves a reasoning-only model, set `NEMOCLAW_REASONING=true` to skip the streaming sequence and forced tool-call checks.
+Streaming or native tool-call defects then surface at runtime instead of during onboarding.
 
 ### `NEMOCLAW_DISABLE_DEVICE_AUTH=1` does not change an existing sandbox
 
@@ -13767,6 +13873,1276 @@ Then rerun portable onboarding:
 ```bash
 $$nemoclaw onboard --experimental-profile portable
 ```
+
+### Portable CPU Delegation Preflight Fails
+
+The portable experimental profile requires the current user's systemd hierarchy to expose the `cpu` cgroup controller to `app.slice`. NemoClaw checks this requirement before it writes portable configuration, activates services, starts the registry, builds an image, or creates a sandbox. The credential-free preflight reads only `cgroup.controllers` files under `/sys/fs/cgroup`.
+
+The preflight distinguishes a missing controller file from a read failure. Classify the file state before you select a recovery action:
+
+```bash
+uid="$(id -u)"
+user_slice="/sys/fs/cgroup/user.slice/user-${uid}.slice"
+user_manager="/sys/fs/cgroup/user.slice/user-${uid}.slice/user@${uid}.service"
+export LC_ALL=C
+
+for controllers in \
+  /sys/fs/cgroup/cgroup.controllers \
+  "${user_slice}/cgroup.controllers" \
+  "${user_manager}/cgroup.controllers" \
+  "${user_manager}/app.slice/cgroup.controllers"
+do
+  if [ ! -e "$controllers" ]; then
+    printf '%s: missing\n' "$controllers"
+  elif [ ! -r "$controllers" ]; then
+    printf '%s: unreadable\n' "$controllers"
+  elif evidence="$(node - "$controllers" <<'NODE'
+const fs = require("node:fs");
+
+const controllers = process.argv[2];
+let descriptor;
+try {
+  descriptor = fs.openSync(controllers, "r");
+  const buffer = Buffer.alloc(4097);
+  let bytesRead = 0;
+  while (bytesRead < buffer.length) {
+    const count = fs.readSync(
+      descriptor,
+      buffer,
+      bytesRead,
+      buffer.length - bytesRead,
+      null,
+    );
+    if (count === 0) break;
+    bytesRead += count;
+  }
+
+  const content = buffer.subarray(0, bytesRead);
+  if (content.length > 4096) {
+    process.exitCode = 2;
+  } else {
+    const body = content.at(-1) === 0x0a ? content.subarray(0, -1) : content;
+    const text = body.toString("utf8");
+    const names = text === "" ? [] : text.split(" ");
+    if (
+      body.includes(0x0a) ||
+      new Set(names).size !== names.length ||
+      names.some((name) => !/^[a-z][a-z0-9_]*$/u.test(name))
+    ) {
+      process.exitCode = 2;
+    } else {
+      process.stdout.write(names.join(" "));
+    }
+  }
+} catch {
+  process.exitCode = 3;
+} finally {
+  if (descriptor !== undefined) {
+    try {
+      fs.closeSync(descriptor);
+    } catch {
+      process.exitCode = 3;
+    }
+  }
+}
+NODE
+  )"; then
+    printf '%s: readable (%s)\n' "$controllers" "$evidence"
+  else
+    read_status="$?"
+    if [ "$read_status" = "2" ]; then
+      printf '%s: malformed\n' "$controllers"
+    else
+      printf '%s: read failed\n' "$controllers"
+    fi
+  fi
+done
+```
+
+An access policy can prevent the current user from testing whether a path exists. For each `missing` or `read failed` result, ask an administrator to run `sudo stat -- <reported-path>`. If `stat` finds the file but the current-user read failed, classify the file as unreadable. If `stat` reports that the path does not exist, classify the file as missing. An empty readable file is valid evidence that exposes no controllers. A `malformed` result means the successful read did not contain the bounded, space-separated controller names supplied by the kernel.
+
+Do not print malformed bytes directly to a terminal. Ask an administrator to inspect only the reported path and its cgroups v2 mount:
+
+```bash
+reported_path="<reported-cgroup.controllers-path>"
+uid="$(id -u)"
+user_slice="/sys/fs/cgroup/user.slice/user-${uid}.slice"
+user_manager="/sys/fs/cgroup/user.slice/user-${uid}.slice/user@${uid}.service"
+reported_path_is_expected=0
+for expected_path in \
+  /sys/fs/cgroup/cgroup.controllers \
+  "${user_slice}/cgroup.controllers" \
+  "${user_manager}/cgroup.controllers" \
+  "${user_manager}/app.slice/cgroup.controllers"
+do
+  if [ "$reported_path" = "$expected_path" ]; then
+    reported_path_is_expected=1
+  fi
+done
+if [ "$reported_path_is_expected" != "1" ]; then
+  printf 'Refusing unexpected cgroup evidence path: %s\n' "$reported_path" >&2
+  exit 1
+fi
+
+sudo stat -- "$reported_path"
+sudo od -An -tx1 -N 256 -v -- "$reported_path"
+findmnt --target "$reported_path" --output TARGET,FSTYPE,OPTIONS
+```
+
+The administrator must correct the cgroups v2 mount or kernel-provided evidence before you rerun the classification command. Do not change systemd delegation, stop or start the user manager, or reboot the host to repair malformed evidence.
+
+The error and file state identify the required recovery:
+
+| Reported condition and file state | Meaning | Recovery |
+| --- | --- | --- |
+| cgroups v2 is unavailable; the root file is missing | The host does not expose the cgroups v2 controller file at the expected mount. | Ask an administrator to boot or configure the Linux host with a cgroups v2 mount. |
+| Any controller file exists but is unreadable, or its read fails | The current user cannot read the existing hierarchy boundary. | Stop before changing delegation. Ask an administrator to restore read and directory-traversal access or correct the AppArmor, SELinux, or other Linux Security Module (LSM) policy that denied the read. Then run the classification command again. |
+| Any controller file is malformed | The file does not contain the bounded, space-separated controller names supplied by the kernel, so the hierarchy result is inconclusive. | Stop before changing delegation. Ask an administrator to inspect the cgroup filesystem and active security tooling for that exact file. Run the classification command again only after the file contains kernel-provided controller names. |
+| The kernel hierarchy does not expose `cpu`; the root file is readable | The root `cgroup.controllers` file does not contain the `cpu` controller. | Ask an administrator to enable the `cpu` controller in the host's kernel cgroup hierarchy. |
+| systemd did not expose `cpu`; the per-user-slice file is missing or does not contain `cpu` | The current user's `user-UID.slice` ancestor does not receive the `cpu` controller. | Apply all three named systemd drop-ins below. |
+| systemd did not delegate `cpu`; the user-manager file is missing or does not contain `cpu` | The current user's manager does not receive the `cpu` controller. | Apply all three named systemd drop-ins below. |
+| `cpu` is unavailable to `app.slice`; its file is missing | The current user's `app.slice` hierarchy does not exist for this boot. | Apply all three named systemd drop-ins below. Then use the stop, reload, and start sequence or reboot the host. |
+| `cpu` is unavailable to `app.slice`; its file is readable but does not contain `cpu` | The user manager does not have a CPU resource setting that activates the delegated controller for `app.slice`. | Apply all three named systemd drop-ins below. Then use the stop, reload, and start sequence or reboot the host. |
+
+Do not use a boot, delegation, or service lifecycle action to correct an unreadable or malformed file. Those actions do not restore read access or valid kernel evidence.
+
+The systemd changes require administrator access. NemoClaw does not edit `/etc/systemd`, invoke `sudo`, remove the sandbox CPU limit, or continue with weaker resource isolation.
+
+<Warning>
+  The `user@.service` template applies to every user manager on the host. The per-UID slice drop-in
+  applies to the affected user's ancestor, and the `app.slice` drop-in applies to every user manager
+  on the host. Applying or removing any of the three drop-ins requires the administrator to stop the
+  affected user's manager, reload systemd, and start the manager. The administrator can reboot the
+  host instead of running that sequence. Stopping the manager stops that user's systemd services,
+  including rootless Podman and other user services. Plan each interruption with the affected user
+  and host administrator.
+</Warning>
+
+Record the affected user's numeric ID:
+
+```bash
+uid="$(id -u)"
+printf 'Current user ID: %s\n' "$uid"
+```
+
+Use the three dedicated NemoClaw drop-in paths below. The service drop-in delegates `cpu` to user managers. The per-UID slice and `app.slice` drop-ins each request the kernel default CPU weight of `100`. Those explicit settings activate the controller at both slice boundaries. If any file exists, stop and ask the administrator to inspect its ownership and content. Do not replace any file.
+
+```bash
+uid="$(id -u)"
+delegation_drop_in="/etc/systemd/system/user@.service.d/90-nemoclaw-cpu-delegation.conf"
+app_slice_drop_in="/etc/systemd/user/app.slice.d/90-nemoclaw-cpu-controller.conf"
+user_slice_drop_in="/etc/systemd/system/user-${uid}.slice.d/90-nemoclaw-cpu-controller.conf"
+delegation_drop_in_dir="$(dirname "$delegation_drop_in")"
+app_slice_drop_in_dir="$(dirname "$app_slice_drop_in")"
+user_slice_drop_in_dir="$(dirname "$user_slice_drop_in")"
+
+inspect_cpu_controller_path() {
+  sudo sh -c '
+    if [ -L "$1" ]; then printf "symlink\n"
+    elif [ -f "$1" ]; then printf "file\n"
+    elif [ -d "$1" ]; then printf "directory\n"
+    elif [ -e "$1" ]; then printf "other\n"
+    else printf "absent\n"
+    fi
+  ' sh "$1"
+}
+
+for drop_in in "$delegation_drop_in" "$app_slice_drop_in" "$user_slice_drop_in"; do
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in")"; then
+    printf 'CPU controller drop-in inspection failed: %s\n' "$drop_in" >&2
+    exit 1
+  fi
+  if [ "$path_kind" != "absent" ]; then
+    printf 'Refusing to replace existing file: %s\n' "$drop_in" >&2
+    exit 1
+  fi
+done
+
+ensure_drop_in_dir() {
+  directory_name="$1"
+  drop_in_dir="$2"
+
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in_dir")"; then
+    printf 'CPU controller drop-in directory inspection failed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  if [ "$path_kind" != "absent" ] && [ "$path_kind" != "directory" ]; then
+    printf 'Refusing unexpected CPU controller drop-in directory: %s\n' "$drop_in_dir" >&2
+    return 1
+  fi
+
+  if [ "$path_kind" = "directory" ]; then
+    if [ "$(sudo stat -Lc '%U:%G %a' -- "$drop_in_dir")" != "root:root 755" ]; then
+      printf 'Refusing to change existing drop-in directory owner or mode: %s\n' \
+        "$drop_in_dir" >&2
+      return 1
+    fi
+    printf 'Record for rollback: %s_drop_in_dir_created=0\n' "$directory_name"
+    return 0
+  fi
+
+  printf 'Record for rollback: %s_drop_in_dir_created=unrecorded\n' \
+    "$directory_name"
+  if ! sudo mkdir -m 0755 -- "$drop_in_dir"; then
+    printf 'CPU controller drop-in directory creation failed: %s\n' "$drop_in_dir" >&2
+    return 1
+  fi
+
+  if ! drop_in_dir_id="$(sudo stat -Lc '%d:%i' -- "$drop_in_dir")"; then
+    printf 'CPU controller drop-in directory identity recording failed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  printf 'Record for rollback: %s_drop_in_dir_id=%s\n' \
+    "$directory_name" "$drop_in_dir_id"
+  printf 'Record for rollback: %s_drop_in_dir_created=1\n' "$directory_name"
+
+  if [ "$(sudo stat -Lc '%U:%G %a' -- "$drop_in_dir")" != "root:root 755" ]; then
+    printf 'Unexpected owner or mode on new drop-in directory: %s\n' "$drop_in_dir" >&2
+    return 1
+  fi
+}
+
+for drop_in_name in delegation app_slice user_slice; do
+  printf 'Record for rollback: %s_drop_in_created=0\n' "$drop_in_name"
+  printf 'Record for rollback: %s_drop_in_dir_created=0\n' "$drop_in_name"
+  printf 'Record for rollback: %s_staging_dir_path=\n' "$drop_in_name"
+  printf 'Record for rollback: %s_staging_dir_created=0\n' "$drop_in_name"
+done
+ensure_drop_in_dir delegation "$delegation_drop_in_dir" || exit 1
+ensure_drop_in_dir app_slice "$app_slice_drop_in_dir" || exit 1
+ensure_drop_in_dir user_slice "$user_slice_drop_in_dir" || exit 1
+
+create_staging_dir() {
+  drop_in_name="$1"
+  drop_in_dir="$2"
+
+  if ! staging_token="$(node -e \
+    'process.stdout.write(require("node:crypto").randomBytes(16).toString("hex"))')" \
+    || [[ ! "$staging_token" =~ ^[0-9a-f]{32}$ ]]; then
+    printf 'CPU controller staging name generation failed: %s\n' "$drop_in_name" >&2
+    return 1
+  fi
+  staging_dir="${drop_in_dir}/.nemoclaw-cpu-controller.${staging_token}"
+  printf 'Record for rollback: %s_staging_dir_path=%s\n' \
+    "$drop_in_name" "$staging_dir"
+  printf 'Record for rollback: %s_staging_dir_created=unrecorded\n' \
+    "$drop_in_name"
+  if ! sudo mkdir -m 0700 -- "$staging_dir"; then
+    printf 'CPU controller staging directory creation failed: %s\n' "$staging_dir" >&2
+    return 1
+  fi
+  if ! staging_dir_id="$(sudo stat -Lc '%d:%i' -- "$staging_dir")"; then
+    printf 'CPU controller staging directory identity recording failed: %s\n' \
+      "$staging_dir" >&2
+    return 1
+  fi
+  printf 'Record for rollback: %s_staging_dir_id=%s\n' \
+    "$drop_in_name" "$staging_dir_id"
+  printf 'Record for rollback: %s_staging_dir_created=1\n' "$drop_in_name"
+}
+
+cleanup_staging_dir() {
+  staging_dir="$1"
+  expected_id="$2"
+  staging_file="${staging_dir}/drop-in.conf"
+
+  if ! path_kind="$(inspect_cpu_controller_path "$staging_dir")" \
+    || [ "$path_kind" != "directory" ] \
+    || ! current_id="$(sudo stat -Lc '%d:%i' -- "$staging_dir")" \
+    || [ "$current_id" != "$expected_id" ]; then
+    printf 'Refusing CPU controller staging directory whose identity changed: %s\n' \
+      "$staging_dir" >&2
+    return 1
+  fi
+  if ! child_kind="$(inspect_cpu_controller_path "$staging_file")"; then
+    printf 'CPU controller staging file inspection failed: %s\n' "$staging_file" >&2
+    return 1
+  fi
+  if [ "$child_kind" = "file" ]; then
+    if [ "$(sudo stat -Lc '%d:%i' -- "$staging_dir")" != "$expected_id" ] \
+      || ! sudo rm -- "$staging_file"; then
+      return 1
+    fi
+  elif [ "$child_kind" != "absent" ]; then
+    printf 'Refusing unexpected CPU controller staging file type: %s\n' \
+      "$staging_file" >&2
+    return 1
+  fi
+  if [ "$(sudo stat -Lc '%d:%i' -- "$staging_dir")" != "$expected_id" ]; then
+    printf 'Refusing CPU controller staging directory whose identity changed: %s\n' \
+      "$staging_dir" >&2
+    return 1
+  fi
+  sudo rmdir -- "$staging_dir"
+}
+
+create_drop_in() {
+  drop_in_name="$1"
+  drop_in="$2"
+  shift 2
+  drop_in_dir="$(dirname -- "$drop_in")"
+
+  if ! create_staging_dir "$drop_in_name" "$drop_in_dir"; then
+    return 1
+  fi
+  staging_file="${staging_dir}/drop-in.conf"
+
+  if ! printf '%s\n' "$@" | sudo sh -c 'set -C; cat > "$1"' sh "$staging_file" \
+    || ! sudo chown root:root -- "$staging_file" \
+    || ! sudo chmod 0644 -- "$staging_file"; then
+    printf 'CPU controller drop-in creation failed: %s\n' "$drop_in" >&2
+    cleanup_staging_dir "$staging_dir" "$staging_dir_id" || true
+    return 1
+  fi
+
+  if ! drop_in_id="$(sudo stat -Lc '%d:%i' -- "$staging_file")"; then
+    printf 'CPU controller drop-in creation failed: %s\n' "$drop_in" >&2
+    cleanup_staging_dir "$staging_dir" "$staging_dir_id" || true
+    return 1
+  fi
+  printf 'Record for rollback: %s_drop_in_id=%s\n' "$drop_in_name" "$drop_in_id"
+
+  if ! sudo ln -T -- "$staging_file" "$drop_in"; then
+    printf 'CPU controller drop-in creation failed: %s\n' "$drop_in" >&2
+    cleanup_staging_dir "$staging_dir" "$staging_dir_id" || true
+    return 1
+  fi
+  printf 'Record for rollback: %s_drop_in_created=1\n' "$drop_in_name"
+
+  if ! cleanup_staging_dir "$staging_dir" "$staging_dir_id"; then
+    printf 'CPU controller staging cleanup failed: %s\n' "$staging_dir" >&2
+    return 1
+  fi
+}
+
+creation_failed=0
+if ! create_drop_in \
+  delegation "$delegation_drop_in" '[Service]' 'Delegate=cpu memory pids'; then
+  creation_failed=1
+elif ! create_drop_in app_slice "$app_slice_drop_in" '[Slice]' 'CPUWeight=100'; then
+  creation_failed=1
+elif ! create_drop_in user_slice "$user_slice_drop_in" '[Slice]' 'CPUWeight=100'; then
+  creation_failed=1
+fi
+if [ "$creation_failed" != "0" ]; then
+  exit 1
+fi
+```
+
+If a creation command fails, do not reload systemd. Ask the administrator to inspect all three drop-in paths and their directories. Use the final value printed for every `*_created` record and its matching `device:inode` record. The initial `0` records describe only the state before creation starts; always route recovery from the final printed values. Do not search for staging names. Use only an exact `*_staging_dir_path` printed before its atomic `mkdir` attempt.
+
+Choose the cleanup route that matches the final records:
+
+- If any final `*_created` value is `0` but the same command printed its matching `*_id` afterward, that file or directory receipt was interrupted between its identity and final commit records. Retain that identity and replace the matching final `*_created` value with `1`. The general cleanup will require the path type and identity to match that record before removal.
+- If any final `*_drop_in_dir_created` or `*_staging_dir_created` value is `unrecorded`, do not treat a missing identity as proof of absence and do not enter the general partial cleanup. Complete [Recover an Unrecorded Drop-In Directory](#recover-an-unrecorded-drop-in-directory) for each exact recorded intent, replace each resolved final value with `0`, and leave its identity empty. Enter the general partial cleanup only after every final `*_created` value is `0` or `1`.
+- Otherwise, when every final `*_created` value is `0` or `1` and every final `0` has an empty identity, go directly to [Clean Up a Partial Drop-In Creation](#clean-up-a-partial-drop-in-creation).
+
+#### Recover an Unrecorded Drop-In Directory
+
+If the final directory record is `created=unrecorded`, the procedure recorded an exact creation intent but did not commit a creation identity. The interruption can occur before `mkdir`, during it, or before its identity record. Do not treat the initial `created=0` record as proof that the directory was pre-existing. Do not use the general partial-creation cleanup until this state is resolved.
+
+Establish an exclusive host-configuration maintenance window with the administrator. Pause package operations and all other changes under `/etc/systemd/system` and `/etc/systemd/user` for the command's duration. Set `unrecorded_directory` to the exact recorded drop-in-directory path or unpredictable staging intent. The command accepts only those six exact paths, validates each staging name without scanning for basenames, requires the expected type and metadata, requires an empty directory, and binds removal to two matching identity reads.
+
+```bash
+unrecorded_directory="<exact-directory-from-identity-recording-error>"
+delegation_drop_in_dir="/etc/systemd/system/user@.service.d"
+app_slice_drop_in_dir="/etc/systemd/user/app.slice.d"
+user_slice_drop_in_dir="/etc/systemd/system/user-<affected-user-id>.slice.d"
+delegation_staging_dir_path="<recorded-delegation-staging-dir-path-or-empty>"
+app_slice_staging_dir_path="<recorded-app-slice-staging-dir-path-or-empty>"
+user_slice_staging_dir_path="<recorded-user-slice-staging-dir-path-or-empty>"
+
+validate_staging_intent() {
+  parent="$1"
+  intent="$2"
+  prefix="${parent}/.nemoclaw-cpu-controller."
+  token="${intent#"$prefix"}"
+  [ "$intent" != "$token" ] && [[ "$token" =~ ^[0-9a-f]{32}$ ]]
+}
+
+expected_mode=""
+if [ "$unrecorded_directory" = "$delegation_drop_in_dir" ] \
+  || [ "$unrecorded_directory" = "$app_slice_drop_in_dir" ] \
+  || [ "$unrecorded_directory" = "$user_slice_drop_in_dir" ]; then
+  expected_mode="755"
+elif [ -n "$delegation_staging_dir_path" ] \
+  && [ "$unrecorded_directory" = "$delegation_staging_dir_path" ] \
+  && validate_staging_intent "$delegation_drop_in_dir" "$delegation_staging_dir_path"; then
+  expected_mode="700"
+elif [ -n "$app_slice_staging_dir_path" ] \
+  && [ "$unrecorded_directory" = "$app_slice_staging_dir_path" ] \
+  && validate_staging_intent "$app_slice_drop_in_dir" "$app_slice_staging_dir_path"; then
+  expected_mode="700"
+elif [ -n "$user_slice_staging_dir_path" ] \
+  && [ "$unrecorded_directory" = "$user_slice_staging_dir_path" ] \
+  && validate_staging_intent "$user_slice_drop_in_dir" "$user_slice_staging_dir_path"; then
+  expected_mode="700"
+else
+  printf 'Refusing unexpected unrecorded drop-in directory: %s\n' \
+    "$unrecorded_directory" >&2
+  exit 1
+fi
+
+inspect_cpu_controller_path() {
+  sudo sh -c '
+    if [ -L "$1" ]; then printf "symlink\n"
+    elif [ -f "$1" ]; then printf "file\n"
+    elif [ -d "$1" ]; then printf "directory\n"
+    elif [ -e "$1" ]; then printf "other\n"
+    else printf "absent\n"
+    fi
+  ' sh "$1"
+}
+
+if ! path_kind="$(inspect_cpu_controller_path "$unrecorded_directory")"; then
+  printf 'Unrecorded drop-in directory inspection failed: %s\n' \
+    "$unrecorded_directory" >&2
+  exit 1
+fi
+if [ "$path_kind" = "absent" ]; then
+  exit 0
+fi
+if [ "$path_kind" != "directory" ]; then
+  printf 'Refusing unexpected unrecorded drop-in directory type: %s\n' \
+    "$unrecorded_directory" >&2
+  exit 1
+fi
+if [ "$(sudo stat -Lc '%U:%G %a' -- "$unrecorded_directory")" \
+  != "root:root ${expected_mode}" ]; then
+  printf 'Refusing unexpected unrecorded drop-in directory metadata: %s\n' \
+    "$unrecorded_directory" >&2
+  exit 1
+fi
+if ! first_entry="$(sudo find \
+  "$unrecorded_directory" -mindepth 1 -maxdepth 1 -print -quit)"; then
+  printf 'Unrecorded drop-in directory content inspection failed: %s\n' \
+    "$unrecorded_directory" >&2
+  exit 1
+fi
+if [ -n "$first_entry" ]; then
+  printf 'Refusing nonempty unrecorded drop-in directory: %s\n' \
+    "$unrecorded_directory" >&2
+  exit 1
+fi
+if ! first_id="$(sudo stat -Lc '%d:%i' -- "$unrecorded_directory")" \
+  || [[ ! "$first_id" =~ ^[0-9]+:[0-9]+$ ]] \
+  || ! second_id="$(sudo stat -Lc '%d:%i' -- "$unrecorded_directory")" \
+  || [ "$second_id" != "$first_id" ]; then
+  printf 'Refusing unrecorded drop-in directory whose identity is unstable: %s\n' \
+    "$unrecorded_directory" >&2
+  exit 1
+fi
+sudo rmdir -- "$unrecorded_directory"
+```
+
+If the command refuses the path, preserve it and inspect the reported condition in the same maintenance window. After a successful removal or an already-absent result, replace the final `created=unrecorded` value with `created=0` and leave its identity empty before running the general cleanup.
+
+#### Clean Up a Partial Drop-In Creation
+
+Run this command only when creation failed before any `systemctl daemon-reload`. Enter this procedure only when every final `*_created` value is `0` or `1`. Copy the final creation records into every placeholder. The command validates the complete record before it removes anything. It removes only objects recorded as created by this procedure and bound to their creation-time identity. It preserves pre-existing objects, accepts recorded objects that are already absent, and refuses identity or type drift.
+
+```bash
+delegation_drop_in="/etc/systemd/system/user@.service.d/90-nemoclaw-cpu-delegation.conf"
+app_slice_drop_in="/etc/systemd/user/app.slice.d/90-nemoclaw-cpu-controller.conf"
+user_slice_drop_in="/etc/systemd/system/user-<affected-user-id>.slice.d/90-nemoclaw-cpu-controller.conf"
+delegation_drop_in_created="<final-recorded-0-or-1>"
+delegation_drop_in_id="<recorded-device:inode-if-created>"
+app_slice_drop_in_created="<final-recorded-0-or-1>"
+app_slice_drop_in_id="<recorded-device:inode-if-created>"
+user_slice_drop_in_created="<final-recorded-0-or-1>"
+user_slice_drop_in_id="<recorded-device:inode-if-created>"
+delegation_drop_in_dir_created="<final-recorded-0-or-1>"
+delegation_drop_in_dir_id="<recorded-device:inode-if-created>"
+app_slice_drop_in_dir_created="<final-recorded-0-or-1>"
+app_slice_drop_in_dir_id="<recorded-device:inode-if-created>"
+user_slice_drop_in_dir_created="<final-recorded-0-or-1>"
+user_slice_drop_in_dir_id="<recorded-device:inode-if-created>"
+delegation_staging_dir_path="<recorded-delegation-staging-dir-path-or-empty>"
+delegation_staging_dir_created="<final-recorded-0-or-1>"
+delegation_staging_dir_id="<recorded-device:inode-if-created>"
+app_slice_staging_dir_path="<recorded-app-slice-staging-dir-path-or-empty>"
+app_slice_staging_dir_created="<final-recorded-0-or-1>"
+app_slice_staging_dir_id="<recorded-device:inode-if-created>"
+user_slice_staging_dir_path="<recorded-user-slice-staging-dir-path-or-empty>"
+user_slice_staging_dir_created="<final-recorded-0-or-1>"
+user_slice_staging_dir_id="<recorded-device:inode-if-created>"
+
+inspect_cpu_controller_path() {
+  sudo sh -c '
+    if [ -L "$1" ]; then printf "symlink\n"
+    elif [ -f "$1" ]; then printf "file\n"
+    elif [ -d "$1" ]; then printf "directory\n"
+    elif [ -e "$1" ]; then printf "other\n"
+    else printf "absent\n"
+    fi
+  ' sh "$1"
+}
+
+validate_created_drop_in() {
+  drop_in="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    if [ -n "$expected_id" ]; then
+      printf 'Unexpected identity for unrecorded CPU controller drop-in: %s\n' \
+        "$drop_in" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ "$created" != "1" ] || [[ ! "$expected_id" =~ ^[0-9]+:[0-9]+$ ]]; then
+    printf 'Invalid creation-time file record for: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in")"; then
+    printf 'CPU controller drop-in inspection failed: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then
+    return 0
+  fi
+  if [ "$path_kind" != "file" ]; then
+    printf 'Refusing unexpected CPU controller drop-in type: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if ! current_id="$(sudo stat -Lc '%d:%i' -- "$drop_in")" \
+    || [ "$current_id" != "$expected_id" ]; then
+    printf 'Refusing CPU controller drop-in whose identity changed: %s\n' "$drop_in" >&2
+    return 1
+  fi
+}
+
+validate_created_directory() {
+  drop_in_dir="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    if [ -n "$expected_id" ]; then
+      printf 'Unexpected identity for unrecorded CPU controller directory: %s\n' \
+        "$drop_in_dir" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ "$created" != "1" ] || [[ ! "$expected_id" =~ ^[0-9]+:[0-9]+$ ]]; then
+    printf 'Invalid creation-time directory record for: %s\n' "$drop_in_dir" >&2
+    return 1
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in_dir")"; then
+    printf 'CPU controller drop-in directory inspection failed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then
+    return 0
+  fi
+  if [ "$path_kind" != "directory" ]; then
+    printf 'Refusing unexpected CPU controller drop-in directory type: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  if ! current_id="$(sudo stat -Lc '%d:%i' -- "$drop_in_dir")" \
+    || [ "$current_id" != "$expected_id" ]; then
+    printf 'Refusing CPU controller drop-in directory whose identity changed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+}
+
+validate_staging_intent() {
+  parent="$1"
+  intent="$2"
+  prefix="${parent}/.nemoclaw-cpu-controller."
+  token="${intent#"$prefix"}"
+  [ "$intent" != "$token" ] && [[ "$token" =~ ^[0-9a-f]{32}$ ]]
+}
+
+validate_created_staging_directory() {
+  parent="$1"
+  staging_dir="$2"
+  created="$3"
+  expected_id="$4"
+
+  if [ "$created" = "0" ]; then
+    if [ -n "$expected_id" ]; then
+      printf 'Unexpected identity for unrecorded staging directory: %s\n' \
+        "$staging_dir" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ "$created" != "1" ] \
+    || ! validate_staging_intent "$parent" "$staging_dir"; then
+    printf 'Invalid creation-time staging record for: %s\n' "$staging_dir" >&2
+    return 1
+  fi
+  validate_created_directory "$staging_dir" "$created" "$expected_id" || return 1
+  if ! path_kind="$(inspect_cpu_controller_path "$staging_dir")"; then
+    printf 'CPU controller staging directory inspection failed: %s\n' \
+      "$staging_dir" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then return 0; fi
+  if [ "$(sudo stat -Lc '%U:%G %a' -- "$staging_dir")" != "root:root 700" ]; then
+    printf 'Refusing unexpected staging directory metadata: %s\n' "$staging_dir" >&2
+    return 1
+  fi
+  if ! child_kind="$(inspect_cpu_controller_path "${staging_dir}/drop-in.conf")" \
+    || { [ "$child_kind" != "absent" ] && [ "$child_kind" != "file" ]; }; then
+    printf 'Refusing unexpected CPU controller staging file: %s\n' \
+      "${staging_dir}/drop-in.conf" >&2
+    return 1
+  fi
+}
+
+validation_failed=0
+validate_created_drop_in \
+  "$delegation_drop_in" \
+  "$delegation_drop_in_created" \
+  "$delegation_drop_in_id" || validation_failed=1
+validate_created_drop_in \
+  "$app_slice_drop_in" \
+  "$app_slice_drop_in_created" \
+  "$app_slice_drop_in_id" || validation_failed=1
+validate_created_drop_in \
+  "$user_slice_drop_in" \
+  "$user_slice_drop_in_created" \
+  "$user_slice_drop_in_id" || validation_failed=1
+validate_created_directory \
+  "$(dirname "$delegation_drop_in")" \
+  "$delegation_drop_in_dir_created" \
+  "$delegation_drop_in_dir_id" || validation_failed=1
+validate_created_directory \
+  "$(dirname "$app_slice_drop_in")" \
+  "$app_slice_drop_in_dir_created" \
+  "$app_slice_drop_in_dir_id" || validation_failed=1
+validate_created_directory \
+  "$(dirname "$user_slice_drop_in")" \
+  "$user_slice_drop_in_dir_created" \
+  "$user_slice_drop_in_dir_id" || validation_failed=1
+validate_created_staging_directory \
+  "$(dirname "$delegation_drop_in")" \
+  "$delegation_staging_dir_path" \
+  "$delegation_staging_dir_created" \
+  "$delegation_staging_dir_id" || validation_failed=1
+validate_created_staging_directory \
+  "$(dirname "$app_slice_drop_in")" \
+  "$app_slice_staging_dir_path" \
+  "$app_slice_staging_dir_created" \
+  "$app_slice_staging_dir_id" || validation_failed=1
+validate_created_staging_directory \
+  "$(dirname "$user_slice_drop_in")" \
+  "$user_slice_staging_dir_path" \
+  "$user_slice_staging_dir_created" \
+  "$user_slice_staging_dir_id" || validation_failed=1
+if [ "$validation_failed" != "0" ]; then
+  exit 1
+fi
+
+remove_created_drop_in() {
+  drop_in="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    return 0
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in")"; then
+    printf 'CPU controller drop-in inspection failed: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then return 0; fi
+  if [ "$path_kind" != "file" ]; then
+    printf 'Refusing unexpected CPU controller drop-in type: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  validate_created_drop_in "$drop_in" "$created" "$expected_id" || return 1
+  sudo rm -- "$drop_in"
+}
+
+remove_created_directory() {
+  drop_in_dir="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    return 0
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in_dir")"; then
+    printf 'CPU controller drop-in directory inspection failed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then return 0; fi
+  if [ "$path_kind" != "directory" ]; then
+    printf 'Refusing unexpected CPU controller drop-in directory type: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  validate_created_directory "$drop_in_dir" "$created" "$expected_id" || return 1
+  sudo rmdir -- "$drop_in_dir"
+}
+
+remove_created_staging_directory() {
+  parent="$1"
+  staging_dir="$2"
+  created="$3"
+  expected_id="$4"
+
+  if [ "$created" = "0" ]; then return 0; fi
+  validate_created_staging_directory \
+    "$parent" "$staging_dir" "$created" "$expected_id" || return 1
+  if ! path_kind="$(inspect_cpu_controller_path "$staging_dir")"; then return 1; fi
+  if [ "$path_kind" = "absent" ]; then return 0; fi
+  staging_file="${staging_dir}/drop-in.conf"
+  if ! child_kind="$(inspect_cpu_controller_path "$staging_file")"; then return 1; fi
+  if [ "$child_kind" = "file" ]; then
+    if [ "$(sudo stat -Lc '%d:%i' -- "$staging_dir")" != "$expected_id" ] \
+      || ! sudo rm -- "$staging_file"; then
+      return 1
+    fi
+  fi
+  if [ "$(sudo stat -Lc '%d:%i' -- "$staging_dir")" != "$expected_id" ]; then
+    return 1
+  fi
+  sudo rmdir -- "$staging_dir"
+}
+
+cleanup_failed=0
+remove_created_drop_in \
+  "$user_slice_drop_in" "$user_slice_drop_in_created" "$user_slice_drop_in_id" ||
+  cleanup_failed=1
+remove_created_drop_in \
+  "$app_slice_drop_in" "$app_slice_drop_in_created" "$app_slice_drop_in_id" ||
+  cleanup_failed=1
+remove_created_drop_in \
+  "$delegation_drop_in" "$delegation_drop_in_created" "$delegation_drop_in_id" ||
+  cleanup_failed=1
+remove_created_staging_directory \
+  "$(dirname "$app_slice_drop_in")" \
+  "$app_slice_staging_dir_path" \
+  "$app_slice_staging_dir_created" \
+  "$app_slice_staging_dir_id" || cleanup_failed=1
+remove_created_staging_directory \
+  "$(dirname "$delegation_drop_in")" \
+  "$delegation_staging_dir_path" \
+  "$delegation_staging_dir_created" \
+  "$delegation_staging_dir_id" || cleanup_failed=1
+remove_created_staging_directory \
+  "$(dirname "$user_slice_drop_in")" \
+  "$user_slice_staging_dir_path" \
+  "$user_slice_staging_dir_created" \
+  "$user_slice_staging_dir_id" || cleanup_failed=1
+remove_created_directory \
+  "$(dirname "$user_slice_drop_in")" \
+  "$user_slice_drop_in_dir_created" \
+  "$user_slice_drop_in_dir_id" || cleanup_failed=1
+remove_created_directory \
+  "$(dirname "$app_slice_drop_in")" \
+  "$app_slice_drop_in_dir_created" \
+  "$app_slice_drop_in_dir_id" || cleanup_failed=1
+remove_created_directory \
+  "$(dirname "$delegation_drop_in")" \
+  "$delegation_drop_in_dir_created" \
+  "$delegation_drop_in_dir_id" || cleanup_failed=1
+exit "$cleanup_failed"
+```
+
+If the command exits nonzero, inspect every refusal and preserve the affected path. After correcting a transient cleanup failure, rerun the complete command with the same final creation records. Do not reload systemd after partial-creation cleanup.
+
+Verify that all three persistent paths are root-owned regular files with mode `0644`:
+
+```bash
+for drop_in in "$delegation_drop_in" "$app_slice_drop_in" "$user_slice_drop_in"; do
+  if sudo test -L "$drop_in" \
+    || ! sudo test -f "$drop_in" \
+    || [ "$(sudo stat -Lc '%U:%G %a' -- "$drop_in")" != "root:root 644" ]; then
+    printf 'Unexpected CPU controller drop-in type, owner, or mode: %s\n' "$drop_in" >&2
+    exit 1
+  fi
+done
+
+sudo stat -Lc '%n %d:%i' -- \
+  "$delegation_drop_in" "$app_slice_drop_in" "$user_slice_drop_in"
+sudo cat -- "$delegation_drop_in"
+sudo cat -- "$app_slice_drop_in"
+sudo cat -- "$user_slice_drop_in"
+```
+
+Continue only when the command exits with status `0`, all three `device:inode` values match the creation command's rollback records, the service file contains the service settings below, and both slice files contain the slice settings below:
+
+```ini
+[Service]
+Delegate=cpu memory pids
+[Slice]
+CPUWeight=100
+```
+
+Record all rollback lines from the creation command in the administrator's change record, including each file's last `created` value, each published file's `device:inode` value, and all three directory creation records. They identify the exact files and any directories created by this procedure and contain no credentials. Rollback must use those recorded values. If a required value is lost, do not use the removal command below; ask the administrator to inspect and remove the configuration through the host's normal change-management process.
+
+The administrator's `sudo` policy can request authentication. NemoClaw never receives that credential.
+
+<Warning>
+  Save the affected user's work before running the next command. Stopping and starting the user
+  manager interrupts that user's systemd services, including rootless Podman and other user
+  services. Run the command from an administrator session that does not depend on the affected
+  user's manager.
+</Warning>
+
+Run the stop, reload, and start sequence:
+
+```bash
+uid="<affected-user-id>"
+sudo systemctl stop "user@${uid}.service" || exit 1
+sudo systemctl daemon-reload || exit 1
+
+start_output=""
+if ! start_output="$(sudo systemctl start "user@${uid}.service" 2>&1)"; then
+  printf '%s\n' "$start_output" >&2
+  manager_status="$(
+    sudo systemctl status "user@${uid}.service" --no-pager 2>&1 || true
+  )"
+  printf '%s\n' "$manager_status" >&2
+  if [[ "${start_output}"$'\n'"${manager_status}" == *"219/CGROUP"* ]]; then
+    printf '%s\n' \
+      'Immediate user-manager start failed with 219/CGROUP; use later-login recovery.' >&2
+  else
+    printf '%s\n' 'Immediate user-manager start failed; inspect the reported status.' >&2
+  fi
+  exit 1
+fi
+```
+
+After the affected user signs in again, start `app.slice` in that user's session:
+
+```bash
+systemctl --user start app.slice
+```
+
+The stop must complete before `daemon-reload` runs. Reloading while the instantiated unit is inactive lets systemd recalculate ancestor controller masks for the new delegation. The final start makes the user manager read the `app.slice` CPU weight and enable the delegated controller. Do not replace this sequence with `systemctl restart`, which can fail with `219/CGROUP` before systemd recalculates the masks. The sequence stops at the first failed command. If a command fails after the manager stops, correct the failure and rerun the failed command and each remaining command.
+
+On Ubuntu 22.04, the immediate `systemctl start user@${uid}.service` can still fail with `status=219/CGROUP` even after the inactive reload. That result leaves the current user manager stopped, but a later login can create it under the corrected cgroup hierarchy. Do not remove any of the three drop-ins or repeat the creation command. Save any remaining work in the affected user's sessions, sign out of all those sessions, and sign in again. Then start `app.slice` and run the verification below. For any other start failure, inspect `sudo systemctl status "user@${uid}.service" --no-pager` and `sudo journalctl -u "user@${uid}.service" --no-pager` before retrying the failed start.
+
+The administrator can reboot the host instead of running the stop, reload, and start sequence.
+
+<Warning>
+  Save work for every host user before rebooting. A reboot interrupts all user services and host
+  workloads, not only the affected user's services.
+</Warning>
+
+Reboot only after the drop-in verification succeeds:
+
+```bash
+sudo systemctl reboot
+```
+
+Verify the root hierarchy, current user manager, and `app.slice`: this command also verifies the per-user slice, for four boundaries in total.
+
+```bash
+uid="$(id -u)"
+user_slice="/sys/fs/cgroup/user.slice/user-${uid}.slice"
+user_manager="/sys/fs/cgroup/user.slice/user-${uid}.slice/user@${uid}.service"
+export LC_ALL=C
+
+classify_cpu_controller() {
+  controllers="$1"
+  if [ ! -e "$controllers" ]; then
+    printf 'missing\n'
+    return 1
+  fi
+  if [ ! -r "$controllers" ]; then
+    printf 'unreadable\n'
+    return 1
+  fi
+
+  if evidence="$(node - "$controllers" <<'NODE'
+const fs = require("node:fs");
+
+const controllers = process.argv[2];
+let descriptor;
+try {
+  descriptor = fs.openSync(controllers, "r");
+  const buffer = Buffer.alloc(4097);
+  let bytesRead = 0;
+  while (bytesRead < buffer.length) {
+    const count = fs.readSync(
+      descriptor,
+      buffer,
+      bytesRead,
+      buffer.length - bytesRead,
+      null,
+    );
+    if (count === 0) break;
+    bytesRead += count;
+  }
+
+  const content = buffer.subarray(0, bytesRead);
+  if (content.length > 4096) {
+    process.exitCode = 2;
+  } else {
+    const body = content.at(-1) === 0x0a ? content.subarray(0, -1) : content;
+    const text = body.toString("utf8");
+    const names = text === "" ? [] : text.split(" ");
+    if (
+      body.includes(0x0a) ||
+      new Set(names).size !== names.length ||
+      names.some((name) => !/^[a-z][a-z0-9_]*$/u.test(name))
+    ) {
+      process.exitCode = 2;
+    } else {
+      process.stdout.write(names.join(" "));
+    }
+  }
+} catch {
+  process.exitCode = 3;
+} finally {
+  if (descriptor !== undefined) {
+    try {
+      fs.closeSync(descriptor);
+    } catch {
+      process.exitCode = 3;
+    }
+  }
+}
+NODE
+  )"; then
+    case " $evidence " in
+      *" cpu "*) printf 'cpu\n' ;;
+      *)
+        printf 'missing\n'
+        return 1
+        ;;
+    esac
+  else
+    read_status="$?"
+    if [ "$read_status" = "2" ]; then
+      printf 'malformed\n'
+    else
+      printf 'read failed\n'
+    fi
+    return 1
+  fi
+}
+
+verification_failed=0
+for controllers in \
+  /sys/fs/cgroup/cgroup.controllers \
+  "${user_slice}/cgroup.controllers" \
+  "${user_manager}/cgroup.controllers" \
+  "${user_manager}/app.slice/cgroup.controllers"
+do
+  printf '%s: ' "$controllers"
+  classify_cpu_controller "$controllers" || verification_failed=1
+done
+exit "$verification_failed"
+```
+
+Continue only when all four lines end in `: cpu`. This verification reads no credentials. Then rerun portable onboarding:
+
+```bash
+$$nemoclaw onboard --experimental-profile portable
+```
+
+#### Remove the CPU Controller Drop-Ins
+
+Remove only the three named files and any drop-in directory that the creation record marks as created by this procedure. Do not use `systemctl revert`. Do not remove another `user@.service`, per-user-slice, or `app.slice` drop-in or a pre-existing drop-in directory.
+
+Retrieve each file's final `created` value and every applicable `device:inode` value from the administrator's creation-time change record. Inspect only paths that the record marks as created:
+
+```bash
+uid="<affected-user-id>"
+delegation_drop_in="/etc/systemd/system/user@.service.d/90-nemoclaw-cpu-delegation.conf"
+app_slice_drop_in="/etc/systemd/user/app.slice.d/90-nemoclaw-cpu-controller.conf"
+user_slice_drop_in="/etc/systemd/system/user-${uid}.slice.d/90-nemoclaw-cpu-controller.conf"
+delegation_drop_in_created="<recorded-final-0-or-1>"
+expected_delegation_drop_in_id="<recorded-device:inode-if-created>"
+app_slice_drop_in_created="<recorded-final-0-or-1>"
+expected_app_slice_drop_in_id="<recorded-device:inode-if-created>"
+user_slice_drop_in_created="<recorded-final-0-or-1>"
+expected_user_slice_drop_in_id="<recorded-device:inode-if-created>"
+delegation_drop_in_dir_created="<recorded-0-or-1>"
+delegation_drop_in_dir_id="<recorded-device:inode-if-created>"
+app_slice_drop_in_dir_created="<recorded-0-or-1>"
+app_slice_drop_in_dir_id="<recorded-device:inode-if-created>"
+user_slice_drop_in_dir_created="<recorded-0-or-1>"
+user_slice_drop_in_dir_id="<recorded-device:inode-if-created>"
+
+if [ "$delegation_drop_in_created" = "1" ]; then
+  sudo cat -- "$delegation_drop_in"
+  sudo stat -Lc '%n %d:%i' -- "$delegation_drop_in"
+fi
+if [ "$app_slice_drop_in_created" = "1" ]; then
+  sudo cat -- "$app_slice_drop_in"
+  sudo stat -Lc '%n %d:%i' -- "$app_slice_drop_in"
+fi
+if [ "$user_slice_drop_in_created" = "1" ]; then
+  sudo cat -- "$user_slice_drop_in"
+  sudo stat -Lc '%n %d:%i' -- "$user_slice_drop_in"
+fi
+```
+
+For each path marked as created, continue only when its content and current `device:inode` value match the creation-time record. Use an empty identity value for a file or directory whose final `created` value is `0`. The removal command validates the complete record before it stops the manager or removes a path. An already absent recorded path is accepted on retry, an identity mismatch preserves every remaining recorded path, and a path marked as not created is never removed.
+
+<Warning>
+  Save the affected user's work before running the removal command. Stopping and starting the user
+  manager interrupts that user's systemd services, including rootless Podman and other user
+  services. Run the command from an administrator session that does not depend on the affected
+  user's manager.
+</Warning>
+
+```bash
+uid="<affected-user-id>"
+delegation_drop_in="/etc/systemd/system/user@.service.d/90-nemoclaw-cpu-delegation.conf"
+app_slice_drop_in="/etc/systemd/user/app.slice.d/90-nemoclaw-cpu-controller.conf"
+user_slice_drop_in="/etc/systemd/system/user-${uid}.slice.d/90-nemoclaw-cpu-controller.conf"
+delegation_drop_in_created="<recorded-final-0-or-1>"
+expected_delegation_drop_in_id="<recorded-device:inode-if-created>"
+app_slice_drop_in_created="<recorded-final-0-or-1>"
+expected_app_slice_drop_in_id="<recorded-device:inode-if-created>"
+user_slice_drop_in_created="<recorded-final-0-or-1>"
+expected_user_slice_drop_in_id="<recorded-device:inode-if-created>"
+delegation_drop_in_dir_created="<recorded-0-or-1>"
+delegation_drop_in_dir_id="<recorded-device:inode-if-created>"
+app_slice_drop_in_dir_created="<recorded-0-or-1>"
+app_slice_drop_in_dir_id="<recorded-device:inode-if-created>"
+user_slice_drop_in_dir_created="<recorded-0-or-1>"
+user_slice_drop_in_dir_id="<recorded-device:inode-if-created>"
+
+inspect_cpu_controller_path() {
+  sudo sh -c '
+    if [ -L "$1" ]; then printf "symlink\n"
+    elif [ -f "$1" ]; then printf "file\n"
+    elif [ -d "$1" ]; then printf "directory\n"
+    elif [ -e "$1" ]; then printf "other\n"
+    else printf "absent\n"
+    fi
+  ' sh "$1"
+}
+
+validate_recorded_drop_in() {
+  drop_in="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    if [ -n "$expected_id" ]; then
+      printf 'Unexpected identity for unrecorded CPU controller drop-in: %s\n' \
+        "$drop_in" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ "$created" != "1" ] || [[ ! "$expected_id" =~ ^[0-9]+:[0-9]+$ ]]; then
+    printf 'Invalid creation-time identity for: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in")"; then
+    printf 'CPU controller drop-in inspection failed: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then
+    return 0
+  fi
+  if [ "$path_kind" != "file" ]; then
+    printf 'Refusing unexpected CPU controller drop-in type: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if ! current_id="$(sudo stat -Lc '%d:%i' -- "$drop_in")" \
+    || [ "$current_id" != "$expected_id" ]; then
+    printf 'Refusing CPU controller drop-in whose identity changed: %s\n' "$drop_in" >&2
+    return 1
+  fi
+}
+
+validate_recorded_directory() {
+  drop_in_dir="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    if [ -n "$expected_id" ]; then
+      printf 'Unexpected identity for unrecorded CPU controller directory: %s\n' \
+        "$drop_in_dir" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ "$created" != "1" ] || [[ ! "$expected_id" =~ ^[0-9]+:[0-9]+$ ]]; then
+    printf 'Invalid creation-time directory record for: %s\n' "$drop_in_dir" >&2
+    return 1
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in_dir")"; then
+    printf 'CPU controller drop-in directory inspection failed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then
+    return 0
+  fi
+  if [ "$path_kind" != "directory" ]; then
+    printf 'Refusing unexpected CPU controller drop-in directory type: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  if ! current_id="$(sudo stat -Lc '%d:%i' -- "$drop_in_dir")" \
+    || [ "$current_id" != "$expected_id" ]; then
+    printf 'Refusing CPU controller drop-in directory whose identity changed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+}
+
+validation_failed=0
+validate_recorded_drop_in \
+  "$delegation_drop_in" \
+  "$delegation_drop_in_created" \
+  "$expected_delegation_drop_in_id" || validation_failed=1
+validate_recorded_drop_in \
+  "$app_slice_drop_in" \
+  "$app_slice_drop_in_created" \
+  "$expected_app_slice_drop_in_id" || validation_failed=1
+validate_recorded_drop_in \
+  "$user_slice_drop_in" \
+  "$user_slice_drop_in_created" \
+  "$expected_user_slice_drop_in_id" || validation_failed=1
+validate_recorded_directory \
+  "$(dirname "$delegation_drop_in")" \
+  "$delegation_drop_in_dir_created" \
+  "$delegation_drop_in_dir_id" || validation_failed=1
+validate_recorded_directory \
+  "$(dirname "$app_slice_drop_in")" \
+  "$app_slice_drop_in_dir_created" \
+  "$app_slice_drop_in_dir_id" || validation_failed=1
+validate_recorded_directory \
+  "$(dirname "$user_slice_drop_in")" \
+  "$user_slice_drop_in_dir_created" \
+  "$user_slice_drop_in_dir_id" || validation_failed=1
+if [ "$validation_failed" != "0" ]; then
+  exit 1
+fi
+
+remove_validated_drop_in() {
+  drop_in="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    return 0
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in")"; then
+    printf 'CPU controller drop-in inspection failed: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then return 0; fi
+  if [ "$path_kind" != "file" ]; then
+    printf 'Refusing unexpected CPU controller drop-in type: %s\n' "$drop_in" >&2
+    return 1
+  fi
+  validate_recorded_drop_in "$drop_in" "$created" "$expected_id" || return 1
+  sudo rm -- "$drop_in"
+}
+
+remove_validated_directory() {
+  drop_in_dir="$1"
+  created="$2"
+  expected_id="$3"
+
+  if [ "$created" = "0" ]; then
+    return 0
+  fi
+  if ! path_kind="$(inspect_cpu_controller_path "$drop_in_dir")"; then
+    printf 'CPU controller drop-in directory inspection failed: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  if [ "$path_kind" = "absent" ]; then return 0; fi
+  if [ "$path_kind" != "directory" ]; then
+    printf 'Refusing unexpected CPU controller drop-in directory type: %s\n' \
+      "$drop_in_dir" >&2
+    return 1
+  fi
+  validate_recorded_directory "$drop_in_dir" "$created" "$expected_id" || return 1
+  sudo rmdir -- "$drop_in_dir"
+}
+
+if ! sudo systemctl stop "user@${uid}.service"; then
+  exit 1
+fi
+
+cleanup_failed=0
+remove_validated_drop_in \
+  "$user_slice_drop_in" \
+  "$user_slice_drop_in_created" \
+  "$expected_user_slice_drop_in_id" || cleanup_failed=1
+remove_validated_drop_in \
+  "$delegation_drop_in" \
+  "$delegation_drop_in_created" \
+  "$expected_delegation_drop_in_id" || cleanup_failed=1
+remove_validated_drop_in \
+  "$app_slice_drop_in" \
+  "$app_slice_drop_in_created" \
+  "$expected_app_slice_drop_in_id" || cleanup_failed=1
+remove_validated_directory \
+  "$(dirname "$delegation_drop_in")" \
+  "$delegation_drop_in_dir_created" \
+  "$delegation_drop_in_dir_id" || cleanup_failed=1
+remove_validated_directory \
+  "$(dirname "$app_slice_drop_in")" \
+  "$app_slice_drop_in_dir_created" \
+  "$app_slice_drop_in_dir_id" || cleanup_failed=1
+remove_validated_directory \
+  "$(dirname "$user_slice_drop_in")" \
+  "$user_slice_drop_in_dir_created" \
+  "$user_slice_drop_in_dir_id" || cleanup_failed=1
+sudo systemctl daemon-reload || cleanup_failed=1
+
+start_output=""
+if ! start_output="$(sudo systemctl start "user@${uid}.service" 2>&1)"; then
+  printf '%s\n' "$start_output" >&2
+  manager_status="$(
+    sudo systemctl status "user@${uid}.service" --no-pager 2>&1 || true
+  )"
+  printf '%s\n' "$manager_status" >&2
+  if [[ "${start_output}"$'\n'"${manager_status}" == *"219/CGROUP"* ]]; then
+    printf '%s\n' \
+      'Immediate user-manager start failed with 219/CGROUP; use later-login recovery.' >&2
+  else
+    printf '%s\n' 'Immediate user-manager start failed; inspect the reported status.' >&2
+  fi
+  cleanup_failed=1
+fi
+exit "$cleanup_failed"
+```
+
+The inactive reload removes all three NemoClaw drop-ins from the instantiated units and recalculates ancestor controller masks before the manager starts. Do not replace this sequence with `systemctl restart`. If the command exits nonzero, inspect every reported failure. After correcting it, rerun the complete removal command with the same creation-time identities; paths already removed by the earlier attempt are accepted.
+
+If the immediate start reports `219/CGROUP`, the recorded drop-ins have already been removed, but the current user manager remains stopped. Save any remaining work in the affected user's sessions, sign out of all those sessions, and sign in again so systemd creates the user manager under the restored hierarchy. Do not restore the drop-ins only because the immediate start returned `219/CGROUP`. Then run the removal verification below. For another start failure, use the reported `systemctl status` output and `sudo journalctl -u "user@${uid}.service" --no-pager` to correct the service failure before retrying the removal command.
+
+After the affected user signs in again, verify that systemd no longer loads any of the three drop-ins:
+
+```bash
+uid="<affected-user-id>"
+delegation_drop_in="/etc/systemd/system/user@.service.d/90-nemoclaw-cpu-delegation.conf"
+app_slice_drop_in="/etc/systemd/user/app.slice.d/90-nemoclaw-cpu-controller.conf"
+user_slice_drop_in="/etc/systemd/system/user-${uid}.slice.d/90-nemoclaw-cpu-controller.conf"
+
+for drop_in in "$delegation_drop_in" "$app_slice_drop_in" "$user_slice_drop_in"; do
+  if sudo test -e "$drop_in" || sudo test -L "$drop_in"; then
+    printf 'CPU controller drop-in remains after removal: %s\n' "$drop_in" >&2
+    exit 1
+  fi
+done
+
+systemctl cat user@.service
+systemctl cat "user-${uid}.slice"
+systemctl --user cat app.slice
+```
+
+The output must not list any NemoClaw CPU-controller drop-in. Another administrator-owned drop-in can still configure `cpu`; do not remove it as part of this rollback. Removing the NemoClaw drop-ins can make the portable CPU delegation preflight fail again.
 
 ### Portable Podman Readiness Fails
 
