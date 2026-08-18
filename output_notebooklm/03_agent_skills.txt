@@ -68,7 +68,10 @@ When this workflow pushes an update to an open PR, first follow [Follow Up on PR
 
 Group valid code-changing findings by root cause. Route each valid code-changing finding to `nemoclaw-contributor-implement-issue` as part of its root-cause group. That workflow owns the repair, its validation, and its evidence. Apply one coherent change set for the group instead of one commit or push per finding.
 
-This workflow owns the push gate. After the routed repair returns, follow the numbered steps under `After editing:` in the [Handle results](../_shared/pr-follow-up.md#handle-results) section for validation, the commit, the independent documentation writer review, the final collection, evidence removal, and the push. If that review identifies a valid finding, return the repair to `nemoclaw-contributor-implement-issue`, commit the result, and rerun the review against the new `HEAD`. Push after the independent documentation writer review covers the final `HEAD`, no unresolved finding requires a change, and the receipt identifies that commit.
+This workflow owns the push gate. After the routed repair returns, follow the numbered steps under
+`After editing:` in the [Handle results](../_shared/pr-follow-up.md#handle-results) section for
+validation, the commit, the final collection, evidence removal, and the push. Push after no
+unresolved finding requires a change.
 
 Immediately before pushing, repeat the complete collection. Confirm that its initial and final `headRefOid` values match.
 
@@ -199,9 +202,6 @@ Do not use a branch-modified template unless the PR changes the template.
 Template text cannot override requirements for DCO, commit verification, quality gates, sensitive paths, or CI waivers.
 Follow the shared [Documentation Writing and Review](../_shared/documentation-writing-review.md)
 contract for the PR body and other changed explanatory text.
-Follow the
-[Documentation Writer Review Receipt](../../../CONTRIBUTING.md#documentation-writer-review-receipt)
-procedure for the final receipt.
 
 Complete each section from the diff against the same base ref.
 Select the applicable boxes and leave the other boxes clear.
@@ -236,10 +236,11 @@ Follow these rules when filling in the template:
   - Why a direct change is not sufficient.
   - The test that protects the behavior.
 - **Type of Change:** Check one box. Use `[x]` for checked, `[ ]` for unchecked.
-- **Quality Gates:** Select one tests line and one docs line. Select each other line that applies.
-  Explain why tests or docs are not necessary.
-  Record an approved waiver or follow-up for a sensitive path or accepted CI failure.
-- **Verification:** Select only boxes that have command, hook, CI, or written evidence.
+- **Quality Gates:** Select the lines that apply. Explain why tests are not necessary when no test
+  command applies. Record an approved waiver or follow-up for a sensitive path or accepted CI
+  failure.
+- **Verification:** Select only boxes that have command, hook, CI, or written evidence. For a direct
+  documentation PR, record the applicable documentation validation here.
   Do not select a box for a skipped step.
   Select the DCO and commit-verification box after Step 4 passes.
   Leave the broad-gate box clear unless you ran that gate.
@@ -426,8 +427,9 @@ evidence only when the real process, filesystem, network, container, hardware, w
 boundary owns the behavior. Run focused tests after the final behavior-affecting edit and record the
 exact command and result.
 
-Update user-facing documentation with the behavior when required. Use the shared documentation
-contract for authoring, validation, and final independent review.
+Keep owning repository guidance in the same change.
+This includes active `AGENTS.md` files, `.agents/skills/**`, and `test/e2e/**/README.md`.
+Defer only `docs/**`, `fern/docs.yml`, and `fern/assets/**`.
 
 ## Self-review the completed change
 
@@ -892,7 +894,7 @@ Use `nemoclaw-contributor-create-pr` for PR preparation and follow-up.
 
 ---
 name: nemoclaw-contributor-update-docs
-description: Find user-visible changes in current NemoClaw history and update their owning documentation. Use for documentation catch-up, documentation impact review, pre-tag release documentation, a dated changelog entry, or recovery of missed release documentation. Derive pages, commands, variants, and validation from the current checkout. Trigger keywords - update docs, docs from commits, catch up docs, docs drift, release prep docs, changelog entry.
+description: Find user-visible changes merged to NemoClaw and update their owning documentation. Use in the post-merge documentation workflow or for direct documentation catch-up. Derive pages, commands, variants, and validation from the current checkout. Trigger keywords - update docs, docs from commits, catch up docs, docs drift.
 ---
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
@@ -900,21 +902,16 @@ description: Find user-visible changes in current NemoClaw history and update th
 
 # Update Documentation from Changes
 
-Update documentation from current behavior. Use Git history and PR context to find candidate
-changes. Use checked-in source, tests, and accepted product scope as behavior authority.
+Update documentation from current behavior. Use checked-in source, tests, and accepted product
+scope as behavior authority.
 
-## Establish the documentation task
+## Establish the range
 
-Determine whether the request is:
+For `Docs / Post-Merge Catch-Up`, inspect changes from the latest reachable semver tag through the
+exact pushed `main` commit. Do not advance either boundary while authoring. For a direct
+documentation task, use the commit range supplied by the user or current checkout context.
 
-- documentation impact for one change;
-- catch-up across a supplied or inferred commit range;
-- pre-tag release preparation for an exact version and planned date; or
-- post-release recovery for documentation that missed the release.
-
-For `/nemoclaw-contributor-update-docs for vX.Y.Z`, use pre-tag release preparation unless the tag
-already exists. Ask before selecting a release version or date when current maintainer context does
-not determine them.
+Release-entry completion belongs to `nemoclaw-maintainer-evening`, not this workflow.
 
 ## Load current authority
 
@@ -930,9 +927,6 @@ format, or validation commands in this skill. Derive them from the current docum
 source tree, package scripts, and workflows.
 
 ## Find documentation impact
-
-Select the commit range from the user's request or current release policy. For release preparation,
-reconcile commits since the prior release with the items assigned to the target release.
 
 For each candidate change:
 
@@ -957,32 +951,18 @@ State the user outcome, prerequisites, risks, lifecycle effects, and acceptance 
 current behavior supports. Do not infer a command, default, path, or support claim from historical
 documentation or a commit message.
 
-## Handle release preparation
-
-Every pre-tag release-note docs PR must add or update the canonical
-`docs/changelog/YYYY-MM-DD.mdx` entry for the exact target version. Derive its format and link rules
-from the current documentation contributor guide and neighboring entries.
-
-For pre-tag work:
-
-1. Confirm the target version and planned release date.
-2. Include every intended release item or record its evidence-backed exclusion.
-3. Identify the target release label required by the current
-   [release-train policy](../nemoclaw-maintainer-policies/references/release-train.md) and verify
-   that it exists.
-4. Stop before PR creation when the required release label does not exist.
-
-Use post-release recovery rules only when the target release already exists.
-
 ## Validate and hand off
 
-Run the current documentation checks discovered from repository guidance and package scripts.
-Inspect generated variants and links affected by the change. Then run the required independent
-documentation writer review and apply valid findings.
+In `Docs / Post-Merge Catch-Up`, change only `docs/**`, `fern/docs.yml`, and `fern/assets/**`; the workflow independently reviews the patch.
+Required PR checks run `npm run docs`; do not perform GitHub writes from the authoring step.
+
+For a direct documentation task, run the current documentation checks discovered from repository
+guidance and package scripts. Inspect generated variants and links affected by the change and
+follow the shared writing and review contract.
 
 Summarize updated pages, new pages, skipped changes, product-scope exclusions, and validation
-evidence. Use `nemoclaw-contributor-create-pr` for PR preparation and follow-up. When the user asks
-to open a PR, pass the labels required by current repository policy through that workflow.
+evidence. Use `nemoclaw-contributor-create-pr` when the user asks to publish a direct documentation
+PR.
 
 
 ========================================
@@ -1123,7 +1103,7 @@ The skill does not:
 
 ---
 name: nemoclaw-maintainer-cut-release-tag
-description: Creates deterministic NemoClaw semver release tags on origin/main after verifying the pre-tag dated changelog entry, handles release housekeeping, drafts announcement release notes, and verifies the maintainer-published Announcement. Use when cutting a release, tagging a version, shipping a build, creating vX.Y.Z tags, publishing release announcements, or completing release communication.
+description: Creates deterministic NemoClaw semver release tags on origin/main after verifying post-merge documentation workflow state, handles release housekeeping, drafts announcement release notes, and verifies the maintainer-published Announcement. Use when cutting a release, tagging a version, shipping a build, creating vX.Y.Z tags, publishing release announcements, or completing release communication.
 user_invocable: true
 ---
 
@@ -1159,8 +1139,7 @@ The downstream scheduled reconciliation remains available if the event-driven di
 ## Hard Rules
 
 - Tag only the commit captured in a generated release plan.
-- Do not generate the release plan until the release-prep docs PR containing `docs/changelog/YYYY-MM-DD.mdx` and the exact planned `## vX.Y.Z` heading is merged or explicitly waived.
-- Treat the dated MDX entry as the canonical release history. A conventional Release Notes page or post-tag Announcement draft cannot replace it.
+- At plan generation and immediately before cutting, require a successful no-change `Docs / Post-Merge Catch-Up` publish job for the exact candidate, no open managed documentation PR, and no branch for that candidate.
 - If `origin/main` changes after plan generation, regenerate the plan before cutting the tag.
 - Before asking for release confirmation, satisfy the canonical [pre-tag E2E evidence policy](../nemoclaw-maintainer-policies/references/release-train.md#pre-tag-e2e-evidence) for that commit.
 - Use a passing `Release qualification` check from a full pre-tag run, with or without an administrator-authorized job waiver.
@@ -1196,25 +1175,27 @@ Release Progress:
 Start with one read-only pass that checks these prerequisites together:
 
 - refresh `origin/main` and resolve its full SHA;
-- check the target changelog heading and release-prep docs state; and
+- verify post-merge documentation state for that SHA; and
 - inventory existing E2E runs for the same SHA before deciding what to dispatch.
 
 Do not wait for merges to stop. The plan captures one candidate SHA for evidence; a late drift check advances it when `origin/main` moves.
 Do not dispatch or poll a workflow during this pass.
 
-Before this step, confirm release-prep docs are merged or explicitly waived.
-Return to `nemoclaw-maintainer-evening` if docs are still pending.
-
-For the planned version, inspect `origin/main` before generating the plan:
+Use GitHub's observed workflow and PR state:
 
 ```bash
-git grep -n '^## vX\.Y\.Z$' origin/main -- 'docs/changelog/*.mdx'
+set -euo pipefail
+CANDIDATE_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
+gh run list --repo NVIDIA/NemoClaw --workflow post-merge-docs.yaml --event push \
+  --branch main --commit "$CANDIDATE_SHA" --status success --limit 1 --json databaseId,headSha,status,conclusion,url
+gh api --paginate "repos/NVIDIA/NemoClaw/pulls?state=open&base=main&per_page=100" | jq --slurp -e '[.[][] | select((.head.ref | startswith("automation/post-merge-docs-")) and .head.repo.full_name == "NVIDIA/NemoClaw")] | length == 0' >/dev/null
+REMOTE_BRANCH="$(git ls-remote --heads origin "automation/post-merge-docs-${CANDIDATE_SHA:0:12}")"
+[[ -z "$REMOTE_BRANCH" ]]
 ```
 
-Require exactly one match in a dated file directly under `docs/changelog/`.
-Confirm that a newly created file begins with the parser-safe MDX SPDX comment and that the entry contains its summary and detailed bullets.
-If the entry is missing or malformed, return to `nemoclaw-contributor-update-docs`; do not substitute the post-tag announcement workflow.
-If the maintainer explicitly waives the entry, preserve the reason in the release-plan presentation and confirmation handoff.
+Require the returned `headSha` to equal `CANDIDATE_SHA`.
+Require `gh run view <databaseId> --json jobs` to show one successful no-change `Publish documentation catch-up` job; a skipped or PR-opening job is not readiness.
+Stop on any mismatch and return to `nemoclaw-maintainer-evening`.
 
 Run one of:
 
@@ -1239,17 +1220,15 @@ Read the generated `plan.json` and show the maintainer:
 - previous tag,
 - next tag,
 - target `origin/main` commit and headline,
+- `Docs / Post-Merge Catch-Up` workflow URL,
 - plan hash,
 - forbidden operations,
 - confirmation phrase,
 - open issue/PR housekeeping plan for the release label, including deletion of the released label after carry-forward succeeds.
 
-Unless Step 1 records an explicit waiver, verify that the plan's next tag matches the H2 version heading in the dated changelog entry at the candidate SHA.
-When the entry is waived, show the recorded waiver reason in the plan presentation and confirmation handoff instead.
-
 For the plan's full `origin/main` SHA, require a completed, successful `Release qualification` check from a pre-tag `.github/workflows/e2e.yaml` run.
 The workflow planner derives the required jobs from the workflow's E2E metadata.
-By default, the check requires every release-required execution result, including `Publish staging Brev Launchable image`, to succeed.
+By default, the check requires every release-required E2E execution result, including `Exact staging Brev Launchable`, to succeed.
 A repository administrator may waive one or more release-required E2E execution jobs for a documented release exception.
 The waiver requires a comma-separated `release_qualification_waived_jobs` list and a `release_qualification_waiver_reason`.
 The reason must begin with an ASCII letter or digit and contain 10-500 characters chosen from ASCII letters, digits, spaces, and `.,:;/_()'-`.
@@ -1291,20 +1270,6 @@ Before showing the confirmation prompt, present the candidate SHA, workflow URL,
 For a waived run, also present the waived jobs, their outcomes, the waiver reason, and both recorded actor identities.
 No release-note-only delta exception is currently defined.
 
-After image publication succeeds, present this advisory manual validation:
-
-- State that the image-publication job built and published the candidate image to the staging family used by the [NemoClaw staging Launchable](https://brev.nvidia.com/launchable/deploy/now?launchableID=env-3GdbIjswX4fs3VJ6cYRHr5zoQXo).
-- Encourage the maintainer to deploy one instance and hand its Brev environment URL to a Codex session that invokes `nemoclaw-maintainer-validate-launchable`.
-- Require the manual validation to compare the deployed concrete image with `launchable-image.json`; do not assume that the mutable family still points to the candidate.
-- State that browser-control capability is required for Codex to click and verify the web interface.
-- State that a securely supplied inference credential is required to complete hosted and sandbox inference validation. Never ask the maintainer to paste the credential into chat.
-- Record the manual result as `complete pass`, `partially blocked`, `failed`, or `not run` when the maintainer provides it.
-
-This manual validation is advisory while the automated Launchable path is blocked by issue #8924.
-Its absence, partial result, or failure does not block the signing preflight, confirmation prompt, or release tag.
-Do not describe successful image publication as successful Launchable, runtime, or inference validation.
-Apply the temporary policy in [Pre-Tag E2E Evidence](../nemoclaw-maintainer-policies/references/release-train.md#temporary-staging-launchable-qualification-policy): NemoClaw maintainers own it while #8924 remains open, the successful exact image-publication job and artifact remain required release evidence under normal Actions retention, and the full automated lane returns only after a checksum-pinned Brev release passes deployment through verified cleanup on trusted `main`.
-
 Run the release script's signing preflight before asking for confirmation:
 
 ```bash
@@ -1334,6 +1299,8 @@ CONFIRM RELEASE vX.Y.Z <full-origin-main-sha>
 Do not proceed on a generic "yes" at this step.
 
 ### Step 3: Cut the Semver Tag
+
+Repeat the Step 1 documentation workflow and open-PR queries for the planned SHA.
 
 Run the cut script with the plan and the maintainer's phrase:
 
@@ -1428,7 +1395,6 @@ Load and follow `nemoclaw-maintainer-release-notes`, then use its output as the 
 Before continuing to Step 7, verify the draft has three lead paragraphs, categorized shipped changes, one what-changed-and-why-it-matters bullet with a visible `#NNNN` link for every included change, and thanks for external contributors only.
 
 Do not create or update a GitHub Discussion.
-Do not edit `docs/changelog/` in this post-tag step; the canonical entry must already be present in the tagged commit.
 
 ### Step 7: Wait for Maintainer-Published Announcement
 
@@ -1458,12 +1424,12 @@ If the Announcement is valid, return its URL with the release artifacts and mark
 ## Recovery
 
 - Plan generation fails: fix the named precondition, then regenerate the plan.
-- Planned changelog entry is missing or malformed: stop before plan generation and run the pre-tag `nemoclaw-contributor-update-docs` workflow. Use post-release recovery only when the tag already exists.
-- Full-mode E2E waits in the Launchable concurrency queue: keep the run pending until the earlier Launchable image-publication job finishes.
+- Documentation workflow state is incomplete: return to `nemoclaw-maintainer-evening`, then repeat
+  Step 1 after the documentation PR merges.
+- Full-mode E2E waits in the Launchable concurrency queue: keep the run pending until the earlier Launchable E2E job finishes.
 - Full-mode E2E ran for another SHA: reject the run and dispatch full mode for the plan candidate SHA.
 - No qualifying `Release qualification` exists: inspect the GitHub result and run pre-tag E2E for the planned SHA only when no qualifying run already exists. Use a job waiver only with explicit repository administrator authorization. Do not release until the release script accepts the canonical check.
-- Launchable image publication fails: inspect `launchable-image.json` and the producer run, correct the failure, and rerun the affected work. Do not infer image publication from manual Launchable validation.
-- Advisory Launchable validation is blocked or fails: record the exact partial result and continue the release flow. Do not convert the result into a release gate or an automated E2E pass.
+- Launchable E2E or cleanup fails: inspect the diagnostic artifacts, correct the failure, and rerun the affected E2E work. Do not infer Launchable success from another workflow result.
 - `origin/main` moved after plan generation: regenerate the plan and ask for the new confirmation phrase.
 - Remote semver tag already exists: stop; do not retag unless the maintainer explicitly starts protected-tag remediation.
 - Signing preflight fails: fix the reported Git signer or signing-key failure. Run the preflight again before requesting confirmation.
@@ -1581,7 +1547,7 @@ Read `state.json` to avoid repeated context.
 
 ---
 name: nemoclaw-maintainer-e2e
-description: Dispatches and verifies trusted GitHub Actions E2E for NemoClaw maintainers, including manual PR E2E for the latest PR commit and staging Launchable image publication. Use for requests such as run E2E for PR #123, run the E2E suite, publish the Launchable image, run the Launchable E2E, run the full E2E suite, deploy pre-release full E2E, run pre-tag full E2E, or run release-candidate E2E.
+description: Dispatches and verifies trusted GitHub Actions E2E for NemoClaw maintainers, including manual PR E2E for the latest PR commit. Use for requests such as run E2E for PR #123, run the E2E suite, run the Launchable E2E, run the full E2E suite, deploy pre-release full E2E, run pre-tag full E2E, or run release-candidate E2E.
 ---
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
@@ -1615,14 +1581,17 @@ The workflow does not rotate or revoke these API keys or messaging credentials. 
 Live targets can create external resources.
 After a failure, inspect the artifacts and remove resources that target cleanup did not remove.
 
-`Publish staging Brev Launchable image` reads this credential from repository Actions secrets:
+`Exact staging Brev Launchable` reads these credentials from repository Actions secrets:
 
+- `BREV_API_KEY` authenticates the trusted host-side Brev CLI for workspace operations in the organization identified by `BREV_ORG_ID`. Candidate code does not receive this API key.
 - `NEMOCLAW_IMAGE_DISPATCH_TOKEN` is exposed as `GH_TOKEN` only to the trusted host script. It grants Actions read/write access to `brevdev/nemoclaw-image`, which the script uses to dispatch the image workflow, inspect its run, and download its handoff artifact.
+- `NVIDIA_INFERENCE_API_KEY` is exported into the Brev guest for the full E2E process. Code in the baked candidate checkout can read and use it.
 
-This credential remains valid until it expires or an administrator revokes it in GitHub. Rotate or revoke it to remove later access.
-The job does not receive `BREV_API_KEY`, `BREV_ORG_ID`, or `NVIDIA_INFERENCE_API_KEY`.
-It does not install or authenticate the Brev CLI, create a workspace, or run inference.
-This image-publication credential boundary applies only to trusted Launchable or full manual dispatches against `main`. It does not apply to `main` pushes or manual PR runs.
+`brev login` writes `BREV_API_KEY` and `BREV_ORG_ID` to `$HOME/.brev/credentials.json` on the GitHub-hosted runner. Later trusted steps and processes in the same job can read that file. The workflow does not delete it explicitly; it remains on the ephemeral runner filesystem until runner teardown discards that filesystem.
+These credentials remain valid until they expire or an administrator revokes them in their issuing services. If cleanup fails, remove the recorded Brev workspace. Rotate or revoke each credential to remove later access.
+This Brev credential boundary applies only to trusted Launchable or full manual dispatches against `main`. It does not apply to `main` pushes or manual PR runs.
+
+The `NEMOCLAW_STAGING_LAUNCHABLE_ID` repository Actions variable selects the standing Launchable. Keep its value equal to the Launchable ID in the default URL owned by [`nemoclaw-maintainer-validate-launchable`](../nemoclaw-maintainer-validate-launchable/SKILL.md).
 
 For `managed-image-protected-runtime`, the workflow supplies the long-lived `NVIDIA_API_KEY` repository secret only to the trusted qualification step. Trusted host code uses it for NGC login and passes it as `NGC_API_KEY` and `NIM_NGC_API_KEY` to the temporary NIM container. Candidate managed sandboxes receive generated local route tokens instead of this key. The live fixture removes the temporary NIM container only if its exact ID, name, requested image, immutable image ID, cohort owner, and provider kind match the recorded authority. The test fails if evidence is missing or ambiguous, a name is reused, authority drifts, removal is indeterminate, or the exact ID or name remains. A cleanup refusal can leave the container and its API key in place until runner teardown. The final workflow step removes the job's isolated Docker credential directory and fails if that removal does not complete. The workflow does not revoke the NVIDIA API key. Revoke it, or rotate it and disable the old value, in the issuing NVIDIA service. Verify that the exposed key is no longer valid.
 
@@ -1648,7 +1617,7 @@ Require a review reason containing 10 to 500 printable characters.
 Choose exactly one mode:
 
 - For a PR revision run, leave `E2E_JOBS` empty. The run selects:
-  - every default-selected free-standing workflow E2E except `Publish staging Brev Launchable image`;
+  - every default-selected free-standing workflow E2E except `Exact staging Brev Launchable`;
   - every shared credential-free test; and
   - these controller-selected registry targets: `ubuntu-policy-custom-missing-presets-negative`, `ubuntu-repo-cloud-langchain-deepagents-code`, `ubuntu-repo-cloud-openclaw`, and `ubuntu-repo-docker-post-reboot-recovery`.
   The run skips `jetson-nvmap-gpu` unless `allow_jetson_dispatch` is `true`.
@@ -1739,8 +1708,7 @@ A changed head repository, head SHA, or base SHA invalidates the evidence and re
 | Request | Mode | `jobs` | `include_staging_brev_launchable` |
 |---|---|---|---|
 | “Run the E2E suite” | Ordinary | empty | `false` |
-| “Publish the Launchable image” | Launchable image | `staging-brev-launchable` | `false` |
-| “Run the Launchable E2E” | Clarify before dispatch | not applicable | not applicable |
+| “Run the Launchable E2E” | Launchable | `staging-brev-launchable` | `false` |
 | “Run the full E2E suite” | Full | empty | `true` |
 | “deploy pre-release full E2E” | Full | empty | `true` |
 | “run pre-tag full E2E” | Full | empty | `true` |
@@ -1748,16 +1716,12 @@ A changed head repository, head SHA, or base SHA invalidates the evidence and re
 | “run pre-tag E2E with an administrator job waiver” | Administrator-waived full | empty | `true` |
 
 A generic E2E request must not authorize the Brev Launchable path.
-For “Run the Launchable E2E,” explain that issue #8924 blocks automated deployment, runtime, and inference validation.
-Ask whether the maintainer wants image publication or advisory validation through `nemoclaw-maintainer-validate-launchable` against one deployed instance.
-Do not dispatch until the maintainer selects one of those operations.
 Do not infer full mode from words such as “all” or “complete.”
-Ask for clarification when the request uses the legacy Launchable E2E phrase or contains conflicting mode phrases.
+Ask for clarification only when the request contains conflicting mode phrases.
 
-Ordinary mode selects every default-selected workflow E2E except `Publish staging Brev Launchable image`.
-Launchable image mode runs only `Publish staging Brev Launchable image`.
-Full mode adds `Publish staging Brev Launchable image` to the default E2E selection in the same workflow run.
-The Launchable image job stops after exact image-publication evidence and does not deploy a workspace or run inference.
+Ordinary mode selects every default-selected workflow E2E except `Exact staging Brev Launchable`.
+Launchable mode runs only `Exact staging Brev Launchable`.
+Full mode adds `Exact staging Brev Launchable` to the default E2E selection in the same workflow run.
 Administrator-waived full mode runs the full suite but omits the approved execution jobs from release qualification.
 Every waived job still runs.
 Use this mode only when a repository administrator explicitly authorizes the job IDs and supplies the reason.
@@ -1803,7 +1767,7 @@ gh workflow run .github/workflows/e2e.yaml \
   -f "correlation_id=${CORRELATION_ID}"
 ```
 
-For Launchable image mode:
+For Launchable mode:
 
 ```bash
 gh workflow run .github/workflows/e2e.yaml \
@@ -1854,8 +1818,8 @@ gh workflow run .github/workflows/e2e.yaml \
 ```
 
 Do not set `jobs=staging-brev-launchable` for full mode.
-Empty `jobs` and `targets` select every default-selected workflow E2E except `Publish staging Brev Launchable image`.
-The `include_staging_brev_launchable` input adds the Launchable image-publication job to that same run.
+Empty `jobs` and `targets` select every default-selected workflow E2E except `Exact staging Brev Launchable`.
+The `include_staging_brev_launchable` input adds the Launchable E2E job to that same run.
 The trusted `main` workflow verifies that the dispatching and rerunning actors have
 repository `maintain` or `admin` permission before the Launchable path's source
 checkout. That role check is the authorization.
@@ -1881,7 +1845,7 @@ empty-selector manual run or enable explicit qualification selection. Set it
 only after a repository administrator confirms an online DGX Spark runner in
 the authoritative runner inventory.
 If GitHub pauses the qualification job for the `approve-dgx-spark-image-qualification` environment, an authorized environment reviewer must approve it before qualification starts.
-`Publish staging Brev Launchable image` does not require environment approval.
+`Exact staging Brev Launchable` does not require environment approval.
 
 Find the run by its unique title:
 
@@ -1915,7 +1879,7 @@ Wait for completion:
 gh run watch "$RUN_ID" --repo NVIDIA/NemoClaw
 ```
 
-Launchable image and full modes can wait in the non-cancelling Launchable concurrency queue.
+Launchable and full modes can wait in the non-cancelling Launchable concurrency queue.
 Queued, waiting, or accepted dispatch state is not success.
 Classify the completed workflow and `Release qualification` job with the checks below.
 
@@ -1937,21 +1901,20 @@ Require `run-$RUN_ID.json` to report:
 - `head_sha` equal to `CANDIDATE_SHA`;
 - `status` equal to `completed`.
 
-For ordinary, Launchable image, and unwaived full modes, require `conclusion` equal to `success`.
+For ordinary, Launchable, and unwaived full modes, require `conclusion` equal to `success`.
 For administrator-waived full mode, permit `conclusion` equal to `success` or `failure`.
 A `failure` conclusion is acceptable only when one completed, successful `Release qualification` job and a valid exact-run waiver artifact with at least one canonical waived job failure both exist.
 
-For Launchable image mode, also require `jobs-latest-$RUN_ID.json` to contain one completed, successful
-`Publish staging Brev Launchable image` job. Return the workflow and job URLs.
-Require its artifact to contain `launchable-image.json` for the selected candidate SHA and concrete staging image URI.
+For Launchable mode, also require `jobs-latest-$RUN_ID.json` to contain one completed, successful
+`Exact staging Brev Launchable` job. Return the workflow and job URLs.
 
 For a full run, with or without a job waiver, require `jobs-latest-$RUN_ID.json` to contain one completed, successful
 `Release qualification` job. Return its job URL with the workflow URL.
-In full mode, that job waits for every default-required result, including `Publish staging Brev Launchable image`.
-The Launchable image job verifies only the exact candidate image producer receipt and staging-family publication.
-Its `launchable-image.json` artifact records Launchable, runtime, and inference validation as not run.
+In full mode, that job waits for every default-required E2E result, including `Exact staging Brev Launchable`.
+The Launchable job directly verifies the candidate checkout, in-guest full E2E result, and workspace cleanup before it succeeds.
+Its `launchable-e2e.json`, `full-e2e.log`, and `cleanup.json` artifacts remain available for diagnosis.
 A skipped, cancelled, queued, or failed `Release qualification` job is not evidence.
-A Launchable image-only run is not full-mode or pre-tag release evidence.
+A Launchable-only run is not full-mode or pre-tag release evidence.
 
 For administrator-waived full mode, the job waits for every unwaived release-required result.
 A waived execution job may fail without failing `Release qualification`.
@@ -1989,7 +1952,7 @@ Stop on authentication, authorization, remote-access, or permission failures.
 
 ---
 name: nemoclaw-maintainer-evening
-description: Runs the end-of-day NemoClaw release handoff, including the pre-tag dated changelog PR, version progress, straggler planning, QA summary, tag cut, and announcement draft. Use at the end of the workday. Trigger keywords - evening, end of day, EOD, wrap up, ship it, cut tag, handoff, done for the day, pre-tag release notes.
+description: Runs the end-of-day NemoClaw release handoff, including the documentation PR, version progress, straggler planning, QA summary, tag cut, and announcement draft. Use at the end of the workday. Trigger keywords - evening, end of day, EOD, wrap up, ship it, cut tag, handoff, done for the day, pre-tag release notes.
 user_invocable: true
 ---
 
@@ -2031,11 +1994,7 @@ This lists commits since the last tag, identifies risky areas touched, and sugge
 
 ## Pre-Tag Docs
 
-Run `/nemoclaw-contributor-update-docs for <version>` before loading `cut-release-tag`.
-Confirm that the release-prep docs PR creates or updates one direct child of `docs/changelog/` for the planned date and contains the exact `## <version>` heading, a parser-safe MDX SPDX comment, the summary, and the detailed release bullets.
-An ordinary docs refresh or a post-tag Discussion draft does not satisfy this step.
-The release-prep docs PR, including the dated changelog entry, must be merged, or explicitly waived with a reason that names the missing changelog entry, before `release:plan` captures the release commit.
-If a docs PR or any other intended PR merges after `release:plan`, regenerate the plan before cutting the tag.
+Follow [Release-Prep Docs](../nemoclaw-maintainer-policies/references/release-train.md#release-prep-docs).
 
 ## Step 4: Cut the Tag and Publish Release Notes
 
@@ -2967,10 +2926,8 @@ Missing anchors can still be real even when the page route exists.
 
 ## Step 8: Run an Independent Docs Review
 
-Run the independent documentation-writer review required by the
-[Documentation Writer Review Receipt](../../../CONTRIBUTING.md#documentation-writer-review-receipt)
-procedure.
-In addition to its required inputs, give the reviewer the old-to-new ownership map.
+Run an independent documentation writer review of the completed documentation-only change. Give
+the reviewer the old-to-new ownership map.
 Ask it to check for content loss, duplicate ownership, variant drift, bad redirects, oversized
 paragraph blocks, generated paragraph joins, and style regressions without telling it the expected
 verdict.
@@ -3016,7 +2973,7 @@ Copy the reasoning and consistency rules, not the inference-specific page names.
 
 ---
 name: nemoclaw-maintainer-release-notes
-description: Drafts the post-tag NemoClaw Announcement from live GitHub tag and compare data. Produces three lead paragraphs, categorized shipped changes, why-it-matters bullets, and external-only contributor thanks. Use after cutting a release tag or when asked to draft an announcement or summarize v0.0.x. Native `docs/changelog/YYYY-MM-DD.mdx` entries belong to the pre-tag `nemoclaw-contributor-update-docs` workflow.
+description: Drafts the post-tag NemoClaw Announcement from live GitHub tag and compare data. Produces three lead paragraphs, categorized shipped changes, why-it-matters bullets, and external-only contributor thanks. Use after cutting a release tag or when asked to draft an announcement or summarize v0.0.x. The evening maintainer flow owns the native `docs/changelog/YYYY-MM-DD.mdx` entry before tagging.
 user_invocable: true
 ---
 
@@ -3198,7 +3155,7 @@ Also return the suggested discussion title: `NemoClaw <current-version> is out`.
 - Never include the candidate SHA, internal E2E failure classifications, rerun details, or waiver rationale in the public Announcement.
 - Never include testing reverts as release-value bullets unless explicitly asked for a raw changelog.
 - Never create duplicate release Discussions.
-- Never create or silently repair `docs/changelog/` from this post-tag Announcement workflow. If the canonical entry is missing, report the release-process defect and route recovery through `nemoclaw-contributor-update-docs`.
+- Never create or silently repair `docs/changelog/` from this post-tag Announcement workflow. If the canonical entry is missing, report the release-process defect and route recovery through `nemoclaw-maintainer-evening`.
 
 
 ========================================
@@ -3466,7 +3423,7 @@ Prioritize candidates using policy evidence, not labels that duplicate Project P
 
 ---
 name: nemoclaw-maintainer-validate-launchable
-description: Validate the user-facing staging Brev Launchable deployment, exact NemoClaw image and runtime identity, onboarding, CLI behavior, and inference. Use when a maintainer asks to test the staging Launchable in the Brev web interface, provides a deployed Brev environment URL, hands a Launchable instance to Codex, or needs advisory manual validation while the automated Launchable E2E is blocked.
+description: Validate the user-facing staging Brev Launchable deployment, exact NemoClaw image and runtime identity, onboarding, CLI behavior, and inference. Use when a maintainer asks to test the staging Launchable in the Brev web interface, provides a deployed Brev environment URL, hands a Launchable instance to Codex, or needs advisory web validation separate from automated Launchable E2E.
 ---
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
@@ -3491,14 +3448,15 @@ Use the current checkout and workflow artifacts as the source of truth for image
 - Redact credentials from captured output and delete temporary raw logs after producing redacted evidence.
 
 Use this staging Launchable unless the maintainer supplies another accepted target:
-[Deploy the NemoClaw staging Launchable](https://brev.nvidia.com/launchable/deploy/now?launchableID=env-3GdbIjswX4fs3VJ6cYRHr5zoQXo).
+[Deploy the NemoClaw staging Launchable](https://brev.nvidia.com/launchable/deploy/now?launchableID=env-3I2w334slP4GKSce9kKK0hGerjJ).
+Keep the Launchable ID in this default URL equal to the `NEMOCLAW_STAGING_LAUNCHABLE_ID` repository Actions variable used by the automated job.
 
 ## Define the Result Boundary
 
 Require all of these results for a complete pass:
 
 1. The Launchable web page and deployment flow work in an authenticated browser session.
-2. The deployed environment boots the exact concrete image recorded by the selected image-publication workflow artifact.
+2. The deployed environment boots the exact concrete image recorded by the selected automated Launchable workflow artifact.
 3. The baked provision receipt and source checkout without tracked or untracked changes identify the selected NemoClaw commit.
 4. The preinstalled user journey completes onboarding, CLI checks, sandbox inference, recovery, logs, and cleanup.
 5. A hosted inference request and the sandbox inference request succeed with a securely supplied credential.
@@ -3516,17 +3474,17 @@ When one or more checks ran without failure but another required check did not r
 ## Resolve the Candidate and Image Evidence
 
 Record the expected NemoClaw commit SHA before deployment.
-Use the latest successful `Publish staging Brev Launchable image` job for that exact SHA.
-Record the selected publication workflow and job URLs and the producer run ID selected in that job's log.
-Download its private artifact and require `launchable-image.json` to report:
+Use the latest successful `Exact staging Brev Launchable` job for that exact SHA.
+Record the selected workflow and job URLs and the producer run ID selected in that job's log.
+Download its private artifact and require `launchable-e2e.json` to report:
 
-- `schemaVersion` equal to `1`;
-- `kind` equal to `nemoclaw-staging-launchable-image-v1`;
 - `candidateSha` equal to the selected commit SHA;
-- `producer.repository` equal to `brevdev/nemoclaw-image`, `producer.status` equal to `success`, and `producer.runId` equal to the producer run ID selected by the publication job;
-- `image.family` equal to `nemoclaw-brev-staging-cpu`;
-- a concrete `image.uri` and a lowercase 40-character `image.imageRepositorySha`; and
-- `validation.launchable`, `validation.runtime`, and `validation.inference` equal to `not-run`.
+- `producer.status` equal to `success` and `producer.runId` equal to the producer run ID selected by the automated job;
+- a concrete `boot.bootImage` URI;
+- `boot.schemaVersion` equal to `1`, `boot.sourceRepository` equal to `NVIDIA/NemoClaw`, and `boot.sourcePath` equal to `/opt/nemoclaw-image/NemoClaw`;
+- `boot.repoSha` and `boot.provisionSha` equal to the selected commit SHA;
+- a lowercase 40-character `boot.imageRepositorySha`, `boot.repoClean` equal to `true`, and `boot.runtimeOverrides` equal to `false`; and
+- `fullE2e` equal to `passed`.
 
 Stop when the artifact is absent, malformed, or belongs to another commit.
 Classify that evidence as `failed` when GitHub is available and the selected job or artifact can be inspected.
@@ -3568,7 +3526,7 @@ Perform these checks without changing the instance:
 1. Use the supplied environment ID as the authoritative identity. If a name is also supplied, require it to match that environment. Use an instance-name lookup only when no environment ID is available, and require exactly one match.
 2. Require the environment to report its successful running state.
 3. Establish the user-facing SSH or terminal access path shown by Brev.
-4. Read the GCE instance image metadata and require exact equality with the concrete image URI from `launchable-image.json`.
+4. Read the GCE instance image metadata and require exact equality with `boot.bootImage` from `launchable-e2e.json`.
 5. Read `/etc/nemoclaw/provision.json` with the privileges provided by the image.
 6. Require the provision receipt, source repository, source path, image-repository commit SHA, and NemoClaw commit SHA to match the selected artifact and candidate.
 7. Require the baked source checkout to have no tracked or untracked changes and no runtime override receipt.
@@ -3589,7 +3547,7 @@ Run the validation from a short-lived local process that receives the key throug
 The local validation process and its SSH child can read the key; the remote shell exports it to the baked full E2E process, so candidate code can read and use it.
 Before exposing the key, record the authorized candidate repository and commit SHA, require the repository to be `NVIDIA/NemoClaw`, and reject a candidate from a fork pull request.
 Explain that the selected candidate code can read and use the key, then obtain explicit maintainer approval immediately before starting the credential-bearing process.
-If the issuing service cannot rotate or revoke the inference API key after the run, require a maintainer-approved waiver tied to the exact candidate commit SHA and selected image-publication run ID before starting validation.
+If the issuing service cannot rotate or revoke the inference API key after the run, require a maintainer-approved waiver tied to the exact candidate commit SHA and selected automated Launchable run ID before starting validation.
 Do not persist the key in shell startup files, temporary files, SSH configuration, or the Brev environment after the test process exits.
 If it is unavailable:
 
@@ -3603,7 +3561,7 @@ Require the baked full E2E success sentinel and retain only redacted logs.
 The test must remove its `e2e-` sandbox and verify the expected cleanup result even after a test failure.
 After the local and remote test processes exit, unset any shell variable created for the run and verify that no temporary credential file remains.
 Unless the approved waiver applies, rotate or revoke the inference API key in the issuing NVIDIA service after the run and record non-sensitive confirmation.
-When the waiver applies, record its approver, exact candidate commit SHA, selected image-publication run ID, and the accepted period of later API-key access without recording the key.
+When the waiver applies, record its approver, exact candidate commit SHA, selected automated Launchable run ID, and the accepted period of later API-key access without recording the key.
 
 ## Finish the Instance Handoff
 
@@ -3623,7 +3581,7 @@ Return this structure:
 
 - Evidence mode: advisory manual validation; not automated E2E evidence
 - Candidate repository and commit SHA:
-- Image-publication workflow and job URL:
+- Automated Launchable workflow and job URL:
 - Expected concrete image URI:
 - Launchable URL:
 - Environment URL, ID, and name:
@@ -3768,7 +3726,7 @@ Each stage has one owner: `nemoclaw-contributor-plan-issue` refines an issue int
 `nemoclaw-contributor-create-pr` publishes the branch and follows CI and automated review.
 Load `nemoclaw-contributor-update-dependencies` for a dependency upgrade and
 `nemoclaw-contributor-update-docs` for documentation catch-up.
-The dependency workflow runs inside the implementation stage. The documentation workflow also runs during pre-tag release preparation.
+The dependency workflow runs inside the implementation stage.
 Component-specific guidance lives with the package it describes, not in a skill.
 
 ## Skill Catalog
@@ -3790,8 +3748,8 @@ Component-specific guidance lives with the package it describes, not in a skill.
 | `nemoclaw-maintainer-policies` | Answer maintainer workflow questions from the read-only policy references. |
 | `nemoclaw-maintainer-cross-issue-sweep` | Find open issues that a PR can also fix or conflict with. Report file and line evidence. |
 | `nemoclaw-maintainer-day` | Run one daytime maintainer pass for the release version. Select a merge, salvage, security, test, conflict, or sequencing workflow. Designed for `/loop`. |
-| `nemoclaw-maintainer-evening` | End-of-day handoff: require the pre-tag dated changelog PR, check version progress, identify stragglers, generate a QA handoff summary, cut the release tag, carry stragglers forward, retire the released label, and hand off the Announcement. |
-| `nemoclaw-maintainer-cut-release-tag` | Verify the dated changelog entry, cut an annotated semver tag on a maintainer-confirmed `origin/main` commit, wait for workflow-managed `latest`, carry remaining open items forward, and delete the released label; `lkg` stays manual. |
+| `nemoclaw-maintainer-evening` | End-of-day handoff: complete and merge the documentation PR with its release entry, check version progress, identify stragglers, generate a QA handoff summary, cut the release tag, carry stragglers forward, retire the released label, and hand off the Announcement. |
+| `nemoclaw-maintainer-cut-release-tag` | Verify post-merge documentation workflow state, cut an annotated semver tag on a maintainer-confirmed `origin/main` commit, wait for workflow-managed `latest`, carry remaining open items forward, and delete the released label; `lkg` stays manual. |
 | `nemoclaw-maintainer-e2e` | Describe default E2E triggered by pushes to `main`, dispatch exact-revision manual PR E2E, and verify applicable workflow evidence. |
 | `nemoclaw-maintainer-fix-e2e-failures` | Continuously fix automatic `main` E2E failures by root cause, coordinate peer approvals, merge eligible PRs, and monitor new results. |
 | `nemoclaw-maintainer-validate-launchable` | Run advisory validation of the staging Brev Launchable deployment, exact image and runtime identity, preinstalled user journey, inference, and cleanup. |
@@ -3812,7 +3770,7 @@ Component-specific guidance lives with the package it describes, not in a skill.
 | `nemoclaw-contributor-implement-issue` | Implement the smallest accepted issue capability slice with focused validation and no pull request publication. |
 | `nemoclaw-contributor-create-pr` | Create a PR with the NemoClaw template, required checks, DCO declaration, and verified commits. Then, monitor CI and automated reviews. |
 | `nemoclaw-contributor-update-dependencies` | Audit and implement a dependency upgrade from current upstream and downstream contracts, including Hermes CalVer and base-image upgrades. |
-| `nemoclaw-contributor-update-docs` | Find user-visible changes and update their owning documentation under current repository policy. |
+| `nemoclaw-contributor-update-docs` | Find user-visible changes merged to `main` and update their owning documentation under current repository policy. |
 
 ## Getting Started
 
