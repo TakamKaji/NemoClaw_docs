@@ -3955,9 +3955,11 @@ Four tiers are available:
 | Restricted | No tier defaults. Web search or other integrations selected earlier can still add their required presets; deselect them during policy review for baseline-only access. |
 | Balanced (default) | Full dev tooling and a selected, supported web search provider. Package installs, model downloads, and inference. No messaging platform access by default. |
 | Open | Broad access across third-party services including supported messaging and productivity presets. Agent-specific unsupported presets are filtered out. |
-| Personal | Lets every sandbox binary open TCP connections to public and private address ranges on destination ports 80 and 443. Unspecified, loopback, and link-local ranges remain blocked. Also selects every maintained preset supported by the active agent. Intended only for trusted personal-use workloads. |
+| Personal | Requires one broad web authority that lets every sandbox binary open TCP connections to public and private address ranges on destination ports 80 and 443. It replaces overlapping exact web endpoints while preserving non-web policy. Unspecified, loopback, and link-local ranges remain blocked. Intended only for trusted personal-use workloads. |
 
 After selecting a tier, the wizard shows a combined preset and access-mode screen where you can include or exclude individual presets and toggle each between read and read-write access.
+When Personal is selected or carried forward, `personal-open-internet` is mandatory for every agent and every onboarding entry point, including Portable.
+The picker and policy modes control only additional presets; they cannot deselect, skip, or replace Personal's required web authority.
 For details on tiers and the presets each includes, refer to [Network Policies](network-policies#policy-tiers).
 When you finish the policy step, NemoClaw records the finalized built-in preset selection for that sandbox.
 When onboarding creates or recreates a sandbox with presets, NemoClaw prints the exact finalized create-time policy scope before registering providers or creating the sandbox.
@@ -3976,16 +3978,18 @@ Interactive onboarding ignores an invalid environment value and shows the normal
 `NEMOCLAW_POLICY_MODE` controls how non-interactive onboarding reconciles the tier-derived suggestions against the sandbox's currently-applied presets.
 The default is `suggested`, which is *additive*.
 Onboarding applies tier defaults and preserves any presets you previously added with [`$$nemoclaw <name> policy add`](#$$nemoclaw-name-policy-add) across re-onboards.
-Use `custom` with `NEMOCLAW_POLICY_PRESETS` when you want the explicit list to be authoritative.
-Onboarding removes any preset that is not in the list.
-`skip` leaves the applied set untouched and does not apply tier defaults.
+Use `custom` with `NEMOCLAW_POLICY_PRESETS` when you want the explicit list to be authoritative for optional presets.
+Onboarding removes any optional preset that is not in the list.
+`skip` does not add optional tier defaults and retains eligible optional presets already applied.
+For Personal, all modes still apply or retain the mandatory `personal-open-internet` preset.
 NemoClaw filters tier suggestions and resume selections by active agent support and the selected web search provider.
 During automatic suggestion and resume reconciliation, it removes stale web-search selections when they conflict with the active agent or selected provider.
-The Personal tier is the exception: it preserves every applicable maintained web-search preset even when onboarding did not configure that provider.
+The Personal tier instead uses `personal-open-internet` for web transport and does not select Brave Search or Tavily Search merely to enable ordinary web fetches.
+This makes keyless fetches available to any sandbox binary, but it does not add a provider-free `web_search` implementation.
 <AgentOnly variant="hermes">
 For Hermes, this includes replacing stale `nous-web` when Tavily is selected.
 </AgentOnly>
-An explicit `custom` preset list or interactive manual selection remains operator-controlled.
+An explicit `custom` preset list or interactive manual selection remains operator-controlled for additional presets.
 
 <AgentOnly variant="hermes">
 
@@ -3997,8 +4001,8 @@ When Tavily Search is selected, it replaces `nous-web` as the Hermes web search 
 | Value | Behaviour |
 |-------|-----------|
 | `suggested` (default) | Apply tier defaults and preserve any extra presets already applied. Aliases: `default`, `auto`. |
-| `custom` | Apply exactly `NEMOCLAW_POLICY_PRESETS`. Previously-applied presets not in the list are removed. Alias: `list`. |
-| `skip` | Skip the policy step entirely. Aliases: `none`, `no`. |
+| `custom` | Apply exactly the optional presets in `NEMOCLAW_POLICY_PRESETS`. Previously-applied optional presets not in the list are removed. Personal still requires `personal-open-internet`. Alias: `list`. |
+| `skip` | Do not add optional tier defaults; retain eligible optional presets already applied. Personal still applies or retains `personal-open-internet`. Aliases: `none`, `no`. |
 
 <AgentOnly variant="openclaw">
 
@@ -4342,12 +4346,8 @@ Use `--sandbox-gpu` or `--no-sandbox-gpu` to control only direct NVIDIA GPU acce
 Use `--sandbox-gpu --sandbox-gpu-device <device>` to pass a specific OpenShell GPU device selector to `openshell sandbox create`; device selectors require explicit sandbox GPU enablement.
 On ordinary native Linux Docker-driver hosts, NemoClaw uses native OpenShell GPU injection by default and never broadens confinement automatically.
 
-<AgentOnly variant="openclaw">
-
-Portable OpenClaw onboarding also requires native OpenShell GPU injection.
+Portable onboarding requires native OpenShell GPU injection for every agent.
 It does not use `NEMOCLAW_DOCKER_GPU_PATCH` compatibility routing, so do not set `fallback`, `1`, or another legacy nonzero value for that profile.
-
-</AgentOnly>
 
 Set `NEMOCLAW_DOCKER_GPU_PATCH=fallback` to explicitly authorize one native attempt followed by one compatibility retry.
 NemoClaw permits the retry only after it confirms either a trusted host-side GPU routing failure or an explicit driver proof plus exact-container host configuration showing that no GPU was attached.
@@ -5227,6 +5227,7 @@ The existing inference probes run in a fresh sandbox command, so they do not att
 NemoClaw does not probe the serving process yet.
 For terminal runtimes, `servingProcessHealth` is `null` and the text output omits this line because there is no long-running gateway process.
 The command exits non-zero when the sandbox is missing locally, the gateway state is not `present`, the gateway reports a schema/protobuf mismatch (mirrored as `rpcIssue`), `failureLayer` is non-null, the authoritative in-sandbox inference route fails or cannot be probed, or a terminal runtime sandbox reports a recorded OOM kill.
+When the canonical text command targets an unregistered name, it reports that the sandbox is not registered and tells you to run `$$nemoclaw list`.
 The alias form `$$nemoclaw <name> status --json` requires the sandbox to be registered locally; the canonical form `$$nemoclaw sandbox status <name> --json` is the one to use from automation that may run against an unknown sandbox name, since it still emits a JSON document with `found: false` instead of a text error.
 
 For a sandbox that owns managed llama.cpp, text output also reports the recipe ID, model digest, image reference, `https://inference.local/v1` endpoint, and lifecycle state.
@@ -5427,6 +5428,8 @@ Direct provider and upstream probes use the same authenticated model-invocation 
 For gateway runtimes, `doctor` also reports an informational `Serving process: not checked` result because its fresh sandbox probes do not attest the long-running gateway process.
 This result does not fail the readiness check.
 Terminal runtimes omit it because they have no long-running gateway process.
+The `Inference` `Route` check warns when either the provider or model is unknown.
+After the gateway is healthy, run `$$nemoclaw <name> status` to refresh the route information.
 
 For each recorded baseline exclusion, `doctor` compares the approval with the active agent baseline and verifies that the excluded key is absent from the live OpenShell policy.
 An unreadable live policy produces a warning because NemoClaw cannot verify enforcement.
@@ -6921,6 +6924,9 @@ If OpenShell does not confirm absence within the bounded wait, including when ga
 Restore OpenShell connectivity and confirm the sandbox's live state before you retry, and keep the printed backup path for recovery.
 Before deletion, rebuild records a replacement journal that binds the operation to the recorded gateway, source identity, and target settings.
 Rerunning the same rebuild continues from the recorded boundary or accepts the proven replacement instead of deleting it again.
+A mount-free journal written before host-mount identity binding remains resumable.
+An older journal that used host mounts fails closed because it cannot prove the original host source identity, even when the visible mount settings are unchanged.
+Preserve the sandbox, onboarding session, printed backup, exact error, and `Journaled replacement` diagnostic, then follow the legacy journal guidance in [Continue an Interrupted Replacement](../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes#continue-an-interrupted-replacement).
 Use `--verbose` to print the replacement identifier, gateway, and journal phase.
 Refer to [Continue an Interrupted Replacement](../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes#continue-an-interrupted-replacement) for the recovery procedure and fail-closed conditions.
 When rebuild starts with shields up, NemoClaw opens a 30-minute shields-down window for backup and recreation.
@@ -8272,7 +8278,7 @@ Set them before running `$$nemoclaw onboard`.
 | `NEMOCLAW_SANDBOX_GPU_DEVICE` | OpenShell GPU device selector | Selects the GPU device passed with `openshell sandbox create --gpu-device`. Requires explicit sandbox GPU enablement with `NEMOCLAW_SANDBOX_GPU=1` (or `--sandbox-gpu` for CLI-driven onboarding); otherwise onboarding rejects the selector instead of treating it as an implicit opt-in. |
 | `NEMOCLAW_SANDBOX_BASE_IMAGE_REFRESH` | `1`, `true`, `yes`, or `on` to enable | Bypasses recorded sandbox base-image resolution metadata during onboarding, recreation, and rebuild. NemoClaw reruns candidate resolution but can still use a compatible image from Docker's local image store. Versioned release candidates that exist locally but fail validation are refreshed from the registry once during normal resolution. This setting does not discard onboarding session state. |
 | `NEMOCLAW_SANDBOX_BASE_LOCAL_BUILD` | unset or `auto` (default); `1`, `true`, `yes`, or `on` to enable; `0`, `false`, `no`, or `off` to disable | Controls whether base-image resolution may build a compatible image locally. The default allows builds during normal CLI runs and disables them when `NODE_ENV=test` or `VITEST=true`. When source inputs or a missing/incompatible release-version base require a fresh build, disabling local builds makes resolution fail instead of using an unproven image. |
-| `NEMOCLAW_DOCKER_GPU_PATCH` | unset, `auto`, `fallback`, `1`, or `0`; other legacy nonzero values remain accepted through `v0.0.x` and will be removed in `v0.1.0` | Selects Linux Docker-driver GPU routing. Unset, `auto`, or `0` uses native OpenShell GPU injection on ordinary native Linux. `fallback` explicitly opts into one native attempt followed by one bounded compatibility retry when trusted host evidence identifies a GPU-routing failure. `1` and legacy nonzero values select the compatibility patch from the outset. Docker Desktop WSL and Jetson/Tegra use the compatibility path by default; Docker Desktop WSL ignores `0`, while Jetson/Tegra accepts `0` only as a troubleshooting override that bypasses device-group propagation. Portable OpenClaw onboarding requires native OpenShell GPU injection and does not use this setting. |
+| `NEMOCLAW_DOCKER_GPU_PATCH` | unset, `auto`, `fallback`, `1`, or `0`; other legacy nonzero values remain accepted through `v0.0.x` and will be removed in `v0.1.0` | Selects Linux Docker-driver GPU routing. Unset, `auto`, or `0` uses native OpenShell GPU injection on ordinary native Linux. `fallback` explicitly opts into one native attempt followed by one bounded compatibility retry when trusted host evidence identifies a GPU-routing failure. `1` and legacy nonzero values select the compatibility patch from the outset. Docker Desktop WSL and Jetson/Tegra use the compatibility path by default; Docker Desktop WSL ignores `0`, while Jetson/Tegra accepts `0` only as a troubleshooting override that bypasses device-group propagation. Portable onboarding requires native OpenShell GPU injection for every agent and does not use this setting. |
 | `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PATCH` | `1` to enable; disabled by default | This setting explicitly opts into the Linux gateway compatibility container for an older host ABI or a diagnostic run; use it only on a trusted local host because it uses host networking and mounts the Docker socket read-only even though the socket still exposes the privileged Docker API; prefer OpenShell 0.0.101's directly supported glibc 2.39+ path; see [Gateway Compatibility Container](/user-guide/openclaw/security/security-controls/gateway-authentication-controls#gateway-compatibility-container) for the container boundary and removal conditions. |
 | `NEMOCLAW_OPENSHELL_GATEWAY_BIN` | path | Advanced override for the `openshell-gateway` binary used by Linux Docker-driver startup. For the default port, the installer accepts the binary under an absolute `XDG_BIN_HOME` when set, otherwise `~/.local/bin/openshell-gateway`; it also accepts `/usr/local/bin/openshell-gateway` or `/usr/bin/openshell-gateway`. Another path fails service staging. The macOS Homebrew service uses the formula's binary. Defaults to the binary next to `openshell`, then common install paths. |
 | `NEMOCLAW_OPENSHELL_SANDBOX_BIN` | path | Advanced override for the `openshell-sandbox` binary used by Linux Docker-driver startup. The macOS Homebrew service uses the formula's driver layout. Defaults to the binary next to `openshell`, then common install paths. |
@@ -9397,8 +9403,11 @@ This is the supported registry-backed way to replay a live exact-key removal dur
 |------|------------------|-------------|
 | Restricted | No tier defaults | Starts from the baseline policy. Web search or messaging integrations selected earlier can still suggest their required presets; deselect them during policy review for baseline-only access. Restricted suppresses other agent-required additions; reapply them later with `policy add` only after reviewing the additional egress. |
 | Balanced (default) | `npm`, `pypi`, `huggingface`, `brew`, selected `brave` or `tavily` web search preset | Full dev tooling and web search when you select a provider the active agent supports. No messaging platform access. Apply the `weather` preset explicitly if your agent needs read-only weather lookups. |
-| Open | `npm`, `pypi`, `huggingface`, `brew`, selected `brave` or `tavily` web search preset, `weather`, `public-reference`, `slack`, `discord`, `telegram`, `wechat` (experimental), `whatsapp` (experimental), `jira`, `outlook` | Broad access across third-party services including messaging, productivity, weather, and public-reference APIs. |
-| Personal | `personal-open-internet` and every maintained preset supported by the active agent | Lets every sandbox binary open TCP connections to public and private address ranges on destination ports `80` and `443`. Unspecified, loopback, and link-local ranges remain blocked. Also selects every maintained preset applicable to the active agent. |
+| Open | `npm`, `pypi`, `huggingface`, `brew`, selected `brave` or `tavily` web search preset, `weather`, `public-reference`, `slack`, `discord`, `telegram`, `wechat` (experimental), `whatsapp` (experimental), `teams` (experimental), `jira`, `outlook` | Broad access across third-party services including messaging, productivity, weather, and public-reference APIs. |
+| Personal | `personal-open-internet` (mandatory) | Lets every sandbox binary open TCP connections to public and private address ranges on destination ports `80` and `443`. The broad route replaces overlapping web endpoints while preserving non-web policy. Unspecified, loopback, and link-local ranges remain blocked. |
+
+When Personal is selected or carried forward, the `personal-open-internet` preset is mandatory for every agent and every onboarding entry point.
+Interactive choices, `NEMOCLAW_POLICY_MODE=custom`, and `NEMOCLAW_POLICY_MODE=skip` control only additional presets; they cannot deselect, skip, or replace Personal's required web authority.
 
 <Warning title="Personal Tier Network Access">
 The Personal tier applies the `personal-open-internet` policy preset with a hostless L4 endpoint on destination ports `80` and `443`.
@@ -9414,12 +9423,13 @@ The sandbox's filesystem, process, gateway authentication, and managed credentia
 Use this tier only for trusted personal workloads with trusted prompts and data.
 </Warning>
 
-For a fresh onboarding run, the experimental portable profile selects `weather`, `public-reference`, and `github` when `NEMOCLAW_POLICY_PRESETS` is unset, blank, or contains only whitespace.
-This default does not select `personal-open-internet`.
-If `NEMOCLAW_POLICY_PRESETS` contains a non-blank list, portable onboarding treats that explicit list as authoritative instead.
-`$$nemoclaw onboard --resume` does not inject the fresh-onboarding default.
+Every fresh onboarding run through the experimental Portable profile selects the Personal tier.
+When `NEMOCLAW_POLICY_PRESETS` is unset, blank, or contains only whitespace, Portable uses `suggested` mode with no optional preset override.
+If `NEMOCLAW_POLICY_PRESETS` contains a non-blank list, Portable treats that list as authoritative for additional presets while still applying mandatory `personal-open-internet`.
+`$$nemoclaw onboard --resume` does not override a recorded non-Personal tier; a resumed Personal tier retains or repairs its mandatory preset.
 
-After selecting a tier, a combined preset and access-mode screen lets you include or exclude individual presets and toggle each between read (GET only) and read-write (GET + POST/PUT/PATCH) access.
+After selecting a tier, a combined preset and access-mode screen lets you include or exclude optional presets and toggle each between read (GET only) and read-write (GET + POST/PUT/PATCH) access.
+On Personal, NemoClaw restores `personal-open-internet` if it is deselected in the screen.
 Tier-default presets are pre-selected; additional presets can be added from the built-in preset list available to the sandbox's active agent.
 NemoClaw filters tier defaults and built-in preset choices by the active agent's supported integrations.
 The `personal-open-internet` preset uses L4 passthrough, so its read-write label does not add HTTP method or path inspection.
@@ -9441,16 +9451,17 @@ These modes skip policy preset additions, but they do not preserve a disabled ch
 `$$nemoclaw onboard --resume` reconciles the policy selection instead of skipping it when the effective messaging selection omits a channel whose preset remains applied.
 NemoClaw keeps the preset for an in-sandbox QR-paired channel such as WhatsApp because you pair that channel inside the sandbox rather than through host environment values.
 </AgentOnly>
-The Personal tier instead keeps every applicable maintained web-search preset selected by default.
-Explicit custom preset lists and manual interactive selections remain operator-controlled.
+The Personal tier does not select a Brave Search or Tavily Search preset by default.
+Its broad route supports ordinary keyless web fetches, while `web_search` still requires a separately configured provider.
+Explicit custom preset lists and manual interactive selections remain operator-controlled for additional presets.
 <AgentOnly variant="hermes">
 Hermes managed-tool gateway selections can add Hermes-specific presets, such as Nous-hosted web, image, audio, browser, or code tools, without applying unsupported OpenClaw-only presets.
 When Hermes uses Tavily, NemoClaw removes `nous-web` from the effective managed-tool selection while preserving other selected Nous tool presets.
 </AgentOnly>
 <AgentOnly variant="openclaw">
-OpenClaw onboarding also adds the `openclaw-pricing` preset on top of tier defaults so session-cost records can populate from LiteLLM and OpenRouter without manual configuration.
-On the Balanced and Open tiers, enabling OpenClaw OTEL diagnostics with a local endpoint adds the `openclaw-diagnostics-otel-local` preset.
-The Personal tier selects that preset by default, while Restricted suppresses it during reconciliation.
+OpenClaw onboarding also adds the `openclaw-pricing` preset on top of Balanced and Open tier defaults so session-cost records can populate from LiteLLM and OpenRouter without manual configuration.
+On the Balanced, Open, and Personal tiers, enabling OpenClaw OTEL diagnostics with a local endpoint adds the `openclaw-diagnostics-otel-local` preset.
+Personal suppresses the overlapping pricing route because `personal-open-internet` already owns ports `80` and `443`, while Restricted suppresses it to retain the restricted posture.
 </AgentOnly>
 <AgentOnly variant="deepagents">
 When LangChain Deep Agents Code is onboarded with `--observability`, NemoClaw adds the `observability-otlp-local` preset on Balanced, Open, and Personal tiers.
@@ -9461,7 +9472,7 @@ The applied set therefore reflects the chosen tier *plus* any agent-required pre
 The `policy list` provenance tags are inferred from the current tier YAML and the active agent at display time and are not persisted per preset.
 A preset whose name matches an entry in the sandbox's current tier definition is labelled `[from <tier> tier]` even when an operator added it manually with `policy add` after onboarding; agent-specific preset names are only labelled `[from <agent> agent]` when the active agent matches.
 Claude Code direct egress is not included in the Restricted, Balanced, or Open tiers.
-The Personal tier selects the `claude-code` preset by default; on other tiers, apply it explicitly if you install and run the Claude Code CLI inside the sandbox with its own credentials.
+Personal's broad route permits its port `443` transport but does not install or configure Claude Code; on other tiers, apply the `claude-code` preset explicitly if you install and run the CLI inside the sandbox with its own credentials.
 Normal NemoClaw Anthropic inference still routes through the OpenShell gateway.
 
 Tier definitions are stored in `nemoclaw-blueprint/policies/tiers.yaml`.
@@ -10758,6 +10769,26 @@ $$nemoclaw onboard
 NemoClaw rejects TCP and SSH endpoints, relative socket paths, values that contain single quotes, and values that contain line breaks.
 Do not wrap the socket path in single quotes inside the variable value.
 
+### Onboarding Warns About the Docker Desktop Credential Store in a Headless Session
+
+The `docker_desktop_credential_store_headless` advisory means that the Docker client config sets `credsStore` to `desktop` (macOS) or `desktop.exe` (WSL2) and the session looks headless, for example an SSH session without a GUI.
+The Docker Desktop credential helper needs an interactive GUI session.
+Without one, the helper can fail and block every image pull, even for public images.
+A common failure message from Docker in this state is `A specified logon session does not exist`.
+
+Onboarding preflight prints this warning before the first image pull and then continues, on both fresh and resumed onboarding.
+NemoClaw reads the config from `$DOCKER_CONFIG/config.json` when `DOCKER_CONFIG` is set, and from `~/.docker/config.json` otherwise.
+On WSL, NemoClaw probes the credential helper with a read-only `list` call instead of relying on session markers, because WSLg can set `DISPLAY` in every WSL shell.
+
+To work around a failed pull, resume onboarding with an isolated Docker config so every remaining image pull bypasses the unavailable helper:
+
+```bash
+DOCKER_CONFIG=$(mktemp -d) $$nemoclaw onboard --resume
+```
+
+Alternatively, temporarily remove the `credsStore` entry from the Docker client config named above, then rerun `$$nemoclaw onboard`.
+Restore the entry afterward if you use registries that need stored credentials in GUI sessions.
+
 ### macOS first-run failures
 
 The two most common first-run failures on macOS are missing developer tools and Docker connection errors.
@@ -11186,16 +11217,23 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
 
 The next installer run must continue past the OpenShell installation step without reporting a version mismatch.
 
-### Docker Driver Gateway Reports a Missing Migration
+### Docker Driver Gateway Reports an Incompatible Migration
 
-Onboarding can stop when the Docker driver gateway log contains both parts of this error:
+Onboarding can stop when the Docker driver gateway log contains both parts of either error:
 
 ```text
 migration N was previously applied
 is missing in the resolved migrations
 ```
 
-NemoClaw identifies `<selected-state-dir>/openshell.db` as incompatible with the installed OpenShell migration set.
+```text
+migration N was previously applied
+has been modified
+```
+
+The first error means the installed OpenShell migration set does not contain migration N.
+The second error means that migration set defines migration N with different contents.
+NemoClaw identifies `<selected-state-dir>/openshell.db` as incompatible with the installed OpenShell migration set for both errors.
 This failure can happen after an OpenShell downgrade.
 Installing a NemoClaw release that is older than the installed one performs that downgrade, because each release pins one OpenShell version and the installer reinstalls OpenShell at the pin.
 You reach that state in one of three ways:
@@ -12214,6 +12252,49 @@ Create a snapshot before rebuilding if you want an additional safety net:
 $$nemoclaw <name> snapshot create
 $$nemoclaw <name> rebuild
 ```
+
+### Snapshot Sanitization Requires a Verified Python Interpreter
+
+The CLI operations listed below stop when NemoClaw cannot resolve a verified interpreter.
+The error begins with this text:
+
+```text
+python3 is required for snapshot sanitization; install python3 and rerun
+```
+
+NemoClaw removes credentials from copied state with an isolated `python3` helper.
+The operation fails closed when that helper cannot run.
+These operations can report the error:
+
+- `$$nemoclaw <name> snapshot create`
+- `$$nemoclaw <name> rebuild`, including rebuilds started by `$$nemoclaw upgrade-sandboxes`
+- `$$nemoclaw backup-all`, including the installer's pre-upgrade backup and an eligible stopped Docker-driver sandbox
+
+A host that already has `python3` can still report this message.
+NemoClaw does not search `PATH` for this credential-bearing helper.
+NemoClaw accepts `python3` only at these locations:
+
+- `/usr/bin/python3`
+- `/usr/local/bin/python3`
+- `/opt/homebrew/bin/python3`
+- `/opt/local/bin/python3`
+- A `python3` executable beside the canonical Node.js executable
+
+NemoClaw rejects a candidate that fails its ownership, permission, or executable checks.
+For more information about the interpreter requirement, refer to [Prerequisites](../get-started/prerequisites).
+
+If NemoClaw reports that it removed the incomplete snapshot, install or repair `python3` at an accepted location.
+Then rerun the complete command.
+
+If cleanup fails, treat the exact reported directory as retained until you confirm that it is absent.
+
+<Warning title="Retained Incomplete Snapshot">
+A retained incomplete snapshot can contain unsanitized credentials.
+The directory must remain owner-only.
+You must not restore, copy, or share the directory.
+You must remove the directory only by the exact path that NemoClaw reports.
+You must confirm that the exact path no longer exists before you rerun the complete command.
+</Warning>
 
 ### Sandbox shows as stopped
 
@@ -13659,12 +13740,9 @@ If GPU passthrough is not required on this host, rerun onboarding with `--no-gpu
 The route depends on the host environment and the operator control.
 Identify the matching path before applying the recovery guidance.
 
-<AgentOnly variant="openclaw">
-
-Do not apply this compatibility guidance to portable OpenClaw onboarding.
-That path requires native OpenShell GPU injection and does not use `NEMOCLAW_DOCKER_GPU_PATCH`, so do not set `fallback`, `1`, or another legacy nonzero value for a portable OpenClaw run.
-
-</AgentOnly>
+Do not apply this compatibility guidance to portable onboarding.
+Portable onboarding requires native OpenShell GPU injection for every agent and does not use `NEMOCLAW_DOCKER_GPU_PATCH`.
+Do not set `fallback`, `1`, or another legacy nonzero value for a portable run.
 
 | Symptom | Route or stage | Recovery |
 | --- | --- | --- |
@@ -13720,6 +13798,7 @@ After compatibility recreation starts, onboarding keeps the pre-patch container 
 If a later check fails, onboarding prints failure diagnostics and attempts to restore the pre-patch container before it exits.
 When rollback succeeds, the pre-patch sandbox remains available.
 If the failed replacement may remain and NemoClaw retains its validated exact container ID, it prints only an exact-container `docker rm -f` command.
+When a replacement is not stably running, the failure diagnostic includes its exact runtime ID, inspected state, and a bounded redacted log tail when available.
 If replacement cleanup cannot be confirmed without a validated exact ID, onboarding reports cleanup as unknown and prints no deletion command.
 When rollback fails, onboarding reports that the sandbox and container state is uncertain and prints no deletion command.
 A diagnostic bundle captured before rollback records cleanup as pending and contains no deletion command.
@@ -13745,9 +13824,9 @@ This injection happens inside the gateway, so `NEMOCLAW_DOCKER_GPU_PATCH=0` does
 Rerun with `--no-gpu`, or set `NEMOCLAW_SANDBOX_GPU=0` and resume onboarding.
 
 If onboarding reports `OpenShell supervisor did not reconnect to the GPU-enabled container.` even though the diagnostic bundle shows the patched container is running and healthy, the supervisor-reconnect wait is treating a transient Error phase (reported while the OpenShell host re-registers the new container) as fatal.
-The reconnect wait debounces consecutive Error-phase polls before fast-failing, defaulting to fifteen consecutive polls of about 30 seconds in total.
+The reconnect wait debounces consecutive Error-phase polls before fast-failing, defaulting to 60 consecutive polls of about 120 seconds in total.
 Increase the debounce window with `NEMOCLAW_DOCKER_GPU_SUPERVISOR_RECONNECT_ERROR_DEBOUNCE` if your host needs more time to re-register the patched container, for example slow WSL2 + Docker Desktop setups.
-Set it to a higher integer such as `30` (about 60 seconds) and rerun onboarding; the value is clamped to a minimum of `1`.
+Set it to an integer above the default of 60, such as `120` (about 240 seconds), and rerun onboarding; the value is clamped to a minimum of `1`.
 If reconnect still fails after the GPU patch, NemoClaw attempts to restore the pre-patch CPU container before exiting.
 When rollback succeeds, the output says the pre-patch sandbox was restored.
 When rollback fails, the error says rollback failed and the pre-patch container was not restored, so inspect Docker state before retrying.
@@ -13875,9 +13954,14 @@ During onboarding, NemoClaw verifies the loaded model's actual `context_length` 
 Resumed onboarding and sandbox rebuilds warm the exact recorded Ollama model and repeat this check before reusing its route.
 Resume stops when that recorded model is missing, Ollama is unreachable, model warm-up fails, or the runtime context cannot be verified.
 If you set `NEMOCLAW_CONTEXT_WINDOW` above `64000`, the loaded model must provide at least that larger value.
-If the runtime value is too small, missing, or malformed, onboarding stops before sandbox creation and asks you to restart the host daemon with the required context length.
-`NEMOCLAW_CONTEXT_WINDOW` controls Hermes prompt budgeting; it does not change the Ollama daemon or bypass this runtime check.
-Force a larger context length:
+If the runtime value is below the requirement, NemoClaw queries Ollama's `/api/show` endpoint for the selected model's native context window.
+If the model's native context window is below the requirement, onboarding stops and tells you to select a model that meets the reported requirement.
+`OLLAMA_CONTEXT_LENGTH` cannot raise a model above its native context window.
+If the model can meet the requirement, or NemoClaw cannot read its native context window, onboarding instead shows the required `OLLAMA_CONTEXT_LENGTH` value for restarting the host daemon.
+A missing or malformed runtime value also produces the daemon restart guidance.
+`NEMOCLAW_CONTEXT_WINDOW` controls Hermes prompt budgeting; it does not raise the model's native context window or the Ollama daemon's runtime context, and it does not bypass this check.
+Use the daemon restart command only when onboarding shows a required `OLLAMA_CONTEXT_LENGTH` value.
+The example uses the Hermes minimum; replace `64000` with the larger value from onboarding when applicable.
 
 ```bash
 pkill -f 'ollama serve'
@@ -16085,7 +16169,7 @@ The preset separately grants that registry transport to its listed npm, Yarn, an
 </AgentOnly>
 
 <Warning title="Personal Tier">
-The Personal tier selects `personal-open-internet` and every maintained preset supported by the active agent.
+The Personal tier selects `personal-open-internet` as its web authority and preserves non-web policy.
 The open-internet preset allows every sandbox binary to reach public and private address ranges on destination ports `80` and `443` through L4 passthrough.
 Traffic on those ports is not limited to HTTP or HTTPS.
 OpenShell does not inspect the hostname, application protocol, HTTP method, path, or body for those connections.
@@ -16216,7 +16300,7 @@ Use only for a trusted single-user sandbox that needs arbitrary TCP egress on de
 - Select the Personal tier during onboarding.
 - Treat every prompt, downloaded package, webpage, and workspace file as able to trigger external TCP traffic on destination ports `80` and `443`.
 - Do not place raw credentials or sensitive data in the sandbox unless the agent must use them.
-- Return to Balanced or Restricted and recreate the sandbox when this broad egress is no longer required.
+- Create a new Balanced or Restricted sandbox when this broad egress is no longer required. NemoClaw refuses to remove Personal in place because its normalized policy has already replaced overlapping web entries.
 
 ### Integration Testing
 
@@ -16837,6 +16921,19 @@ Use this precedence to:
 
 Managed MCP is an exception: `$$nemoclaw <name> mcp add` always creates and attaches an OpenShell provider, and `--env KEY` supplies only the transient input value.
 For that credential boundary, refer to [About Managed MCP Servers](../manage-sandboxes/mcp-servers/about-managed-mcp-servers).
+Before an ordinary live-sandbox rebuild or forced host-side recovery changes managed MCP state, NemoClaw compares the credential keys for every provider attached to the sandbox.
+If another provider supplies a credential key that a managed MCP server reserves, rebuild stops before it changes the managed provider attachment, generated policy, or agent adapter.
+The collision check does not delete either provider or its stored credential value.
+Forced host-side recovery repeats the check before sandbox deletion.
+Detach only the conflicting provider from the affected sandbox:
+
+```bash
+openshell sandbox provider detach <sandbox-name> <provider-name>
+```
+
+This command keeps the provider and stored credential in OpenShell and does not change its attachments to other sandboxes.
+Rerun the original rebuild command.
+Do not run `$$nemoclaw credentials reset <PROVIDER_NAME>` unless you intend to detach that provider from every sandbox and delete its stored credential from OpenShell.
 
 When the host environment is empty, day-two operations such as `$$nemoclaw <name> rebuild` and remote-provider updates can reuse the credential already registered with the OpenShell gateway.
 Export the credential only when you want to create, replace, or rotate the stored provider value.

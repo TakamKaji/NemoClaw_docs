@@ -65,7 +65,9 @@
 │       │   └── validation
 │       │       └── backtest.md
 │       ├── nemoclaw-maintainer-cut-release-tag
-│       │   └── SKILL.md
+│       │   ├── SKILL.md
+│       │   └── references
+│       │       └── candidate-evidence.md
 │       ├── nemoclaw-maintainer-day
 │       │   ├── HOTSPOTS.md
 │       │   ├── MERGE-GATE.md
@@ -88,8 +90,11 @@
 │       │       └── version-target.ts
 │       ├── nemoclaw-maintainer-e2e
 │       │   ├── SKILL.md
-│       │   └── agents
-│       │       └── openai.yaml
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── references
+│       │       ├── main-runs.md
+│       │       └── manual-pr.md
 │       ├── nemoclaw-maintainer-evening
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-find-review-pr
@@ -462,6 +467,7 @@
 │   │   ├── 2026-08-11.mdx
 │   │   ├── 2026-08-12.mdx
 │   │   ├── 2026-08-14.mdx
+│   │   ├── 2026-08-17.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3301,4 +3307,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-276 directories, 3026 files
+278 directories, 3030 files
