@@ -1833,7 +1833,7 @@ There is no host listener, persistent control socket, MCP relay, or service for 
 The command carries no MCP traffic or raw service credential, and its payload contains only the endpoint definition and OpenShell placeholder.
 </AgentOnly>
 <AgentOnly variant="deepagents">
-The managed image pins Deep Agents Code `0.1.34` and keeps NemoClaw definitions in `/sandbox/.deepagents/.nemoclaw-mcp.json`.
+The managed image pins Deep Agents Code `0.1.55` and keeps NemoClaw definitions in `/sandbox/.deepagents/.nemoclaw-mcp.json`.
 The launcher validates canonical HTTPS endpoints and exact OpenShell credential placeholders, then supplies Deep Agents Code with a process-local, integrity-bound snapshot for server starts and restarts.
 
 It prefers a sealed in-memory file when available; the anonymous read-only descriptor fallback verifies inode, size, and SHA-256 digest and fails closed on drift.
@@ -2321,6 +2321,26 @@ Use these details when your first-run path needs more control.
     Refer to [Previous onboarding session failed](../reference/troubleshooting#previous-onboarding-session-failed) for recovery details.
   </Accordion>
 
+  <Accordion title="Use Portable Ollama">
+    On Linux, fresh Hermes Portable onboarding can run the selected Ollama model in a current-user rootless Podman container.
+    This path requires the Portable preflight to accept the current user's Podman and NVIDIA GPU authority.
+    Start fresh onboarding with an explicit Ollama model:
+
+    ```bash
+    NEMOCLAW_PROVIDER=ollama \
+      NEMOCLAW_MODEL=qwen3-vl:4b \
+      nemohermes onboard --experimental-profile portable --fresh
+    ```
+
+    This path does not inspect, start, or use a host Ollama process.
+    It does not use the default Docker runtime.
+    Before the provider-selection step completes, NemoClaw creates the receipt-owned runner, sends one validation request for the selected model, and confirms that the exact model is loaded.
+    NemoClaw records the provider selection only after those checks pass.
+
+    This onboarding path does not establish complete `destroy` or `uninstall` cleanup for the Portable Ollama runner.
+    Refer to [Set Up Ollama](../inference/local-inference/set-up-ollama#use-portable-ollama-with-hermes) for the fail-closed uninstall boundary.
+  </Accordion>
+
   <Accordion title="Use the dashboard and API remotely">
     Hermes forwards its dashboard on port `18789` and its OpenAI-compatible API on port `8642`.
     A sandbox receives those ports when no other sandbox or host listener already holds them.
@@ -2712,7 +2732,7 @@ The default Deep Agents sandbox name is `deepagents-code`.
 Use a distinct name, such as `my-deepagents`, when you run Deep Agents, Hermes, and OpenClaw sandboxes side by side.
 Refer to [Choose an Inference Provider](../inference/learn-and-choose/choose-inference-provider) for provider-specific prompts.
 
-The image installs hash-locked Deep Agents Code `0.1.34` with NVIDIA provider support.
+The image installs hash-locked Deep Agents Code `0.1.55` with NVIDIA provider support.
 After the terminal smoke checks, onboarding runs `dcode --version` and compares the result with the version required by the agent manifest.
 Fresh and resumed onboarding exit nonzero instead of reporting the runtime ready when the installed version is too old, uses an incompatible version scheme, or cannot be verified.
 If the version check fails, review the reported version error and run `nemo-deepagents <sandbox-name> rebuild` before resuming onboarding.
@@ -2721,7 +2741,7 @@ When onboarding records a reasoning effort on a `compatible-endpoint` route that
 Leave `NEMOCLAW_REASONING_EFFORT` unset to keep the endpoint's own default.
 Deep Agents Code has no runtime `inference set` path, so re-onboard the sandbox with `nemo-deepagents onboard --fresh --name <sandbox-name> --recreate-sandbox` to change the recorded effort.
 When you use NVIDIA Endpoints without selecting another model, new Deep Agents Code sandboxes default to `nvidia/nemotron-3-ultra-550b-a55b`.
-For this model, the managed image maps the OpenAI-compatible route to Deep Agents `0.7.0a6`'s native Nemotron 3 Ultra harness profile, including model-specific tool-calling, filesystem, retry, context, and final-answer safeguards.
+For this model, the managed image maps the OpenAI-compatible route to Deep Agents `0.7.5`'s native Nemotron 3 Ultra harness profile, including model-specific tool-calling, filesystem, retry, context, and final-answer safeguards.
 Rebuild existing Deep Agents Code sandboxes after upgrading to NemoClaw v0.0.76 or later so their image includes this profile.
 This agent-specific default does not change the shared Nemotron 3 Super default for OpenClaw and Hermes.
 NemoClaw/OpenShell keeps real provider credentials in credential handling and does not write them into the Deep Agents config file.
@@ -3730,7 +3750,7 @@ Use this status table to distinguish validated provider integrations from adapte
 | Local llama.cpp (already running) | Experimental | Local OpenAI-compatible | Attaches only to an authenticated operator-managed server on loopback port `8081` that passes cooperative native llama.cpp fingerprinting. NemoClaw does not own its server, model, or lifecycle. |
 | Local llama.cpp (managed DGX Spark) | Experimental | Local OpenAI-compatible | Uses the repository-owned YAML recipe for NVIDIA Nemotron 3 Nano 30B-A3B, exact GGUF verification, and Docker lifecycle on a qualified DGX Spark host. The recipe remains unqualified for agent support. |
 | Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag because it does not auto-select a NIM image for the host today. You must explicitly pick from the validated image list. Local NVIDIA NIM is unavailable on N1x. NemoClaw omits the provider from onboarding and rejects `NEMOCLAW_PROVIDER=nim-local` on N1x. Use the Deferred managed-vLLM preview on N1x. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
-| Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Unavailable on N1x. On other hosts, it appears in the onboarding menu when NemoClaw detects a server already on `localhost:8000`. No flag is required. The model is whatever the existing server serves. |
+| Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Unavailable on N1x. On other hosts, it appears in the onboarding menu when NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. No flag is required. The model is whatever the existing server serves. |
 | Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. A labeled Deferred preview appears on hosts that match the N1x identity requirements; N1x remains Deferred until a physical NemoClaw Express E2E test passes. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark and the Deferred N1x preview, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status:end */}
 
@@ -3758,7 +3778,7 @@ Local providers run on the host and keep inference traffic on infrastructure tha
 | Provider | When it appears | Setup guide |
 |---|---|---|
 | Local Ollama | Ollama is installed or running on the host. | [Use Ollama](../local-inference/set-up-ollama) |
-| Local vLLM already running | On hosts other than N1x, NemoClaw detects a server on `localhost:8000`. | [Set Up vLLM](../local-inference/set-up-vllm) |
+| Local vLLM already running | On hosts other than N1x, NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | [Set Up vLLM](../local-inference/set-up-vllm) |
 | Local vLLM managed install | The host matches a supported GPU profile and any required opt-in is present. | [Set Up vLLM](../local-inference/set-up-vllm) |
 | Local llama.cpp already running | You explicitly select an authenticated server on loopback port `8081`. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
 | Local llama.cpp managed install | A qualified DGX Spark host satisfies the declarative recipe requirements. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
@@ -3768,7 +3788,7 @@ Local providers run on the host and keep inference traffic on infrastructure tha
 <AgentOnly variant="deepagents">
 | Provider | When it appears | Setup guide |
 |---|---|---|
-| Local vLLM already running | On hosts other than N1x, NemoClaw detects a server on `localhost:8000`. | [Set Up vLLM](../local-inference/set-up-vllm) |
+| Local vLLM already running | On hosts other than N1x, NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | [Set Up vLLM](../local-inference/set-up-vllm) |
 | Local vLLM managed install | The host matches a supported GPU profile and any required opt-in is present. | [Set Up vLLM](../local-inference/set-up-vllm) |
 | Local llama.cpp already running | You explicitly select an authenticated server on loopback port `8081`. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
 | Local llama.cpp managed install | A qualified DGX Spark host satisfies the declarative recipe requirements. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
@@ -3830,7 +3850,7 @@ Accept the N1x Express prompt or set `NEMOCLAW_PROVIDER=install-vllm` to provide
 | Option | When to use it | Availability | Runtime API |
 |---|---|---|---|
 | Ollama | You want the default local option and want NemoClaw to install, start, or use Ollama on supported hosts. | Appears when Ollama is installed or running, and the wizard can offer installation on supported hosts. | Ollama through the managed local route. |
-| Existing vLLM | You already run vLLM on `localhost:8000`. | Unavailable on N1x. On other hosts, it appears when NemoClaw detects the server. | `/v1/chat/completions`. |
+| Existing vLLM | You already run vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | Unavailable on N1x. On other hosts, it appears when NemoClaw detects the server. | `/v1/chat/completions`. |
 | Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station. N1x offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
 | Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Appears as option 2 in DGX Spark Express. Direct installation can use the dedicated installer flag. The profile does not appear in the provider menu. | `/v1/chat/completions`. |
 | Existing llama.cpp | You already operate an authenticated llama.cpp server on loopback port `8081`. | Experimental. Always available for explicit selection and attaches only after cooperative fingerprinting succeeds. | `/v1/chat/completions`. |
@@ -3841,7 +3861,7 @@ Accept the N1x Express prompt or set `NEMOCLAW_PROVIDER=install-vllm` to provide
 <AgentOnly variant="deepagents">
 | Option | When to use it | Availability | Runtime API |
 |---|---|---|---|
-| Existing vLLM | You already run vLLM on `localhost:8000`. | Unavailable on N1x. On other hosts, it appears when NemoClaw detects the server. | `/v1/chat/completions`. |
+| Existing vLLM | You already run vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | Unavailable on N1x. On other hosts, it appears when NemoClaw detects the server. | `/v1/chat/completions`. |
 | Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station. N1x offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
 | Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Appears as option 2 in DGX Spark Express. Direct installation can use the dedicated installer flag. The profile does not appear in the provider menu. | `/v1/chat/completions`. |
 | Existing llama.cpp | You already operate an authenticated llama.cpp server on loopback port `8081`. | Experimental. Always available for explicit selection and attaches only after cooperative fingerprinting succeeds. | `/v1/chat/completions`. |
@@ -3884,7 +3904,7 @@ Before you start, confirm these prerequisites:
 
 - Use a DGX Spark host with Linux on Arm64.
 - Confirm that Docker, the NVIDIA Container Toolkit, and the NVIDIA GPU driver are operational.
-- Stop any server that already uses port `8000`.
+- Stop any server that already uses the configured host port, `${NEMOCLAW_VLLM_PORT:-8000}`.
 - Allow capacity for container images, model artifacts, and same-filesystem download staging.
 - Export `HF_TOKEN` only if the configured artifact source requires Hugging Face authentication.
 
@@ -3916,13 +3936,15 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
 The flag enables the dedicated vLLM profile gate, disables Express selection, and selects the matching catalog recipe.
 Selecting Express option 2 enables the same profile gate and selects the vLLM runtime.
 Do not combine this path with `NEMOCLAW_PROVIDER` or `NEMOCLAW_MODEL`.
-The profile rejects `NEMOCLAW_VLLM_MODEL`, `NEMOCLAW_VLLM_PORT`, and `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` before installation.
+The profile rejects `NEMOCLAW_VLLM_MODEL` and `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` before installation.
+Set `NEMOCLAW_VLLM_PORT` before installation to use another host listener port.
+Before installation, ensure no other process or container owns `${NEMOCLAW_VLLM_PORT:-8000}` on `127.0.0.1` or on the private IPv4 gateway of `openshell-docker`.
 
 The profile performs these actions:
 
 - Uses the pinned runtime image and fixed serving command from the catalog.
 - Stores model files in the host Hugging Face cache.
-- Publishes the authenticated server on `127.0.0.1:8000` and the exact private IPv4 gateway of the `openshell-docker` bridge, such as `172.18.0.1:8000`.
+- Publishes the authenticated server on `127.0.0.1:<port>` and the same port on the exact private IPv4 gateway of the `openshell-docker` bridge, such as `172.18.0.1:<port>`. The default is `8000`.
 - Never publishes the Docker host port on `0.0.0.0` or `::`.
 - Reuses the owner-only host-global managed-vLLM API key.
 
@@ -3942,6 +3964,7 @@ The `healthy` state means the route served one inference request; it does not es
 Verify the bounded host publication:
 
 ```bash
+VLLM_HOST_PORT="${NEMOCLAW_VLLM_PORT:-8000}"
 docker network inspect \
   --format '{{json .IPAM.Config}}' \
   openshell-docker
@@ -3951,7 +3974,8 @@ docker container inspect \
 ```
 
 The bridge result must contain exactly one private IPv4 `Gateway` value.
-The container result must contain exactly two bindings with `HostPort` set to `8000`: one `HostIp` value of `127.0.0.1` and one that exactly matches the private bridge gateway.
+Docker indexes these bindings under the recipe-owned container port, `8000/tcp`, even when `VLLM_HOST_PORT` selects another host port.
+The container result must contain exactly two bindings with `HostPort` equal to `VLLM_HOST_PORT`: one `HostIp` value of `127.0.0.1` and one that exactly matches the private bridge gateway.
 Reject the runtime if a binding uses `0.0.0.0`, `::`, an empty address, another host address, or an additional entry.
 
 If installation stops after a model download, rerun the same installer command.
@@ -5011,6 +5035,7 @@ When importing a completed row from an issue comment, preserve the exact commit 
 |---|---|---|---|---|---|---|---|---|
 | OpenClaw primary agent | NVIDIA Endpoints | `nvidia/nemotron-3-super-120b-a12b` | Managed `inference.local` OpenAI-compatible completions | `not-yet-run` | Add trajectory and session evidence before changing state. | Existing setup keeps Tool Search disabled and preserves direct structured tool calls, overriding the generated `tools.toolSearch.mode: tools` default for this route. | Verify `tool_search`, `tool_describe`, `tool_call`, and final execution before replacing the safeguard. | `scripts/generate-openclaw-config.mts`, `nemoclaw-blueprint/model-specific-setup/openclaw/nemotron-3-super-120b-managed-inference.json`. |
 | OpenClaw existing configuration | NVIDIA Endpoints (retired route) | `moonshotai/kimi-k2.6` | Managed `inference.local` OpenAI-compatible completions | `unsupported` | NVIDIA's catalogs still advertised K2.6 while the [live Kimi compatibility job](https://github.com/NVIDIA/NemoClaw/actions/runs/28953873907/job/85907646487) failed route validation with HTTP 404. | The OpenClaw setup manifest remains for existing or custom compatible routes that still serve K2.6. | Select a supported NVIDIA Endpoints model; do not promote K2.7 until its production model ID and chat route are live. | `nemoclaw-blueprint/model-specific-setup/openclaw/kimi-k2.6-managed-inference.json`. |
+| OpenClaw primary agent | NVIDIA Endpoints (retired route) | `deepseek-ai/deepseek-v4-pro` | Managed `inference.local` OpenAI-compatible completions | `unsupported` | The featured-model feed still listed this model after the NVIDIA Endpoints model catalog removed it. NemoClaw excludes it from featured selections. | The retirement exclusion applies to NVIDIA Endpoints featured selections. It does not determine whether another compatible endpoint serves the same model ID. | Select a supported NVIDIA Endpoints model. | `src/lib/inference/nvidia-featured-models.ts`, `src/lib/inference/nvidia-featured-models.test.ts`. |
 | OpenClaw primary agent | NVIDIA Endpoints | Any model from `CLOUD_MODEL_OPTIONS` | Managed `inference.local` OpenAI-compatible completions unless config selects another API. | `not-yet-run` | Add one evidence row per model before changing state. | Record `none`, model-specific setup, or provider-class transport behavior. | Expand into per-model rows as evidence lands. | `src/lib/inference/config.ts`. |
 | OpenClaw primary agent | OpenAI | Any model from `REMOTE_MODEL_OPTIONS.openai` | `openai` provider through `https://inference.local/v1`. | `not-yet-run` | Add one evidence row per model before changing state. | Record Responses or Chat Completions behavior explicitly. | Expand into per-model rows as evidence lands. | `src/lib/inference/model-prompts.ts`, `src/lib/inference/config.ts`. |
 | OpenClaw primary agent | Anthropic | Any model from `REMOTE_MODEL_OPTIONS.anthropic` | `anthropic` provider through `https://inference.local` with `anthropic-messages`. | `not-yet-run` | Add one evidence row per model before changing state. | Record native Anthropic Messages behavior explicitly. | Expand into per-model rows as evidence lands. | `src/lib/inference/model-prompts.ts`, `src/lib/inference/config.ts`. |
@@ -5203,8 +5228,16 @@ The server must satisfy all of these requirements:
 - Return native llama.cpp model metadata without conflicting model entries.
 
 Configure the server with its own supported mechanism before you run NemoClaw.
+Start the server with an explicit served model alias.
+A server that starts without an alias reports its model file path as the model ID.
+NemoClaw rejects a path as a served model alias.
 Enable metrics when available, and use an API-key file instead of placing the key in process arguments when your llama.cpp build supports those options.
 If the server exposes multiple models, identify the exact served alias through `NEMOCLAW_MODEL`.
+
+NemoClaw takes the served model alias from the `/v1/models` entry that it selects.
+It also compares that alias with `model_alias` in `/props` when `/props` returns that field.
+NemoClaw refuses the attachment when the two values differ.
+If `/props` omits `model_alias`, NemoClaw attaches the server using the remaining native evidence.
 
 For interactive onboarding, run:
 
@@ -5734,7 +5767,29 @@ NemoClaw detects Ollama on the host and can install, start, or upgrade it on sup
 ## Prerequisites
 
 - Install NemoClaw by following the [Quickstart](../../get-started/quickstart).
-- Use a host where Ollama is running or where the onboard wizard can install or start it.
+- For the host Ollama path, use a host where Ollama is running or where the onboard wizard can install or start it.
+
+<AgentOnly variant="hermes">
+
+## Use Portable Ollama with Hermes
+
+Fresh Hermes Portable onboarding does not use the host Ollama setup described in the remaining sections.
+It creates a receipt-owned Ollama runner through the current user's rootless Podman authority.
+Run the fresh Portable command in the [Hermes quickstart](../../get-started/quickstart#use-portable-ollama) with `NEMOCLAW_PROVIDER=ollama` and an explicit `NEMOCLAW_MODEL`.
+
+Before the provider-selection step completes, NemoClaw verifies the Portable network, registry, GPU, and Podman authority.
+It then creates the runner, sends one validation request for the selected model, and confirms that the exact model is loaded.
+This path does not inspect, start, or use a host Ollama process, and it does not use the default Docker runtime.
+
+<Warning title="Portable Cleanup Boundary">
+This path covers fresh onboarding and provider selection.
+It does not establish complete `destroy` or `uninstall` cleanup for the Portable Ollama runner.
+Portable uninstall stops when it cannot prove exact cleanup authority for a Portable lifecycle receipt with schema `5`.
+It exits nonzero before deleting the runner or its receipt.
+Preserve the Portable Ollama runner and its lifecycle receipt.
+</Warning>
+
+</AgentOnly>
 
 ## Install or Upgrade Ollama
 
@@ -6184,10 +6239,28 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_AGENT=langchain-deepage
 
 </AgentOnly>
 
-The portable profile creates the `openshell-docker` network on `169.254.1.0/24` and assigns `169.254.1.2/32` to the host loopback interface.
-On that network, `169.254.1.2` is the host-gateway address for `host.openshell.internal` and carries authenticated mTLS plus sandbox-JWT callbacks to OpenShell on port `8080`.
+The portable profile creates the `openshell-docker` network on `169.254.1.0/24` and assigns `169.254.2.2/32` to the host loopback interface.
+The address `169.254.2.2` is outside the Portable sandbox subnet and is the host-gateway address for `host.openshell.internal`.
+It carries authenticated mTLS plus sandbox-JWT callbacks to OpenShell on port `8080`.
 The managed local registry uses the distinct address `169.254.1.3` on port `5000`.
-Keeping these addresses distinct prevents registry traffic from intercepting gateway callbacks.
+Keeping the host-gateway address outside the sandbox subnet prevents a Portable workload from receiving that address.
+
+<Warning>
+If Portable onboarding reports that the retired `169.254.1.2/32` address is still assigned to the loopback interface, remove only that exact assignment:
+
+```bash
+sudo ip address delete 169.254.1.2/32 dev lo
+```
+
+Rerun Portable onboarding:
+
+```bash
+$$nemoclaw onboard --experimental-profile portable
+```
+
+Do not run the loopback deletion command when onboarding reports another interface or prefix.
+Investigate and resolve the conflicting assignment before you rerun onboarding.
+</Warning>
 
 The portable profile handles the descriptor as follows:
 
@@ -6608,7 +6681,7 @@ When no matching cluster qualifies during automatic selection, NemoClaw retains 
 This ordinary no-match result occurs before the distributed image or model download starts.
 
 Existing related runtime state is not an ordinary no-match result.
-NemoClaw stops when either host has a related vLLM or DGX Station container, an ambiguous runtime inspection, or a listener on port `8000` or `25000`.
+NemoClaw stops when either host has a related vLLM or DGX Station container, an ambiguous runtime inspection, or a listener on the configured vLLM port or port `25000`.
 An existing durable managed-cluster or dual-Station runtime receipt also stops setup.
 A copied runtime binding, an orphaned discovery claim, or an SSH binding conflict also stops setup.
 NemoClaw leaves the existing files, containers, and listeners untouched instead of replacing, repairing, adopting, or removing them.
@@ -6672,16 +6745,16 @@ Each container receives all host GPUs, `/dev/infiniband`, Docker host networking
 The launch does not use a read-only root filesystem, drop Linux capabilities, or set `no-new-privileges`.
 The serving command does not enable vLLM's `--trust-remote-code` switch.
 Before it copies the pinned snapshot's required encoder module into the runtime package, it verifies that file against the recipe's exact SHA-256 digest.
-The head binds HTTP port `8000` only to the qualified primary rail address.
+The head binds the configured vLLM port, `${NEMOCLAW_VLLM_PORT:-8000}`, only to the qualified primary rail address.
 vLLM applies bearer API key authentication to its authenticated API routes, including the inventory and chat routes that NemoClaw verifies.
-The API key does not authenticate every endpoint on port `8000`.
+The API key does not authenticate every endpoint on the configured vLLM port.
 vLLM exposes unauthenticated inference and operational endpoints on that port.
 Trusted Docker administrators can inspect that API key in the head container environment.
 The distributed rendezvous and RoCE traffic do not use that bearer credential.
 
 Treat both DGX Spark systems and every host that can reach the direct rails as one trusted runtime boundary.
-Allow port `8000` only from the OpenShell Docker subnet to the selected head rail address.
-Deny port `8000` on management, LAN, and internet-facing interfaces.
+Allow the configured vLLM port only from the OpenShell Docker subnet to the selected head rail address.
+Deny the configured vLLM port on management, LAN, and internet-facing interfaces.
 Restrict port `25000`, NVIDIA Collective Communications Library (NCCL), and RoCE traffic to the exact reciprocal private rail addresses.
 The address-specific bind reduces listener exposure but does not replace these firewall and trusted-boundary controls.
 </Warning>
@@ -6868,6 +6941,16 @@ Set `NEMOCLAW_DGX_STATION_PEER` to request one exact already-trusted peer.
 The installer stops instead of falling back when that peer does not qualify.
 An explicit `NEMOCLAW_VLLM_MODEL` remains authoritative.
 
+<Warning>
+Before installation, inspect any running `nemoclaw-vllm-head` and `nemoclaw-vllm-worker` containers.
+When both containers carry NemoClaw's complete schema-2 ownership labels, the default-port endpoint, and the matching historical launch contracts for this exact pair, NemoClaw authenticates them as prior managed state but does not reuse them.
+Installation interrupts serving while it removes both schema-2 containers and creates a schema-3 pair with the configured vLLM port.
+The replacement preserves the shared Hugging Face model cache and the persisted host bearer key; it does not preserve the old containers.
+If the new pair fails to start or validate, rollback removes only containers from the new transaction and reports any cleanup errors.
+It does not restore the schema-2 pair, so the route remains unavailable until you correct the reported failure and rerun the same installer command.
+A missing, malformed, or mismatched ownership field remains foreign state and stops installation without removal.
+</Warning>
+
 For the first non-interactive setup, pass the managed provider and exact peer to the shell installer.
 The installer qualifies the pair and creates the peer binding that managed vLLM requires.
 Do not set `NEMOCLAW_DGX_STATION_SSH_BINDING` yourself or run `$$nemoclaw onboard` directly for the first pair setup.
@@ -6954,12 +7037,12 @@ The worker does not receive the serving key.
 
 Treat both Stations and their direct rails as one trusted runtime boundary.
 
-- Allow port `8000` from the OpenShell Docker subnet only to the selected rank-0 rail address.
-- Deny port `8000` on management and LAN interfaces.
+- Allow the configured vLLM port, `${NEMOCLAW_VLLM_PORT:-8000}`, from the OpenShell Docker subnet only to the selected rank-0 rail address.
+- Deny the configured vLLM port on management and LAN interfaces.
 - Restrict Ray, NCCL, and serving traffic to the reciprocal addresses on the two qualified private rails.
 - Keep Ray TCP port `6379` and Ray worker ports off untrusted or routed networks.
 
-The single-Station fallback uses the bridge-networked managed-inference topology and publishes port `8000` through Docker.
+The single-Station fallback uses the bridge-networked managed-inference topology and publishes the configured host port through Docker while the container listens on port `8000`.
 Follow [Set Up vLLM](set-up-vllm) for that workflow.
 
 ## Preserve Cleanup Ownership
@@ -7009,12 +7092,12 @@ The vLLM `/v1/responses` endpoint does not run the configured tool-call parser, 
 
 <Warning>
 Local vLLM does not require authentication by default.
-Existing-server and single-host managed-vLLM paths need port `8000` on host loopback for validation and on the OpenShell Docker bridge for sandbox traffic.
+Existing-server and single-host managed-vLLM paths use `NEMOCLAW_VLLM_PORT`, which defaults to `8000`, on host loopback for validation and on the OpenShell Docker bridge for sandbox traffic.
 Use a host firewall with default-deny inbound rules.
-Allow TCP port `8000` only from the OpenShell Docker subnet to its gateway address, keep loopback access, and deny the port on every other interface.
+Allow the configured TCP port only from the OpenShell Docker subnet to its gateway address, keep loopback access, and deny the port on every other interface.
 Do not expose the port to your LAN or the internet.
 
-An authenticated fixed profile publishes Docker port `8000` on exactly two host addresses: `127.0.0.1` and the exact private IPv4 gateway of the `openshell-docker` bridge.
+An authenticated fixed profile publishes the configured host port on exactly two host addresses: `127.0.0.1` and the exact private IPv4 gateway of the `openshell-docker` bridge. The container continues to listen on its recipe-owned internal port `8000`.
 It never publishes that host port on `0.0.0.0` or `::`.
 The provider route remains `https://inference.local` inside the sandbox, and OpenShell reaches the server through the private bridge binding.
 The managed Muse Glimmer profile uses the same bearer-protected listener and two-address publication boundary.
@@ -7025,7 +7108,7 @@ Follow [Set Up vLLM on Two DGX Sparks](set-up-vllm-on-two-dgx-sparks) or [Set Up
 
 ## Use an Existing Server
 
-On hosts other than N1x, when vLLM is already running on `localhost:8000`, NemoClaw detects it and queries `/v1/models` for the loaded model.
+On hosts other than N1x, when vLLM is already running on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`, NemoClaw detects it and queries `/v1/models` for the loaded model.
 
 Run onboarding.
 
@@ -7037,6 +7120,10 @@ Select **Local vLLM**.
 On generic hosts, the entry includes an experimental label.
 N1x does not offer the existing-server entry; it offers only the managed **Install vLLM** or **Start vLLM** entry with the **Deferred preview** label.
 NemoClaw validates the detected endpoint and records the model reported by `/v1/models`.
+
+When you request a vLLM serving profile, the detected server must report the profile's served model alias or a safe `root` that matches the profile's declared model.
+NemoClaw stops onboarding when neither identifier matches, rather than recording a route that the profile does not declare.
+Stop the server and rerun the original command, or unset `NEMOCLAW_SERVING_PRESET` and `NEMOCLAW_PROVIDER` before you start fresh onboarding to keep the detected model.
 
 On hosts other than N1x, when an install request encounters an already-running server, NemoClaw selects that server instead of starting another container.
 On N1x, explicit managed-preview intent never reuses an already-running server.
@@ -7111,7 +7198,7 @@ The same profile selector works with interactive and non-interactive onboarding.
 NemoClaw selects the inference provider required by the profile's backend, so onboarding does not show the provider menu.
 If the profile's backend has no corresponding inference provider, onboarding exits before it changes runtime resources.
 NemoClaw rejects unknown, ambiguous, disabled, incompatible, or conflicting selections before image or model downloads begin.
-Before confirmation, the review screen shows the resolved profile and recipe IDs, model, immutable runtime image, support state, and estimated image and model downloads.
+Before confirmation, the review screen shows the resolved profile and recipe IDs, declared model, served model alias, immutable runtime image, support state, and estimated image and model downloads.
 Do not combine `--profile` with `NEMOCLAW_PROVIDER`, `NEMOCLAW_MODEL`, `NEMOCLAW_VLLM_MODEL`, `NEMOCLAW_MANAGED_CLUSTER_PEERS`, or `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` overrides.
 If `NEMOCLAW_SERVING_PRESET` is already set, it must select the same stable profile ID; a different ID conflicts with `--profile`.
 
@@ -7124,13 +7211,16 @@ Legacy sessions that predate profile provenance still resume with their original
 In an interactive run, the managed path lists the supported model registry for your host profile.
 Press **Enter** to use the profile default or select another validated model with its registered `vllm serve` arguments.
 
-The single-host path pulls the vLLM image, downloads model weights into `~/.cache/huggingface`, and starts the `nemoclaw-vllm` container on `localhost:8000`.
+The single-host path pulls the vLLM image, downloads model weights into `~/.cache/huggingface`, and starts the `nemoclaw-vllm` container with the configured host port (`8000` by default).
+For a bearer-protected profile, Docker publishes that port only on `127.0.0.1` and the exact private IPv4 gateway of the `openshell-docker` bridge.
+For a bearerless profile, Docker publishes the host port on all host interfaces and vLLM does not require NemoClaw's managed bearer key.
+Before starting a bearerless profile, configure the host firewall to allow the port only from the OpenShell Docker subnet and loopback, and deny it on management, LAN, and internet-facing interfaces.
 The distributed DGX pages document their separate container names, endpoints, and lifecycle checks.
 The container carries NemoClaw ownership and immutable catalog labels so later onboarding, recovery, and uninstall runs can distinguish it from a bring-your-own server without trusting the container name alone.
 NemoClaw also records an owner-only, credential-free runtime receipt that binds those labels to the exact container ID and API-key fingerprint.
 
 If an existing `nemoclaw-vllm` container does not carry that label, NemoClaw preserves it and asks you to remove or rename it before installing managed vLLM.
-On hosts other than N1x, if another vLLM server already occupies port `8000`, NemoClaw selects the existing-server path and applies the model-identity checks described above.
+On hosts other than N1x, if another vLLM server already occupies the configured vLLM port, NemoClaw selects the existing-server path and applies the model-identity checks described above.
 On N1x, NemoClaw stops managed onboarding and requires you to stop that server before trying the Deferred preview again.
 If another process holds the configured single-host port, NemoClaw stops the managed install before it persists a bearer key or records the selected model.
 NemoClaw also stops before storage prompts, cache creation, image pull, or container start.
@@ -7366,10 +7456,10 @@ On a host that still meets the N1x identity checks, `rebuild` reuses the recorde
 
 - The sandbox registry records provider `vllm-local`.
 - The registry records model `nvidia/Qwen3.6-35B-A3B-NVFP4`.
-- If the registry records `endpointUrl` as `null`, NemoClaw derives `http://host.openshell.internal:8000/v1`; otherwise, `endpointUrl` must equal that URL.
+- If the registry records `endpointUrl` as `null`, NemoClaw derives `http://host.openshell.internal:${NEMOCLAW_VLLM_PORT:-8000}/v1`; otherwise, `endpointUrl` must equal that URL.
 - The registry records `endpointSource` as `onboard` and `openshellDriver` as `docker`.
 - The replacement keeps the recorded provider and model, then re-derives the canonical local endpoint.
-- `hostLocalInferenceReceipt` is absent or `null`, or contains a canonical vLLM receipt for `host.openshell.internal:8000` and the same model.
+- `hostLocalInferenceReceipt` is absent or `null`, or contains a canonical vLLM receipt for `host.openshell.internal:${NEMOCLAW_VLLM_PORT:-8000}` and the same model.
 
 NemoClaw v0.0.109 can omit `hostLocalInferenceReceipt` or record it as `null`.
 Matching sandboxes from that release remain eligible only when every condition above passes.
@@ -7390,8 +7480,8 @@ Refer to [Set Up vLLM on Two DGX Stations](set-up-vllm-on-two-dgx-stations) for 
 
 On DGX Spark, Express keeps automatic managed-vLLM serving-profile selection as option 1, the default.
 It offers the fixed local vLLM profile as option 2.
-When you select option 2, the serving catalog supplies the pinned model, runtime image, port, and serve arguments.
-The installer rejects provider and model overrides for that fixed profile, and the dedicated onboarder rejects vLLM model, port, and serve-argument overrides before it starts the managed container.
+When you select option 2, the serving catalog supplies the pinned model, runtime image, container port, and serve arguments.
+The installer rejects provider and model overrides for that fixed profile, and the dedicated onboarder rejects vLLM model and serve-argument overrides before it starts the managed container. `NEMOCLAW_VLLM_PORT` may select another host listener.
 Explicit `NEMOCLAW_MODEL` or `NEMOCLAW_VLLM_MODEL` intent retains the customizable managed-vLLM path and skips the fixed-profile choice.
 If onboarding stops after you select option 2, `$$nemoclaw onboard --resume` reuses the recorded fixed profile instead of returning to automatic serving-profile selection.
 Refer to [Choose a Local Inference Server](choose-local-inference-server#install-a-fixed-vllm-profile) for fixed-profile installation and verification.
@@ -7709,6 +7799,9 @@ $$nemoclaw <name> shields up
 For OpenClaw, NemoClaw updates the provider namespace and selected model in the running configuration.
 Changes within the current API family hot-reload without replacing the gateway process.
 When the API family changes, NemoClaw commits the route and configuration, then restarts only the OpenClaw gateway and verifies its health.
+After every changed synchronized route, NemoClaw verifies that the local CLI device has the managed gateway's required pairing scopes before it reports success.
+If pairing does not converge, the route and configuration remain committed.
+Run `$$nemoclaw <name> doctor --fix`, then retry the agent turn.
 
 </AgentOnly>
 
@@ -10626,6 +10719,13 @@ Back up those paths outside the sandbox before you approve legacy recovery.
 ```bash
 $$nemoclaw <sandbox-name> rebuild
 ```
+
+<AgentOnly variant="openclaw">
+
+After post-restore writes, rebuild verifies that the final `openclaw.json` and `.config-hash` pair match.
+If verification fails, NemoClaw restores Shields, exits nonzero, and does not report a successful rebuild.
+
+</AgentOnly>
 
 ### Resolve Rebuild Preflight Stops
 
