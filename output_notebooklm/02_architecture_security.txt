@@ -1910,7 +1910,7 @@ Messaging channel presets are scoped to the sandbox's active agent; if an agent 
 | Discord messaging | `discord` | OpenClaw and Hermes |
 | GitHub and GitHub API | `github` | OpenClaw and Hermes |
 | Gmail IMAP and SMTP | `gmail` | OpenClaw and Hermes |
-| Google Chat messaging (experimental) | `googlechat` | OpenClaw |
+| Google Chat messaging (experimental) | `googlechat` | OpenClaw and Hermes |
 | Hugging Face Hub and Inference API | `huggingface` | OpenClaw and Hermes |
 | Jira and Atlassian Cloud | `jira` | OpenClaw and Hermes |
 | Local Ollama or vLLM through the host gateway | `local-inference` | OpenClaw and Hermes |
@@ -1995,8 +1995,10 @@ If delivery fails, open the TUI and send a test message to the bot:
 openshell term
 ```
 
-The matching preset uses the channel name: `telegram`, `discord`, `slack`, `wechat`, `whatsapp`, or `teams`.
-OpenClaw also uses the `googlechat` preset.
+The matching preset uses the channel name: `telegram`, `discord`, `slack`, `wechat`, `whatsapp`, `teams`, or `googlechat`.
+The `googlechat` preset resolves to the selected agent's transport policy.
+OpenClaw receives the restricted webhook and sends Google Chat REST requests.
+Hermes pulls and acknowledges Pub/Sub messages over REST and sends Google Chat REST requests.
 
 ## Slack or Discord Messaging
 
@@ -5328,6 +5330,15 @@ It uses a 3-second connection timeout, a 5-second total timeout, and an 8-token 
 If the request reaches the time limit, NemoClaw reports the provider as `not probed` and leaves model health unverified instead of reporting it as unhealthy.
 These checks are diagnostic only and do not override the authoritative `inference.local` result or determine the command exit status.
 
+The `Inference (upstream)` check authenticates with the host credential that NemoClaw resolves for the provider, such as `NVIDIA_INFERENCE_API_KEY`.
+The gateway stores the provider credential that the sandbox route uses.
+The CLI cannot read the stored value back, so the two credentials can hold different secrets.
+When the `inference.local` route has already served the inference request, an `unauthorized` result on `Inference (upstream)` describes the host credential.
+NemoClaw then reports that check as `not probed` and names both credential sources.
+An `Inference (upstream)` check that fails for another reason, such as `unreachable`, still reports its own state.
+Local backend and auth proxy checks, such as `Inference (auth proxy)`, always report their own state and their own repair step.
+`$$nemoclaw <name> doctor` sends no inference request, so it always reports the `Inference (upstream)` state that it measured.
+
 Local providers add host-side backend diagnostics.
 For Local Ollama, the command can also print an `Inference (auth proxy)` diagnostic when a proxy token is available.
 Use these diagnostics to identify a failing auxiliary hop after checking the main `Inference` line.
@@ -6127,7 +6138,7 @@ $$nemoclaw my-assistant hosts-remove searxng.local
 List the messaging channels supported by the sandbox's agent runtime with a short description.
 Telegram, Discord, Slack, WeChat, WhatsApp, and Microsoft Teams are available for OpenClaw and Hermes.
 WeChat, WhatsApp, and Microsoft Teams are experimental.
-OpenClaw also supports experimental Google Chat.
+OpenClaw and Hermes also support experimental Google Chat.
 
 The command reads the sandbox registry to select agent-compatible channel manifests.
 It does not inspect messaging credentials or the live sandbox runtime.
@@ -6152,8 +6163,10 @@ Channel enrollment uses these credential and pairing flows:
   NemoClaw advertises WhatsApp for OpenClaw and Hermes sandboxes; after rebuild, run `openclaw channels login --channel whatsapp` for OpenClaw or `hermes whatsapp` for Hermes.
   This intentionally leaves QR-created mutable session state in the sandbox until you unpair it or clear the durable agent state.
 
-The OpenClaw-only Google Chat channel uses an experimental token-paste flow for the service-account JSON.
-It also requires interactive public-webhook confirmation and prompts for optional app-principal configuration during enrollment.
+Google Chat uses an experimental token-paste flow for the service-account JSON on both agents.
+OpenClaw also requires interactive public-webhook confirmation and prompts for optional app-principal configuration during enrollment.
+Hermes instead prompts for the Google Cloud project ID, complete Pub/Sub subscription name, and email sender allowlist.
+It pulls inbound events from Pub/Sub over REST and does not create a public webhook endpoint.
 
 After registering the channel, NemoClaw asks whether to rebuild immediately.
 Running `add` for an already-configured channel overwrites the stored credentials where applicable.
@@ -6362,10 +6375,11 @@ The full URL and path are persisted and displayed, so URLs cannot contain userin
 Server names must start with a letter and contain at most 64 letters, digits, hyphens, or underscores, and endpoint hostnames must use canonical lowercase DNS labels.
 NemoClaw rejects invalid names and endpoints before it writes lifecycle state or changes OpenShell resources.
 NemoClaw generates a narrow `protocol: mcp` policy for the destination, literal path, adapter binaries, pinned addresses, explicit MCP methods, and a 131,072-byte request-body limit.
-OpenShell `0.0.101` evaluates that policy before replacing the attached provider placeholder in the allowed request header.
-Static provider placeholders are sandbox-scoped rather than endpoint-exclusive, so do not grant broader inspected-HTTP routes to the same adapter runtime and credential key.
+OpenShell `0.0.106` evaluates that policy before replacing the attached provider placeholder in the allowed request header.
+NemoClaw imports the endpointless `nemoclaw-mcp-v1` profile and binds the dedicated provider to that endpoint with `credential_binding.provider`.
+OpenShell withholds the credential before the binding is active and outside the bound host, port, and path.
 The sandbox client connects directly through OpenShell's existing egress path, and NemoClaw does not run a host-side MCP data-plane bridge, proxy, relay, or listener.
-After the add commits, NemoClaw freshly verifies the exact generated policy, expected provider attachment, recorded provider ID, generic type, valid resource version, and exactly one credential key matching the recorded key.
+After the add commits, NemoClaw freshly verifies the exact generated policy, expected provider attachment, recorded provider ID, `nemoclaw-mcp-v1` type, valid resource version, and exactly one credential key matching the recorded key.
 If those readiness checks pass, it sends a differential pair of wire-level MCP `initialize` requests from inside the sandbox — one with the placeholder header and one with an unresolvable control bearer — to verify that OpenShell resolves the credential on egress; otherwise it reports an inconclusive `probe skipped` result and sends no request.
 Neither outcome fails the committed add, and `--no-probe` skips this check.
 For full setup details, see [Add an MCP Server](../manage-sandboxes/mcp-servers/add-an-mcp-server).
@@ -6410,9 +6424,8 @@ Status includes OpenShell provider presence and credential-key shape, provider a
 For a trusted private endpoint, status also compares current DNS answers with recorded pins without changing the policy.
 Text output reports `private address pins: match`, `drift`, or `unresolved`.
 JSON output reports the same value in `trustedPrivateTarget.state` and includes the recorded pins.
-While a managed provider is attached, text and JSON status warn that its credential is sandbox-scoped until OpenShell supports endpoint-exclusive binding plus Host, scheme, and query enforcement.
 When a single server is named, status requests a differential wire-level credential-resolution probe.
-It sends no probe traffic unless the exact generated policy matches the effective gateway policy, the expected provider attachment is confirmed, and the live provider has the recorded ID, generic type, a valid resource version, and exactly one credential key matching the recorded key; a readiness failure reports `unknown` with a `probe skipped` detail.
+It sends no probe traffic unless the exact generated policy matches the effective gateway policy, the expected provider attachment is confirmed, and the live provider has the recorded ID, `nemoclaw-mcp-v1` type, a valid resource version, and exactly one credential key matching the recorded key; a readiness failure reports `unknown` with a `probe skipped` detail.
 When ready, the same MCP `initialize` is sent from inside the sandbox once with the `openshell:resolve:env:KEY` placeholder header and once with a deliberately-unresolvable control bearer.
 Classification uses the two HTTP status codes plus curl exit codes for transport, timeout, and policy-denial outcomes; response bodies are never captured or printed.
 A `verified` verdict requires the placeholder request to be accepted (HTTP 2xx) while the control is rejected — the only outcome that proves a valid credential was on the wire.
@@ -6459,6 +6472,8 @@ For a public entry, restart resolves the hostname again and refreshes the policy
 If the recorded host variable is exported, restart replaces the provider credential and waits for its new opaque revision.
 Otherwise, restart reuses an existing provider whose current metadata match the registry.
 A missing provider requires the variable to be exported before retrying.
+An existing provider with the profile-less legacy `generic` type must be removed and added again with its credential exported.
+OpenShell 0.0.106 cannot bind that provider to an MCP endpoint, so restart and rebuild fail closed instead of activating it.
 When that provider is already absent but its name still blocks sandbox exec,
 restart first detaches only the dangling sandbox-spec reference, then runs the
 agent capability probe before changing a live provider or policy.
@@ -6491,13 +6506,15 @@ Keep them down until the command returns; a concurrent relock refuses the config
 
 </AgentOnly>
 
-NemoClaw unregisters the sandbox agent adapter, prechecks and removes the recorded OpenShell provider, removes the owned generated policy, and clears the sandbox registry entry.
+For an ordinary managed entry, NemoClaw unregisters the sandbox agent adapter, removes the exact owned generated policy, detaches and deletes the recorded OpenShell provider, and clears the sandbox registry entry.
+For a stored legacy entry whose credential name is no longer accepted, it first detaches the exact provider so adapter cleanup cannot start with that credential attached.
 Deep Agents teardown does not require managed MCP capability v2 from the old image.
 For a v1 image, NemoClaw removes the exact registry-owned entry from the legacy `.mcp.json` while preserving unrelated user state; a replacement image must pass the v2 capability check before post-rebuild providers or policy are restored.
 The command fails closed on observed drift.
-`--force` may remove a modified same-name agent adapter entry, but provider deletion still requires the exact recorded ID, type, and credential key and policy deletion still requires exact owned content.
+`--force` may remove a modified same-name agent adapter entry, but provider deletion still requires the recorded ID and credential key plus an accepted managed provider type, and policy deletion still requires exact owned content.
+An exact legacy `generic` provider is accepted only for cleanup.
 Residuals preserve registry state.
-OpenShell `0.0.101` mutates providers by name, so do not concurrently replace a managed provider through another OpenShell client during this command.
+OpenShell `0.0.106` mutates providers by name, so do not concurrently replace a managed provider through another OpenShell client during this command.
 
 When an interrupted destroy leaves a prepared-only transaction, deletion is not durably confirmed.
 If the sandbox is still live, run `$$nemoclaw <name> mcp remove <server> --force` with the affected server name.
@@ -8143,7 +8160,7 @@ Set them before running `$$nemoclaw onboard`.
 | `NEMOCLAW_MODEL` | model ID | Selects an explicit model for a non-interactive onboarding run. NemoClaw preserves it across a detected provider switch, even when it matches the recorded provider's default. When this variable is unset during such a switch, NemoClaw ignores the `NEMOCLAW_PROVIDER_MODEL` compatibility fallback and uses normal provider model selection. |
 | `NEMOCLAW_TOOL_DISCLOSURE` | `progressive` or `direct` | Selects progressive tool discovery or the prior direct-exposure behavior. Defaults to `progressive`; `--tool-disclosure` takes precedence when both are set. |
 | `NEMOCLAW_ENDPOINT_URL` | URL | Custom endpoint URL. Used together with `NEMOCLAW_PROVIDER=custom` for OpenAI-compatible endpoints or `NEMOCLAW_PROVIDER=anthropicCompatible` for Anthropic-compatible endpoints. Onboarding rejects a URL that contains userinfo, query, or fragment components. It also rejects a URL that contains control characters, percent-encoded control characters, spaces within the URL, shell metacharacters, or other characters outside the URL-safe ASCII set, and a value that is not an absolute HTTP or HTTPS URL. NemoClaw trims ASCII spaces at the start and end of the URL before validation. |
-| `NEMOCLAW_COMPATIBLE_AUTH_MODE` | `none` or unset | Explicitly selects no authentication for an HTTP OpenAI-compatible endpoint using `localhost`, `127.0.0.1`, or `[::1]` and port `8000`, `11434`, or `11435` during non-interactive onboarding. |
+| `NEMOCLAW_COMPATIBLE_AUTH_MODE` | `none` or unset | Explicitly selects no authentication during non-interactive onboarding for an OpenAI-compatible HTTP endpoint on `localhost`, `127.0.0.1`, or `[::1]` and the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`. Port `11435` requires `NEMOCLAW_OLLAMA_PROXY_PORT` to use a different free port. |
 | `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` | comma-separated exact hostnames or IP literals | Allows operator-owned RFC1918, CGNAT, or IPv6 unique local destinations through supported inference, managed MCP, and custom-policy registration paths. Link-local metadata and other reserved ranges remain blocked; DNS resolution and exact address pinning remain active; wildcards are not supported. |
 | `NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS` | comma-separated exact hostnames or IP literals | Inference-only compatibility alias. Inference onboarding combines entries from this variable and `NEMOCLAW_TRUSTED_PRIVATE_HOSTS`. |
 | `NEMOCLAW_PREFERRED_API` | `completions` (currently the only honored value) | Forces the validation probe to use the `/v1/chat/completions` API path instead of the newer `/v1/responses` API. |
@@ -8315,6 +8332,15 @@ On upgrades, NemoClaw rejects `user` because a user-local install cannot replace
 On upgrades, NemoClaw also rejects `system` under `NEMOCLAW_NON_INTERACTIVE=1` when passwordless `sudo` is unavailable because the installer would hang on a hidden sudo prompt.
 The run exits with an actionable diagnostic instead.
 
+### Experimental NemoCUA
+
+Keep `NEMOCLAW_CUA_ENABLED=1` set whenever NemoClaw uses the experimental `nemocua` agent, including discovery, launch, agent commands, sandbox creation, and rebuild.
+
+| Variable | Format | Effect |
+|----------|--------|--------|
+| `NEMOCLAW_CUA_ENABLED` | exactly `1` to enable | Exposes the experimental `nemocua` agent. Other values keep it absent from agent discovery and prevent its manifest from loading. |
+| `NEMOCLAW_CUA_SANDBOX_IMAGE_REF` | image reference | Selects the caller-prepared NemoCUA sandbox image when `NEMOCLAW_CUA_ENABLED=1`. NemoClaw uses this reference directly and does not resolve a private package source. The value is required whenever NemoClaw creates or rebuilds the NemoCUA sandbox; whitespace and shell syntax are rejected. |
+
 ### Onboarding Behavior Flags
 
 The following flags toggle optional behaviors during onboarding.
@@ -8342,7 +8368,7 @@ Set them before running `$$nemoclaw onboard`.
 | `NEMOCLAW_SANDBOX_BASE_IMAGE_REFRESH` | `1`, `true`, `yes`, or `on` to enable | Bypasses recorded sandbox base-image resolution metadata during onboarding, recreation, and rebuild. NemoClaw reruns candidate resolution but can still use a compatible image from Docker's local image store. Versioned release candidates that exist locally but fail validation are refreshed from the registry once during normal resolution. This setting does not discard onboarding session state. |
 | `NEMOCLAW_SANDBOX_BASE_LOCAL_BUILD` | unset or `auto` (default); `1`, `true`, `yes`, or `on` to enable; `0`, `false`, `no`, or `off` to disable | Controls whether base-image resolution may build a compatible image locally. The default allows builds during normal CLI runs and disables them when `NODE_ENV=test` or `VITEST=true`. When source inputs or a missing/incompatible release-version base require a fresh build, disabling local builds makes resolution fail instead of using an unproven image. |
 | `NEMOCLAW_DOCKER_GPU_PATCH` | unset, `auto`, `fallback`, `1`, or `0`; other legacy nonzero values remain accepted through `v0.0.x` and will be removed in `v0.1.0` | Selects Linux Docker-driver GPU routing. Unset, `auto`, or `0` uses native OpenShell GPU injection on ordinary native Linux. `fallback` explicitly opts into one native attempt followed by one bounded compatibility retry when trusted host evidence identifies a GPU-routing failure. `1` and legacy nonzero values select the compatibility patch from the outset. Docker Desktop WSL and Jetson/Tegra use the compatibility path by default; Docker Desktop WSL ignores `0`, while Jetson/Tegra accepts `0` only as a troubleshooting override that bypasses device-group propagation. Portable onboarding requires native OpenShell GPU injection for every agent and does not use this setting. |
-| `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PATCH` | `1` to enable; disabled by default | This setting explicitly opts into the Linux gateway compatibility container for an older host ABI or a diagnostic run; use it only on a trusted local host because it uses host networking and mounts the Docker socket read-only even though the socket still exposes the privileged Docker API; prefer OpenShell 0.0.101's directly supported glibc 2.39+ path; see [Gateway Compatibility Container](/user-guide/openclaw/security/security-controls/gateway-authentication-controls#gateway-compatibility-container) for the container boundary and removal conditions. |
+| `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PATCH` | `1` to enable; disabled by default | This setting explicitly opts into the Linux gateway compatibility container for an older host ABI or a diagnostic run; use it only on a trusted local host because it uses host networking and mounts the Docker socket read-only even though the socket still exposes the privileged Docker API; prefer OpenShell 0.0.106's directly supported glibc 2.39+ path; see [Gateway Compatibility Container](/user-guide/openclaw/security/security-controls/gateway-authentication-controls#gateway-compatibility-container) for the container boundary and removal conditions. |
 | `NEMOCLAW_OPENSHELL_GATEWAY_BIN` | path | Advanced override for the `openshell-gateway` binary used by Linux Docker-driver startup. For the default port, the installer accepts the binary under an absolute `XDG_BIN_HOME` when set, otherwise `~/.local/bin/openshell-gateway`; it also accepts `/usr/local/bin/openshell-gateway` or `/usr/bin/openshell-gateway`. Another path fails service staging. The macOS Homebrew service uses the formula's binary. Defaults to the binary next to `openshell`, then common install paths. |
 | `NEMOCLAW_OPENSHELL_SANDBOX_BIN` | path | Advanced override for the `openshell-sandbox` binary used by Linux Docker-driver startup. The macOS Homebrew service uses the formula's driver layout. Defaults to the binary next to `openshell`, then common install paths. |
 | `NEMOCLAW_OPENSHELL_GATEWAY_STATE_DIR` | path | Advanced override for the Linux Docker-driver gateway SQLite state directory and standalone-fallback PID file. Defaults to `~/.local/state/nemoclaw/openshell-docker-gateway`. |
@@ -8619,7 +8645,7 @@ Runtime identity profiles may use DNS-backed HTTPS only within a provider type's
 NemoClaw resolves every destination before import and rejects private or internal addresses.
 OpenShell performs connect-time server-side request forgery (SSRF) and L7 enforcement before it injects the provider credential.
 
-OpenShell 0.0.101 verifies the original hostname's certificate but does not pin the address that NemoClaw resolved during import.
+OpenShell 0.0.106 verifies the original hostname's certificate but does not pin the address that NemoClaw resolved during import.
 Only identity-platform-controlled DNS namespaces such as `okta.com`, `login.microsoftonline.com`, and `graph.microsoft.com` belong in this trust table.
 An attacker-controlled or customer-controlled suffix requires a pinning-capable upstream refresh boundary and new conformance evidence.
 </Warning>
@@ -9849,7 +9875,7 @@ NemoClaw configures messaging channels during onboarding. The OpenShell gateway 
 | WeChat | Tested with limitations | Channel hook available. Verify regional account access before relying on this path. |
 | WhatsApp | Tested with limitations | Supported by both OpenClaw and Hermes through the channel manifest `supportedAgents` declaration in `src/lib/messaging/channels/whatsapp/manifest.ts`. Pairing happens in the sandbox through WhatsApp Web by scanning a QR code at first run; the Hermes flow exposes this as `hermes whatsapp` and persists session credentials under `~/.hermes/platforms/whatsapp/session` (`agents/hermes/manifest.yaml:69-71`). Sandbox egress goes through the `whatsapp` policy preset, which carries the WebSocket / Noise / h1-ALPN caveats documented in `src/lib/messaging/channels/whatsapp/policy/openclaw.yaml` and `src/lib/messaging/channels/whatsapp/policy/hermes.yaml`. No Meta Business API integration today; that path is out of scope for this matrix. |
 | Microsoft Teams | Experimental | Supported by both OpenClaw and Hermes through the manifest-first messaging channel contract. Requires Bot Framework app credentials, a tenant ID, and a public HTTPS endpoint that reaches the sandbox webhook path `/api/messages`. Sandbox egress goes through the `teams` policy preset, and only one active Teams sandbox can use a given local `MSTEAMS_PORT` forward. |
-| Google Chat | Experimental | Available only for OpenClaw through the channel manifest contract. The onboarding picker labels Google Chat experimental, and NemoClaw enables it only after you explicitly select or add it. Requires a Google service-account credential and a public HTTPS endpoint that reaches only the `/googlechat` webhook path. OpenShell keeps the service-account private key outside the sandbox and supplies short-lived credentials at approved egress boundaries. |
+| Google Chat | Experimental | Available for OpenClaw and Hermes through the channel manifest contract. The onboarding picker labels Google Chat experimental, and NemoClaw enables it only after you explicitly select or add it. Both agents require a Google service-account credential. OpenClaw receives events through a public HTTPS endpoint restricted to the `/googlechat` webhook path. Hermes instead pulls events from a configured Google Cloud Pub/Sub subscription over REST and exposes no webhook. OpenShell keeps the service-account private key outside the sandbox and supplies short-lived credentials at approved Google Chat and Pub/Sub egress boundaries. |
 {/* integration-status:end */}
 
 ## Capabilities
@@ -10322,6 +10348,11 @@ Inspect the OpenShell gateway's ephemeral CA generation and CA-file initializati
 
 If restart reports a missing provider and the original credential is not registered in OpenShell, export the same variable name used during add and retry.
 
+## Provider Uses the Legacy Generic Profile
+
+If restart or rebuild reports that the provider uses the profile-less legacy `generic` type, remove that server and add it again with the recorded credential variable exported.
+OpenShell cannot bind that provider to an MCP endpoint, and NemoClaw accepts it only for exact cleanup.
+
 ## Add Transaction Is Incomplete
 
 If status reports an incomplete add transaction, rerun the original `mcp add` command with the same URL and environment-variable name.
@@ -10581,7 +10612,8 @@ Install the required OpenShell build and rerun onboarding.
 NemoClaw checks inspectable installed OpenShell artifacts for `protocol: mcp` capability and does not enable managed MCP from a version number alone.
 
 For image-backed or compressed supervisors without an inspectable host artifact, the onboarding check is provisional.
-Before a credential or provider side effect, the MCP command loads the exact generated policy with `policy set --wait` and exact-matches effective state.
+Before a credential or provider mutation, the MCP command imports or verifies the endpointless profile and loads the exact generated policy without a credential binding by using `policy set --wait`.
+After provider attachment, it applies and exact-matches the endpoint-bound policy before credential use.
 
 A runtime that rejects `protocol: mcp` therefore fails closed.
 
@@ -11057,7 +11089,7 @@ Use `NEMOCLAW_GATEWAY_BIND_ADDRESS=0.0.0.0` only on supported gateway modes and 
 
 ### Older-glibc gateway compatibility container
 
-OpenShell 0.0.101 directly supports Linux hosts with glibc 2.39 or newer.
+OpenShell 0.0.106 directly supports Linux hosts with glibc 2.39 or newer.
 On an older trusted host, `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PATCH=1` explicitly opts into NemoClaw's compatibility container.
 Leave it unset on supported hosts.
 
@@ -11816,6 +11848,209 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 $$nemoclaw onboard
 ```
+
+### Onboarding Reports a Rejected or Unconfirmed Policy Update
+
+Onboarding can submit several policy mutations in sequence when you deselect policy presets and select others.
+It submits deselection mutations before selection mutations.
+Each successful mutation updates the live OpenShell gateway policy and the sandbox registry before the next mutation starts.
+If a later mutation fails, the earlier successful mutations remain applied and recorded.
+
+Each mutation uses a temporary `policy.yaml` file in a `nemoclaw-policy-*` directory.
+When the submission finishes, NemoClaw removes that directory, whether or not the gateway accepted the mutation.
+If cleanup fails, NemoClaw reports the directory that still holds the policy instead of reporting the submission result.
+
+When NemoClaw reports this directory, do not retry the policy operation.
+Use Bash to enter and validate the exact path from the error before you remove its contents:
+
+```bash
+cleanup_retained_policy() {
+  local platform_tmp_root retained_policy_dir
+
+  if ! platform_tmp_root=$(node -p "require('node:os').tmpdir()"); then
+    printf 'Validation failed: Node.js could not report the platform temporary directory.\n' >&2
+    return 1
+  fi
+  platform_tmp_root=${platform_tmp_root%/}
+  IFS= read -r -p 'Enter the exact temporary policy directory from the error: ' retained_policy_dir
+  python3 - "$platform_tmp_root" "$retained_policy_dir" <<'PY'
+import os
+import re
+import stat
+import sys
+
+
+class CleanupError(Exception):
+    pass
+
+
+def open_retained_policy_directory(platform_tmp_root, reported_path):
+    if not os.path.isabs(platform_tmp_root):
+        raise CleanupError("the platform temporary directory is not absolute")
+    platform_tmp_root_real = os.path.realpath(platform_tmp_root)
+    if platform_tmp_root_real == os.path.abspath(os.sep):
+        raise CleanupError("the platform temporary directory cannot be the filesystem root")
+    reported_basename = os.path.basename(reported_path)
+    reported_parent = os.path.dirname(reported_path)
+    if not re.fullmatch(r"nemoclaw-policy-.+", reported_basename):
+        raise CleanupError("the basename must match nemoclaw-policy-* and include a suffix")
+    if reported_parent != platform_tmp_root:
+        raise CleanupError(
+            f"the path must be a direct child of the actual platform temporary directory {platform_tmp_root!r}"
+        )
+    if os.path.realpath(reported_path) != os.path.join(platform_tmp_root_real, reported_basename):
+        raise CleanupError("the canonical path is outside the actual platform temporary directory")
+    if (
+        not hasattr(os, "geteuid")
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or os.stat not in os.supports_dir_fd
+        or os.unlink not in os.supports_dir_fd
+    ):
+        raise CleanupError("this platform cannot perform descriptor-relative cleanup")
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
+    root_stat = os.stat(platform_tmp_root_real, follow_symlinks=False)
+    if not stat.S_ISDIR(root_stat.st_mode):
+        raise CleanupError("the canonical platform temporary path is not a directory")
+    root_fd = os.open(platform_tmp_root_real, directory_flags | os.O_NOFOLLOW)
+    try:
+        opened_root_stat = os.fstat(root_fd)
+        if (opened_root_stat.st_dev, opened_root_stat.st_ino) != (root_stat.st_dev, root_stat.st_ino):
+            raise CleanupError("the platform temporary directory changed while it was being opened")
+        reported_stat = os.stat(reported_basename, dir_fd=root_fd, follow_symlinks=False)
+        if not stat.S_ISDIR(reported_stat.st_mode):
+            raise CleanupError("the path is not a directory or is a symbolic link")
+        if reported_stat.st_uid != os.geteuid():
+            raise CleanupError("the current user does not own the directory")
+        policy_fd = os.open(
+            reported_basename,
+            directory_flags | os.O_NOFOLLOW,
+            dir_fd=root_fd,
+        )
+        opened_stat = os.fstat(policy_fd)
+        if (opened_stat.st_dev, opened_stat.st_ino) != (reported_stat.st_dev, reported_stat.st_ino):
+            os.close(policy_fd)
+            raise CleanupError("the directory changed while it was being opened")
+        return root_fd, policy_fd, reported_basename, opened_stat
+    except Exception:
+        os.close(root_fd)
+        raise
+
+
+def remove_retained_policy_material(policy_fd):
+    try:
+        os.unlink("policy.yaml", dir_fd=policy_fd)
+    except FileNotFoundError:
+        pass
+    remaining = os.listdir(policy_fd)
+    if remaining:
+        raise CleanupError(f"the directory contains unexpected entries: {remaining!r}")
+
+
+def main():
+    root_fd = None
+    policy_fd = None
+    try:
+        root_fd, policy_fd, basename, opened_stat = open_retained_policy_directory(
+            sys.argv[1], sys.argv[2]
+        )
+        remove_retained_policy_material(policy_fd)
+        try:
+            current_stat = os.stat(basename, dir_fd=root_fd, follow_symlinks=False)
+        except FileNotFoundError as error:
+            raise CleanupError("the reported path changed during cleanup") from error
+        if (current_stat.st_dev, current_stat.st_ino) != (opened_stat.st_dev, opened_stat.st_ino):
+            raise CleanupError("the reported path was replaced during cleanup; the replacement was not removed")
+        print(
+            f"Removed retained policy material from {sys.argv[2]!r}. "
+            "The empty directory intentionally remains."
+        )
+    except (CleanupError, OSError) as error:
+        print(f"Cleanup failed for {sys.argv[2]!r}: {error}.", file=sys.stderr)
+        raise SystemExit(1) from error
+    finally:
+        if policy_fd is not None:
+            os.close(policy_fd)
+        if root_fd is not None:
+            os.close(root_fd)
+
+
+if __name__ == "__main__":
+    main()
+PY
+}
+cleanup_retained_policy
+```
+
+The procedure opens the validated directory without following a symbolic link and removes `policy.yaml` relative to that open directory.
+It fails if the directory contains anything else.
+It intentionally leaves the empty directory because deleting it later by pathname would reintroduce a directory-replacement race.
+Continue only after the procedure reports that the retained policy material was removed.
+Do not remove the empty directory by pathname.
+If validation or cleanup fails, preserve the exact path and complete error message for support.
+Do not use another removal command on that path.
+
+After temporary-directory cleanup, treat the gateway state as unknown because the cleanup error replaced the submission result.
+Restore access to the OpenShell gateway, then read the sandbox policy:
+
+```bash
+$$nemoclaw <name> policy list
+```
+
+If `policy list` reports `⚠ Could not query gateway — showing local state only.`, stop because the command did not read the gateway policy.
+If it reports container-runtime recovery guidance, restore that runtime and run `policy list` again.
+Do not resume or start fresh onboarding until `policy list` reports the live gateway policy.
+
+When NemoClaw reports a rejected or unconfirmed policy mutation, onboarding stops and:
+
+- leaves earlier successful mutations applied and recorded;
+- does not record that mutation in the sandbox registry;
+- marks the session failed and resumable;
+- reports one of the two results below.
+
+After either result, run `policy list` before you resume or start fresh onboarding.
+
+The gateway read the policy and refused it:
+
+```text
+OpenShell rejected the policy for sandbox 'my-assistant' (exit <exit status>): <OpenShell diagnostic>. The policy was not applied and re-applying it will be rejected again; change the preset selection instead.
+```
+
+An OpenShell refusal means this mutation did not change the live policy.
+Earlier successful mutations in the same onboarding step remain applied and recorded.
+Use the quoted OpenShell diagnostic to identify what the gateway refused.
+After you inspect `policy list`, follow [Previous onboarding session failed](#previous-onboarding-session-failed) to start fresh onboarding and choose a different preset selection.
+
+NemoClaw could not confirm the result.
+This covers a connection that ended before the result arrived, an unreachable gateway, an elapsed deadline, a rejected credential, and a refusal the gateway reported with a status NemoClaw does not recognize as final.
+NemoClaw reports this whenever the gateway did not return an explicit refusal, because only an explicit refusal proves the policy was not applied:
+
+```text
+Could not confirm the policy update for sandbox 'my-assistant': <transport or command error>. The gateway may or may not have applied it; read the current policy back before retrying.
+```
+
+The gateway state is unknown, so read the sandbox policy with `policy list` before you retry.
+`policy list` compares the sandbox registry with the live gateway policy and flags a preset that is applied in one place but not the other.
+The unconfirmed mutation does not update the sandbox registry.
+
+The same connection problem that made the result unconfirmed can also stop `policy list` from reaching the gateway.
+When that happens, `policy list` prints `⚠ Could not query gateway — showing local state only.` and still exits 0.
+If the container runtime is down, it prints that runtime's recovery guidance instead.
+Stop while `policy list` reports local state only because that output does not show whether the gateway applied the mutation.
+Restore gateway access and run `policy list` again before you resume or start fresh onboarding.
+
+After `policy list` reads the live gateway policy, follow the result below.
+The [failed-session recovery steps](#previous-onboarding-session-failed) provide the resume and fresh onboarding commands.
+
+- If an affected preset reports `active on gateway, missing from local state`, resume the failed session.
+  The gateway completed the addition, and resume can record the applied preset locally without submitting that policy change again.
+- If an affected preset reports `recorded locally, not active on gateway`, do not resume or start fresh onboarding.
+  The gateway may have completed the removal while the sandbox registry retained the preset.
+  Preserve the original unconfirmed error and the complete `policy list` output for support.
+- If `policy list` reports no disagreement for the unconfirmed mutation, compare the live preset set with the selection in the failed session.
+  Resume only if the live policy still requires the unconfirmed addition or removal to match that selection.
+  Otherwise, start fresh onboarding and select the exact preset set that `policy list` reports as active.
 
 ### Previous onboarding session failed
 
@@ -16202,7 +16437,7 @@ Endpoint rules restrict allowed HTTP methods and URL paths.
 
 | Aspect | Detail |
 |---|---|
-| Default | Some endpoints allow GET and POST on `/**` (for example, `clawhub.ai`). Others restrict methods and paths to specific API routes (for example, `integrate.api.nvidia.com` allows POST only to inference and embedding paths and GET to model listings). Read-only endpoints such as `docs.openclaw.ai`, the OpenClaw `npm_registry` baseline entry, and the `pypi` preset allow GET only (PyPI also allows HEAD). The broader `npm` preset is an intentional exception: npm/Yarn registry traffic uses L4 pass-through for Node 22 undici CONNECT compatibility. While that preset is active, NemoClaw temporarily aligns the overlapping baseline npm endpoint with the same reviewed L4 metadata because OpenShell 0.0.101 requires a single connection mode. |
+| Default | Some endpoints allow GET and POST on `/**` (for example, `clawhub.ai`). Others restrict methods and paths to specific API routes (for example, `integrate.api.nvidia.com` allows POST only to inference and embedding paths and GET to model listings). Read-only endpoints such as `docs.openclaw.ai`, the OpenClaw `npm_registry` baseline entry, and the `pypi` preset allow GET only (PyPI also allows HEAD). The broader `npm` preset is an intentional exception: npm/Yarn registry traffic uses L4 pass-through for Node 22 undici CONNECT compatibility. While that preset is active, NemoClaw temporarily aligns the overlapping baseline npm endpoint with the same reviewed L4 metadata because OpenShell 0.0.106 requires a single connection mode. |
 | What you can change | Add methods (PUT, DELETE, PATCH) or restrict paths to specific prefixes. |
 | Risk if relaxed | Allowing all methods on an API endpoint gives the agent write and delete access. For example, allowing DELETE on `api.github.com` lets the agent delete repositories. |
 | Recommendation | Use GET-only rules for endpoints that the agent only reads. Add write methods only for endpoints where the agent must create or modify resources. Restrict paths to specific API routes when possible. |
@@ -17379,6 +17614,7 @@ On Docker-driver deployments, NemoClaw gives host CLI calls and sandbox callback
 | Aspect | Detail |
 |---|---|
 | Default | NemoClaw enables local TLS, mTLS user authentication, and sandbox JWT authentication. Host-side OpenShell CLI calls use local mTLS. Sandbox callbacks use the guest mTLS bundle plus a sandbox-scoped JWT. The generated config sets `allow_unauthenticated_users = false`, and gateway launch removes an inherited `OPENSHELL_DISABLE_GATEWAY_AUTH=true`. |
+| Supervisor TLS name | OpenShell 0.0.106 removes a user-supplied `OPENSHELL_GATEWAY_TLS_SERVER_NAME` from Docker, Podman, and VM supervisor environments after it merges sandbox settings. The supervisor therefore verifies the gateway name chosen by the trusted driver rather than one chosen inside the sandbox specification. |
 | Token lifetime | Local sandbox JWTs use OpenShell's `ttl_secs = 0` contract for a non-expiring token on a local single-user gateway. Sandbox identity checks and the local mTLS boundary still apply to each callback. |
 | What you can change | These authentication controls are not user-facing settings. Use NemoClaw to configure and start the Docker-driver gateway. |
 | Risk if relaxed | Disabling gateway authentication or widening the gateway listener can expose privileged gateway methods to another local or network client. |
@@ -17394,7 +17630,7 @@ This path requires the explicit opt-in `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PAT
 | Default | NemoClaw does not auto-enable the compatibility container on ABI mismatch. If `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PATCH=1` is set, the container keeps the main gateway listener on `127.0.0.1`, uses host networking so OpenShell computes the same Docker bridge callback addresses as a host-side gateway, mounts the Docker socket read-only, drops Linux capabilities, sets `no-new-privileges`, and publishes no extra Docker ports. |
 | What you can change | Opt in with `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PATCH=1`, keep the path disabled with `NEMOCLAW_OPENSHELL_GATEWAY_CONTAINER_PATCH=0`, or run on a host/OpenShell build combination where the gateway binary launches directly. |
 | Risk if relaxed | The Docker socket remains a privileged host API even when bind-mounted read-only. Treat this mode as equivalent to trusting the host user that can drive Docker, and do not enable it on untrusted shared hosts. |
-| Recommendation | Prefer a host with glibc 2.39 or newer, which OpenShell 0.0.101 supports directly, and use the compatibility container only as an explicit local bridge on an older trusted host. |
+| Recommendation | Prefer a host with glibc 2.39 or newer, which OpenShell 0.0.106 supports directly, and use the compatibility container only as an explicit local bridge on an older trusted host. |
 
 OpenShell owns the native Linux glibc support floor.
 NemoClaw owns the explicit opt-in, host-networking configuration, read-only socket mount, and gateway authentication controls for this fallback.

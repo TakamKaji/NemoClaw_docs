@@ -158,8 +158,9 @@ Managed profiles and model-specific recipes use immutable image digests:
 
 - DGX Spark and DGX Station models without a model-specific runtime use the `linux/arm64` digest `sha256:9204569b17ee4c0eff75194b8e6e458479c8aee18953b5ab9cf359fcdac659e2` with a compressed layer size of `9.60 GB` under `nvcr.io/nvidia/vllm:26.05.post1-py3`.
   N1x uses the same image.
-- The DGX Spark Muse Glimmer recipe uses the `linux/arm64` post-merge vLLM nightly digest `sha256:677afd5bf3b4bb9881f91e107af7098f8410726b4c05b25cb4a815900b398204` with a compressed layer size of `9.70 GB` under `vllm/vllm-openai`.
-  The image was built from vLLM commit `ac7509e2b1db40fec2f03dde1ed4e9dfdc2338c9`, which contains merged Muse Glimmer support commit `6adad08767583f52eb4d2122111af0bf638ed5e6`.
+- The DGX Spark Muse Glimmer recipe uses the `linux/arm64` post-fix vLLM nightly digest `sha256:b0e84e5f2b00a7268e4fdda332790ebd4bfb166b64757e166914753afaeee965` with a compressed layer size of `9.71 GB` under `vllm/vllm-openai`.
+  The image was built from vLLM commit `5a4c8d99242e9e069b604d0e9b969e77f7dd501d`, which contains merged Muse Glimmer support commit `6adad08767583f52eb4d2122111af0bf638ed5e6` and the vLLM dependency fix from commit `90984ddbed27a09409506d6d6c0eea87f54b04b5`.
+  The image includes `huggingface_hub` `1.28.0`, which preserves the pinned model revision when vLLM transfers configuration to the engine process.
   It pins Hugging Face revision `d35cb79050f419c457611b1cee5c5d15b176f285` for the approximately `25.45 GB` model download.
 - The DGX Spark Nemotron 3.5 Lightning recipe uses the `linux/arm64` digest `sha256:3af90144a0926e5c5fe46ee16e5201e763dd854538b9d7ce433755f11dadaf78` with a compressed layer size of approximately `12.69 GB` under `vllm/vllm-openai`.
   It pins Hugging Face revision `0dcd680e5585c791728c83342b311d0a0026dbeb` for the approximately `21.56 GB` model download.
@@ -351,6 +352,32 @@ It rejects model and serve-argument overrides so its validated resource boundary
 This profile pins a post-merge vLLM nightly image and remains Experimental.
 Physical qualification covered only the bounded verification above.
 Vision and DFlash speculative decoding are disabled and outside this profile's scope.
+</Warning>
+
+### Use Explicit Linux x86_64 Profiles
+
+Experimental Linux x86_64 profiles provide the Muse Glimmer and NVIDIA Nemotron 3.5 Lightning models on one NVIDIA GPU.
+They are explicit-only, so they do not change the generic Linux default or appear in the interactive model picker.
+
+Before you select either profile, confirm that the host runs Linux x86_64 with Docker, the NVIDIA Container Toolkit, healthy CDI support, NVIDIA driver `580.65.06` or later, and at least `96 GB` of GPU memory.
+Muse Glimmer also requires GPU compute capability `12.0` or later.
+NVIDIA Nemotron 3.5 Lightning requires GPU compute capability `9.0` or later.
+
+List the compatible profiles, then pass one stable profile ID to onboarding:
+
+```bash
+$$nemoclaw profiles list
+$$nemoclaw onboard --profile vllm.linux-amd64-nvidia.single.muse-glimmer-30b-nvfp4-w4a4
+```
+
+Use `vllm.linux-amd64-nvidia.single.nemotron-3.5-lightning-30b-a3b-nvfp4` for NVIDIA Nemotron 3.5 Lightning.
+NemoClaw stops before image or model downloads when the profile does not match the host.
+The selected recipe uses a pinned image, fixed serving arguments, bearer authentication, and the managed host-local lifecycle.
+Do not combine `--profile` with `NEMOCLAW_PROVIDER`, `NEMOCLAW_MODEL`, `NEMOCLAW_VLLM_MODEL`, or `NEMOCLAW_VLLM_EXTRA_ARGS_JSON`.
+
+<Warning title="Experimental Linux x86_64 Profiles">
+These profiles have bounded hardware validation and remain Experimental.
+They do not establish general support for other Linux x86_64 GPUs, models, images, or serving arguments.
 </Warning>
 
 NemoClaw creates or reuses the Muse Glimmer bearer key in the owner-only `~/.nemoclaw/dual-station-vllm-api-key` host file before confirmation.
