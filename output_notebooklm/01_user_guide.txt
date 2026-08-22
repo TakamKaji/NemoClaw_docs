@@ -2342,7 +2342,11 @@ Use these details when your first-run path needs more control.
     Before the provider-selection step completes, NemoClaw creates the receipt-owned runner, sends one validation request for the selected model, and confirms that the exact model is loaded.
     NemoClaw records the provider selection only after those checks pass.
 
-    This onboarding path does not establish complete `destroy` or `uninstall` cleanup for the Portable Ollama runner.
+    Run `nemohermes uninstall` for full cleanup of a receipt-owned Portable Ollama runner.
+    NemoClaw revalidates the exact lifecycle receipt, sandbox and Podman container identities, committed gateway provider revision, inference runtime, socket, and Portable network before it removes an owned resource.
+    If cleanup is interrupted, preserve the reported state and rerun the same command.
+    NemoClaw resumes the recorded phase without deleting a same-name replacement, shared provider or inference runtime, or Podman image.
+    Per-sandbox `destroy` remains outside this full-uninstall cleanup contract.
     Refer to [Set Up Ollama](../inference/local-inference/set-up-ollama#use-portable-ollama-with-hermes) for the fail-closed uninstall boundary.
   </Accordion>
 
@@ -3942,7 +3946,8 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
 The flag enables the dedicated vLLM profile gate, disables Express selection, and selects the matching catalog recipe.
 Selecting Express option 2 enables the same profile gate and selects the vLLM runtime.
 Do not combine this path with `NEMOCLAW_PROVIDER` or `NEMOCLAW_MODEL`.
-The profile rejects `NEMOCLAW_VLLM_MODEL` and `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` before installation.
+`NEMOCLAW_VLLM_MODEL` can select a catalog model only when the catalog resolves it to the matching fixed recipe.
+The profile rejects a model that does not resolve to that recipe and all `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` values before installation.
 Set `NEMOCLAW_VLLM_PORT` before installation to use another host listener port.
 Before installation, ensure no other process or container owns `${NEMOCLAW_VLLM_PORT:-8000}` on `127.0.0.1` or on the private IPv4 gateway of `openshell-docker`.
 
@@ -4139,7 +4144,7 @@ Use the error location to select the correct setting.
 | Setting | Applies to | Default |
 |---|---|---|
 | `NEMOCLAW_AGENT_TIMEOUT` | OpenClaw per-request inference | `600` seconds |
-| `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` | Ollama, vLLM, NIM, and compatible-endpoint validation during onboarding | `180` seconds |
+| `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` | Ollama, vLLM, NIM, and compatible-endpoint onboarding validation paths that read this setting | `180` seconds |
 | `NEMOCLAW_SANDBOX_READY_TIMEOUT` | Image build, gateway upload, and in-sandbox boot after creation | `180` seconds |
 | `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` | OpenShell command re-registration after policy application, plus gateway health and re-registration during managed OpenClaw or Hermes recovery | `30`, `90`, or `120` seconds, depending on the recovery phase |
 
@@ -4194,8 +4199,15 @@ Deep Agents does not consume the OpenClaw-only `NEMOCLAW_AGENT_TIMEOUT` setting.
 
 ## Increase the Local Validation Timeout
 
-Raise `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` when the inference-server validation probe needs more than 180 seconds.
+For validation paths that read `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT`, raise it when the inference-server validation request needs more than 180 seconds.
 Large prompts, cold local model loads, and slower hardware can require a larger budget.
+
+<AgentOnly variant="openclaw,hermes">
+
+Portable onboarding uses a fixed 120-second deadline for its receipt-owned Podman inference validation request.
+`NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` does not change this deadline.
+
+</AgentOnly>
 
 ```bash
 export NEMOCLAW_LOCAL_INFERENCE_TIMEOUT=300
@@ -4388,18 +4400,28 @@ For context-window and output-token settings, refer to [Configure Model Limits](
 # SPDX-License-Identifier: Apache-2.0
 title: "Configure Model Limits"
 sidebar-title: "Configure Model Limits"
-description: "Set the context-window and output-token limits baked into a NemoClaw-managed sandbox."
-description-agent: "Configures model context and output limits. Use when changing the context window or maximum output tokens."
+description: "Context-window and output-token limits for a NemoClaw-managed sandbox."
+description-agent: "Explains which agent runtimes accept NemoClaw model-limit overrides and how to set them. Use when checking or changing a context window or maximum output tokens."
 keywords: ["nemoclaw context window", "nemoclaw max tokens", "model limits"]
 content:
   type: "how_to"
 ---
+<AgentOnly variant="openclaw,hermes">
+
 Configure explicit model limits before onboarding so NemoClaw can bake them into the sandbox image.
 Changing an explicit build-time model limit on an existing sandbox requires fresh recreation.
 
-## Set OpenClaw Limits
+</AgentOnly>
+
+<AgentOnly variant="deepagents">
+
+NemoClaw does not configure context-window or output-token limits for LangChain Deep Agents Code.
+
+</AgentOnly>
 
 <AgentOnly variant="openclaw">
+
+## Set OpenClaw Limits
 
 OpenClaw accepts an explicit context window and maximum output-token count.
 
@@ -4420,9 +4442,9 @@ NemoClaw ignores invalid values and uses the default instead.
 
 </AgentOnly>
 
-## Set the Hermes Context Window
-
 <AgentOnly variant="hermes">
+
+## Set the Hermes Context Window
 
 Hermes accepts `NEMOCLAW_CONTEXT_WINDOW` as its model-limit override.
 
@@ -4451,9 +4473,9 @@ Setting `NEMOCLAW_CONTEXT_WINDOW` does not raise the model's native context wind
 
 </AgentOnly>
 
-## Use Detected Local Limits
-
 <AgentOnly variant="openclaw,hermes">
+
+## Use Detected Local Limits
 
 When `NEMOCLAW_CONTEXT_WINDOW` is unset, NemoClaw can use a context length reported by the selected local server.
 Local Ollama reports the loaded model's runtime context length.
@@ -4463,6 +4485,18 @@ Set `NEMOCLAW_CONTEXT_WINDOW` when you need to override the detected value.
 
 </AgentOnly>
 
+<AgentOnly variant="deepagents">
+
+## Deep Agents Code Model Limits
+
+OpenClaw onboarding reads `NEMOCLAW_CONTEXT_WINDOW` and `NEMOCLAW_MAX_TOKENS`, and Hermes onboarding reads `NEMOCLAW_CONTEXT_WINDOW`.
+Deep Agents Code onboarding reads neither variable, and the Deep Agents Code image bakes no context-window or output-token limit.
+The agent runtime, the selected model, and the inference endpoint determine the limits that apply instead.
+
+</AgentOnly>
+
+<AgentOnly variant="openclaw,hermes">
+
 ## Recreate an Existing Sandbox
 
 Model limits are build-time settings.
@@ -4471,10 +4505,6 @@ Recreate the named sandbox after changing a supported value.
 ```bash
 $$nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 ```
-
-<AgentOnly variant="deepagents">
-
-Use this recreation path for Deep Agents context-window or maximum-token changes so the managed runtime configuration and OpenShell route stay aligned.
 
 </AgentOnly>
 
@@ -5789,11 +5819,14 @@ It then creates the runner, sends one validation request for the selected model,
 This path does not inspect, start, or use a host Ollama process, and it does not use the default Docker runtime.
 
 <Warning title="Portable Cleanup Boundary">
-This path covers fresh onboarding and provider selection.
-It does not establish complete `destroy` or `uninstall` cleanup for the Portable Ollama runner.
-Portable uninstall stops when it cannot prove exact cleanup authority for a Portable lifecycle receipt with schema `5`.
-It exits nonzero before deleting the runner or its receipt.
-Preserve the Portable Ollama runner and its lifecycle receipt.
+Run `$$nemoclaw uninstall` for full cleanup of a receipt-owned Portable Ollama runner.
+Before its first mutation, NemoClaw records the exact schema `5` lifecycle receipt, sandbox registry revision and lifecycle generation, sandbox and Podman container identities, committed gateway provider revision and profile, inference runtime, socket, and Portable network.
+It revalidates that authority before each cleanup phase and preserves a provider or inference runtime that another recorded sandbox shares.
+An interrupted run keeps owner-private, credential-free recovery state.
+Preserve the reported state and rerun the same command to resume the recorded phase.
+An identity change, same-name replacement, stale sandbox readiness result, changed provider profile, or other authority drift makes uninstall exit nonzero before an unproven mutation.
+The command preserves every Podman image.
+Per-sandbox `destroy` remains outside this full-uninstall cleanup contract.
 </Warning>
 
 </AgentOnly>
@@ -6979,6 +7012,8 @@ After qualification, the installer prepares the peer with the same reviewed help
 
 No managed-vLLM image or model download starts before the pair qualification or single-Station fallback decision completes.
 If no trusted pair qualifies, Express retains the single-Station Ultra recipe.
+If the read-only preparation check finds an active vLLM workload on an automatically discovered peer, Express leaves that peer unchanged.
+It retains the single-Station Ultra recipe.
 
 Set `NEMOCLAW_DGX_STATION_PEER` to request one exact already-trusted peer.
 The installer stops instead of falling back when that peer does not qualify.
@@ -7551,7 +7586,9 @@ Refer to [Set Up vLLM on Two DGX Stations](set-up-vllm-on-two-dgx-stations) for 
 On DGX Spark, Express keeps automatic managed-vLLM serving-profile selection as option 1, the default.
 It offers the fixed local vLLM profile as option 2.
 When you select option 2, the serving catalog supplies the pinned model, runtime image, container port, and serve arguments.
-The installer rejects provider and model overrides for that fixed profile, and the dedicated onboarder rejects vLLM model and serve-argument overrides before it starts the managed container. `NEMOCLAW_VLLM_PORT` may select another host listener.
+The installer rejects provider and model overrides for that fixed profile.
+`NEMOCLAW_VLLM_MODEL` can select a catalog model only when the catalog resolves it to the matching fixed recipe, but the dedicated onboarder rejects a model that does not resolve to that recipe and all serve-argument overrides before it starts the managed container.
+`NEMOCLAW_VLLM_PORT` may select another host listener.
 Explicit `NEMOCLAW_MODEL` or `NEMOCLAW_VLLM_MODEL` intent retains the customizable managed-vLLM path and skips the fixed-profile choice.
 If onboarding stops after you select option 2, `$$nemoclaw onboard --resume` reuses the recorded fixed profile instead of returning to automatic serving-profile selection.
 Refer to [Choose a Local Inference Server](choose-local-inference-server#install-a-fixed-vllm-profile) for fixed-profile installation and verification.
@@ -7652,7 +7689,8 @@ NemoClaw applies the registered `vllm serve` arguments, including the reasoning 
 |---|---|---|---|---|
 | `qwen3.6-27b` | `Qwen/Qwen3.6-27B-FP8` | DGX Spark, DGX Station, Linux with an NVIDIA GPU | `8.9` | Supported override. |
 | `qwen3.6-35b-a3b-nvfp4` | `nvidia/Qwen3.6-35B-A3B-NVFP4` | DGX Spark, N1x | `12.1` | DGX Spark and N1x default. |
-| `muse-glimmer-30b` | `Inferact/Muse-Glimmer-30B-NVFP4-W4A4` | DGX Spark | `12.1` | Experimental single-DGX Spark choice for text, reasoning, and structured tool calls. NemoClaw does not enable or support DFlash for this profile. |
+| `muse-glimmer-30b` | `Inferact/Muse-Glimmer-30B-NVFP4-W4A4` | DGX Spark, Linux x86_64 with an NVIDIA GPU | `12.0` on Linux; `12.1` on DGX Spark | Experimental choice for text, reasoning, and structured tool calls. NemoClaw does not enable or support DFlash for this profile. |
+| `nemotron-3.5-lightning-30b` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | DGX Spark, Linux x86_64 with an NVIDIA GPU | `9.0` on Linux; `12.1` on DGX Spark | Experimental reasoning and tool-calling choice. |
 | `nemotron-3-nano-4b` | `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` | DGX Spark, DGX Station, Linux with an NVIDIA GPU | `8.9` | Generic Linux NVIDIA GPU default. |
 | `deepseek-v4-flash` | `deepseek-ai/DeepSeek-V4-Flash` | DGX Station | `10.0` | DGX Station profile default outside express install. |
 | `nemotron-3-ultra-550b-a55b` | `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4` | DGX Station | `10.0` | DGX Station express-install selection with a pinned model revision and model-specific vLLM image. |
@@ -10779,6 +10817,9 @@ On Linux, the publication-failure diagnostic is redacted and does not print file
 
 Infrastructure must run `connect --probe-only` as the same final numeric user that later runs `launch`.
 Run it after the final durable home and state volume is mounted and after policy and network provisioning is complete.
+On completion, `connect --probe-only` writes one credential-free `Probe timing:` line with elapsed milliseconds for readiness, authority, lifecycle, gateway, processes, forward, inference, pairing, and publication stages.
+The line also reports the lifecycle and forward actions, the result, and the failed stage when the probe fails.
+Timing output is diagnostic only and does not change probe success or failure.
 NemoClaw rejects evidence after a bound sandbox, configuration, policy, or network identity changes.
 Deployment ordering remains responsible for external changes that OpenShell and NemoClaw cannot observe.
 
@@ -11135,6 +11176,29 @@ The complete serialized envelope is limited to 1 MiB.
 If the response cannot fit, the runtime discards it and emits a bounded `output_limit` failure envelope.
 If it cannot write the envelope, the command exits nonzero and reports the write failure on stderr.
 Callers must reject empty, malformed, additional, or unsupported-version stdout.
+
+## Call a Read-Only MCP Tool
+
+Use `dcode tools call-read-only` when automation must invoke one managed MCP tool without model participation.
+The command accepts one exact tool name, requires `--json`, and reads one JSON object from standard input.
+
+```bash
+printf '%s\n' '{"worker":"worker-17","nonce":"request-42"}' | \
+  dcode tools call-read-only worker_task_context --json
+```
+
+The command runs only a tool that the managed MCP configuration exposes exactly once and marks coherently read-only.
+It rejects unavailable, ambiguous, mutating, malformed, oversized, and timed-out calls.
+It runs for at most 15 seconds and allows up to three seconds for cleanup.
+
+Standard output contains exactly one version 1 JSON envelope.
+Successful output includes the exact tool name, `content`, and, when supplied by the MCP server, `structured_content`.
+NemoClaw redacts recognized credential-shaped values before it writes successful output.
+Errors use a bounded `data` object with `ok: false`, `status: "error"`, `code`, and `message`.
+The command writes no server diagnostics to standard error.
+
+This command uses only MCP servers registered through NemoClaw.
+For MCP registration and credential lifecycle operations, refer to [Add an MCP Server](../mcp-servers/add-an-mcp-server) and [Manage MCP Servers](../mcp-servers/manage-mcp-servers).
 
 ## Understand the Managed Runtime
 
@@ -12634,6 +12698,38 @@ Make `brew` available through `PATH` or inspect the formula before you remove Op
 For example, `NEMOCLAW_GATEWAY_PORT=9123 $$nemoclaw uninstall` selects `nemoclaw-9123` and its port-scoped state.
 Do not use `--gateway` to select another instance; when supplied for compatibility, its value must match the derived name or uninstall stops before cleanup.
 
+## Stop the Amazon Bedrock Runtime Adapter
+
+The selected gateway can use a host-local Amazon Bedrock Runtime adapter.
+Before it removes the selected state root, uninstall stops only the adapter bound to that state.
+
+Before each signal, uninstall revalidates the canonical PID, current user, stable process start identity, lifecycle generation, executable path, launcher path, and adapter port.
+Before it deletes lifecycle evidence, uninstall revalidates process absence, the state generation, the PID, and the local bearer-token hash.
+If the adapter remains after `SIGTERM` and `SIGKILL`, uninstall exits nonzero before state-root cleanup.
+It preserves the selected gateway's PID, bearer token, any lifecycle state that was published, and prepared uninstall journal for a retry.
+If required evidence conflicts before journal preparation, uninstall preserves that evidence and does not signal a process.
+
+The lifecycle evidence is `<selected-state-root>/bedrock-runtime-adapter.pid`, `<selected-state-root>/bedrock-runtime-adapter-token`, and `<selected-state-root>/bedrock-runtime-adapter.json`.
+If startup leaves only a private PID file containing one canonical positive PID, uninstall does not signal that PID.
+Under the adapter lifecycle lock, uninstall removes only the unchanged PID file after it observes that the PID is absent twice.
+It also confirms that no bearer token, lifecycle state, or uninstall journal appeared between those checks.
+A live or uninspectable PID, malformed or changed PID file, or newly published evidence makes uninstall exit nonzero.
+Uninstall preserves the PID file and any new lifecycle evidence in those cases.
+Keep those files intact while you resolve the reported process or state conflict.
+Rerun uninstall with the same `NEMOCLAW_GATEWAY_PORT` value afterward.
+The journal is `~/.local/state/nemoclaw-bedrock-runtime-adapter/<gateway-port>/uninstall.json`.
+Onboarding refuses to start another Amazon Bedrock adapter generation while that journal or non-reusable lifecycle evidence remains.
+If an older lifecycle record cannot prove the live process generation, NemoClaw does not signal that process.
+Do not signal a process from the saved PID alone; independently verify the current user, process start, executable path, launcher path, and listening port before resolving it, then rerun uninstall.
+
+While an adapter remains alive, its process retains any forwarded AWS credential until the process exits.
+After you resolve a failed stop, rerunning uninstall retires the local bearer token and lifecycle evidence.
+Remove or rotate the upstream AWS credential through its owning AWS credential source when required.
+
+Only full uninstall checks the configured adapter port when a recorded adapter PID file is absent.
+It never signals an unbound listener without matching lifecycle state.
+A selected-gateway uninstall uses only the selected state root and does not scan for a sibling gateway's adapter.
+
 ## Delete Host Models
 
 The `--delete-models` flag is an explicit opt-in for deleting host model files.
@@ -12791,16 +12887,44 @@ NemoClaw preserves either directory when it contains an unrelated entry.
 Other preserved user data follows the normal `--destroy-user-data` behavior.
 After NemoClaw releases the locks, later uninstall-plan cleanup never recursively revisits the canonical receipt, sandbox registry, or `~/.config/nemoclaw/portable/containers.conf` paths.
 This preserves any new lifecycle generation published after lock release.
+<AgentOnly variant="openclaw,deepagents">
 After successful portable cleanup with `--destroy-user-data`, the sole residual regular file under `~/.nemoclaw/` is `~/.nemoclaw/portable-uninstall-retirement.json`, written at mode `0600` under a current-UID-owned, mode-`0700` `~/.nemoclaw/` directory.
 Another same-user process can change the record, so this protection assumes cooperative NemoClaw writers under that UID.
 NemoClaw retains the record until a later completed onboarding durably supersedes it.
 It contains a random local cleanup ID, receipt basenames derived from SHA-256 hashes of sandbox names, and length-framed, transaction-scoped, dictionary-testable pseudonymous fingerprints, but no raw sandbox or gateway names, absolute paths, environment values, configuration bytes, or secrets.
+</AgentOnly>
+
+<AgentOnly variant="hermes">
+After successful schema `5` Portable Ollama cleanup with `--destroy-user-data`, `~/.nemoclaw/hermes-portable-uninstall-transaction.json` remains at mode `0600` under the current-UID-owned, mode-`0700` `~/.nemoclaw/` directory.
+Another same-user process can change the journal, so this protection assumes cooperative NemoClaw writers under that UID.
+The journal is credential-free.
+A completed journal remains as exact no-op evidence for a repeated uninstall.
+While the journal records an incomplete phase, Hermes Portable onboarding stops before it publishes replacement lifecycle authority.
+Rerun full uninstall to complete the recorded cleanup before you onboard again.
+If a later completed onboarding publishes a new schema `5` lifecycle, the next uninstall replaces the completed journal with that lifecycle's exact authority before mutation.
+</AgentOnly>
+
 A repeat invocation remains on portable cleanup and performs no Docker probe or mutation, implicit OpenShell cleanup, or model cleanup.
 If NemoClaw cannot prove the required portable authority or complete a cleanup step, uninstall exits nonzero.
 Before portable retirement completes, it also keeps the installed NemoClaw CLI and source so the same version-pinned command remains available for retry.
 It preserves any existing durable retirement record and any remaining receipts, `~/.config/nemoclaw/portable/containers.conf`, gateway state, and other retry evidence, even with `--destroy-user-data`.
 Resolve the reported authority or cleanup error, keep the preserved state intact, and rerun the same full uninstall command.
 This cleanup does not change Docker uninstall, externally supervised gateways, `--keep-openshell`, scoped sibling-gateway cleanup, or non-portable profiles.
+
+<AgentOnly variant="hermes">
+For a schema `5` Portable Ollama receipt, the full-uninstall transaction extends the Portable boundary to the committed gateway provider and receipt-owned inference runtime.
+While the host fence, sorted sandbox lifecycle locks, and process-bound registry lock remain held, NemoClaw binds the exact lifecycle receipt, registry row revision and lifecycle generation, sandbox and Podman container identities and labels, provider revision and profile, inference runtime, socket, and network.
+It writes the credential-free transaction journal before the first mutation, then records sandbox, provider, inference, registry, receipt, and completion phases.
+Before each phase, it revalidates the exact authority recorded in the journal.
+If a resource disappeared after an earlier recorded action but before its phase update, the retry proves that exact absence and continues without repeating the mutation.
+An unexpected absence, same-name replacement, sandbox phase other than `Ready` or `Stopped`, changed container label set, provider revision or profile change, socket or network change, or registry authority drift stops cleanup before an unproven mutation.
+When another recorded sandbox shares the provider or inference runtime, uninstall preserves that shared resource.
+The transaction removes exact receipt-owned resources before it retires the matching registry row and lifecycle receipt.
+When both the provider and inference runtime are exclusive, it then retires their private inference state.
+If either resource is shared, it preserves that recovery state for the sibling owner.
+It never removes a Podman image.
+</AgentOnly>
+
 For Docker, if any proof is absent, uninstall exits nonzero before it signals the host gateway.
 NemoClaw preserves the gateway runtime evidence and local state.
 Keep that state intact.
