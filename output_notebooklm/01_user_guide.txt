@@ -682,6 +682,12 @@ The printed command quotes the sandbox name so that the shell treats it as one a
 It then verifies or repairs the in-sandbox agent process and host forwards without opening a shell.
 It does not restart or replace the shared host OpenShell gateway.
 
+The command prints one `Probe timing:` line with elapsed milliseconds for `readiness`, `authority`, `lifecycle`, `gateway`, `processes`, `forward`, `inference`, `pairing`, and `publication` stages.
+Use the stage values to identify where a slow or failed deployment spent its time.
+The line also reports lifecycle and forward actions and names the failed stage when available.
+Timing collection is diagnostic and fail-open.
+The command exit status remains the readiness decision: status `0` means the complete probe passed, and any nonzero status means the host is not ready for launch.
+
 Readiness requires all of these results:
 
 - The exact OpenShell sandbox row is `Ready` or `Running`.
@@ -1525,6 +1531,13 @@ agent-variants: ["openclaw"]
 ---
 The NemoClaw sandbox image applies several security measures to reduce the attack surface and limit damage from untrusted workloads.
 
+## Immutable Managed Image Selection
+
+Stock onboarding through the OpenShell Docker driver selects an exact managed-image digest and validates the complete OpenClaw, Hermes, and LangChain Deep Agents Code publication cohort before sandbox creation.
+If registry or catalog availability prevents resolution, the ordinary `prefer-managed` path builds the shipped, reviewed repository Dockerfile instead; it never selects an unpinned `:latest` image.
+An available but incomplete, mixed, mutable, wrong-platform, or identity-inconsistent cohort fails closed before sandbox creation.
+Passing `--from <Dockerfile>` remains a separate explicit opt-in whose complete custom image must be reviewed independently.
+
 ## Removed Unnecessary Tools
 
 NemoClaw explicitly purges build toolchains (`gcc`, `g++`, `make`) and network probes (`netcat`) from the runtime image.
@@ -2091,6 +2104,7 @@ If you cannot add memory, configure at least 8 GB of swap to work around the iss
 |------------|----------------------------------|
 | Node.js    | 22.19 or later |
 | npm        | 10 or later |
+| SHA-256 tool | `sha256sum` or `shasum`, required only when the installer must install or upgrade Node.js through nvm |
 | Python     | Python 3 at a trusted system location, with POSIX descriptor-relative filesystem support |
 | Docker     | Docker Engine, Docker Desktop, or Colima on a tested platform |
 | Platform   | Refer to [Platforms](#platforms) below |
@@ -2257,6 +2271,9 @@ Review the [Prerequisites](prerequisites) before you begin.
     If you accept Express setup, wait for the installer to finish, then continue with **Confirm the Sandbox Is Ready**; Express selects the provider and model non-interactively.
     If the installer does not offer Express setup, or if you enter `n` at the Express prompt on a supported non-N1x host, choose an inference provider and model, then provide its credential when prompted.
     For that interactive path, skip optional web search and messaging setup on a first run, then accept the suggested network policy tier.
+    With the OpenShell Docker driver, stock Hermes onboarding normally uses the release's exact managed-image digest.
+    If registry or catalog availability prevents resolution, it builds the shipped repository Dockerfile instead; it never selects an unpinned `:latest` image.
+    Invalid or inconsistent catalog evidence fails closed before sandbox creation.
   </Step>
 
   <Step title="Confirm the Sandbox Is Ready">
@@ -2407,7 +2424,7 @@ Use these details when your first-run path needs more control.
     On supported non-N1x express platforms, enter `n` to continue with interactive onboarding when you want to select the agent or other settings yourself.
     On N1x, declining the preview or setting only `NEMOCLAW_NO_EXPRESS=1` stops installation before onboarding.
     Accept the preview, or set `NEMOCLAW_PROVIDER=install-vllm` before installation to provide the required explicit managed-vLLM intent.
-    The first Hermes build can take several minutes because NemoClaw builds the Hermes sandbox base image when it is not already cached.
+    The first Hermes start can take several minutes while OpenShell pulls the exact managed image when it is not already cached.
     The N1x preview selects one-host managed vLLM with `nvidia/Qwen3.6-35B-A3B-NVFP4`.
     Refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for managed model profiles and headless setup.
     Refer to [Set Up vLLM on Two DGX Stations](../inference/local-inference/set-up-vllm-on-two-dgx-stations) for the Deferred paired workflow.
@@ -2479,7 +2496,7 @@ Use these details when your first-run path needs more control.
     Use the provider variables from [Choose an Inference Provider](../inference/learn-and-choose/choose-inference-provider) when you choose another provider.
     Set `NEMOCLAW_WEB_SEARCH_PROVIDER=none` to disable web search explicitly.
     When the selector is unset, Hermes enables Tavily automatically when `TAVILY_API_KEY` is available and ignores `BRAVE_API_KEY`.
-    Changing or disabling Tavily requires sandbox recreation because the backend, credential attachment, and policy selection are build-time inputs.
+    Changing or disabling Tavily requires sandbox recreation because the backend, credential attachment, and policy selection are startup-profile inputs.
     Rerun onboarding with the new selection and accept recreation, or pass `--recreate-sandbox`.
   </Accordion>
 
@@ -2516,7 +2533,7 @@ Use these details when your first-run path needs more control.
     ```
 
     The onboard flow starts both port forwards automatically.
-    For a new sandbox, NemoClaw reserves the selected dashboard loopback port through sandbox preparation and the image build.
+    For a new sandbox, NemoClaw reserves the selected dashboard loopback port through sandbox preparation and creation.
     If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources.
     If OpenShell returns the exact `sandbox is not ready` response, NemoClaw waits 5 seconds and retries the affected forward up to 12 times.
     The readiness-specific delays total at most 1 minute and preserve the existing sandbox and selected host port.
@@ -2647,6 +2664,9 @@ Review the [Prerequisites](prerequisites) before you begin.
     If you accept Express setup, wait for the installer to finish, then continue with **Confirm the Sandbox Is Ready**; Express selects the provider and model non-interactively.
     If the installer does not offer Express setup, or if you enter `n` at the Express prompt on a supported non-N1x host, choose an inference provider and model, then provide its credential when prompted.
     For that interactive path, accept the suggested network policy tier on a first run.
+    With the OpenShell Docker driver, stock Deep Agents Code onboarding normally uses the release's exact managed-image digest.
+    If registry or catalog availability prevents resolution, it builds the shipped repository Dockerfile instead; it never selects an unpinned `:latest` image.
+    Invalid or inconsistent catalog evidence fails closed before sandbox creation.
   </Step>
 
   <Step title="Confirm the Sandbox Is Ready">
@@ -2746,7 +2766,7 @@ After the terminal smoke checks, onboarding runs `dcode --version` and compares 
 Fresh and resumed onboarding exit nonzero instead of reporting the runtime ready when the installed version is too old, uses an incompatible version scheme, or cannot be verified.
 If the version check fails, review the reported version error and run `nemo-deepagents <sandbox-name> rebuild` before resuming onboarding.
 NemoClaw writes `/sandbox/.deepagents/config.toml` with an OpenAI-compatible provider pointed at `https://inference.local/v1`, uses a scoped placeholder API key for that managed route, and sets `use_responses_api = false` for Chat Completions compatibility.
-When onboarding records a reasoning effort on a `compatible-endpoint` route that uses `openai-completions`, the managed image bakes that value into a root-owned file and Deep Agents Code model requests carry it as an `extra_body.reasoning_effort` request parameter.
+When onboarding records a reasoning effort on a `compatible-endpoint` route that uses `openai-completions`, managed startup writes that value to a root-owned file and Deep Agents Code model requests carry it as an `extra_body.reasoning_effort` request parameter.
 Leave `NEMOCLAW_REASONING_EFFORT` unset to keep the endpoint's own default.
 Deep Agents Code has no runtime `inference set` path, so re-onboard the sandbox with `nemo-deepagents onboard --fresh --name <sandbox-name> --recreate-sandbox` to change the recorded effort.
 When you use NVIDIA Endpoints without selecting another model, new Deep Agents Code sandboxes default to `nvidia/nemotron-3-ultra-550b-a55b`.
@@ -2956,6 +2976,9 @@ Review the [Prerequisites](prerequisites) before you begin.
     Choose an inference provider and model, then provide its credential when prompted.
     Press Enter to accept the suggested `my-assistant` sandbox name.
     For a first run, skip optional web search and messaging setup, then accept the suggested network policy tier.
+    With the OpenShell Docker driver, stock OpenClaw onboarding normally uses the release's exact managed-image digest.
+    If registry or catalog availability prevents resolution, it builds the shipped repository Dockerfile instead; it never selects an unpinned `:latest` image.
+    Invalid or inconsistent catalog evidence fails closed before sandbox creation.
 
     <Note>
       The installer can display `Run express install with these settings? [Y/n]:` before the agent-selection prompt on DGX Spark, qualifying DGX Station, or Windows Subsystem for Linux (WSL) hosts.
@@ -2971,6 +2994,9 @@ Review the [Prerequisites](prerequisites) before you begin.
 
   <Step title="Confirm the Sandbox Is Ready">
     Wait for the ready summary, then check the sandbox state.
+    Before it prints this summary, default-profile OpenClaw onboarding waits for exactly one matching local CLI operator device.
+    It verifies the required baseline scopes and confirms that no pairing request for the same device remains pending.
+    If this bounded readiness check does not settle, NemoClaw keeps onboarding resumable and tells you to resume or rerun onboarding.
 
     ```bash
     nemoclaw my-assistant status
@@ -3059,7 +3085,7 @@ Use these details when your first-run path needs more control.
     Export the relevant API key before starting the installer when you do not want the wizard to prompt for it.
     Refer to [Choose an Inference Provider](../inference/learn-and-choose/choose-inference-provider) for provider requirements, model choices, and local-server setup.
 
-    Web search and messaging are optional build-time choices.
+    Web search and messaging are optional onboarding choices.
     Add them when you need them, then rerun onboarding and accept sandbox recreation when you change those choices later.
     Refer to [Choose Messaging Channels](../manage-sandboxes/messaging-channels/choose-messaging-channels) and [Network Policies](../network-policy/approve-network-requests) before enabling them.
   </Accordion>
@@ -3159,12 +3185,12 @@ Use these details when your first-run path needs more control.
 
     After you apply the configuration, routine editing ends.
     If inference setup fails and offers a `back` recovery action, you can return to provider and model selection and then review the updated configuration again.
-    NemoClaw registers inference, prompts for optional web search and messaging channels, builds and starts the sandbox, sets up OpenClaw, and applies the selected network policy tier and presets.
+    NemoClaw registers inference, prompts for optional web search and messaging channels, prepares the managed startup profile, starts the sandbox from the exact managed image, sets up OpenClaw, and applies the selected network policy tier and presets.
 
     <Note>
-    Onboarding builds the sandbox image with a managed `NEMOCLAW_DISABLE_DEVICE_AUTH=1` compatibility setting so the dashboard is usable during setup.
+    Onboarding includes a managed `NEMOCLAW_DISABLE_DEVICE_AUTH=1` compatibility setting in the startup profile so the dashboard is usable during setup.
     NemoClaw records that this value came from onboarding rather than reporting it as an operator-selected opt-out.
-    This build-time setting is baked into the image and setting it after onboarding does not affect an existing sandbox.
+    This setting is fixed when the sandbox is created; setting it in the host environment afterward does not affect that sandbox.
     </Note>
 
     If registered sandboxes already exist, the installer prepares the current NemoClaw CLI without replacing OpenShell and requires a fresh backup of every registered sandbox before it changes the gateway.
@@ -3217,7 +3243,7 @@ Use these details when your first-run path needs more control.
     For an OpenAI-compatible HTTP endpoint on `localhost`, `127.0.0.1`, or `[::1]`, press Enter to select no authentication when the endpoint uses the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`.
     Port `11435` supports this mode only when `NEMOCLAW_OLLAMA_PROXY_PORT` uses a different free port.
 
-    After you enter a sandbox name, the wizard asks for final confirmation before it registers the provider, prompts for integrations, and builds the sandbox image.
+    After you enter a sandbox name, the wizard asks for final confirmation before it registers the provider, prompts for integrations, and creates the sandbox.
 
     ```text
       ──────────────────────────────────────────────────
@@ -3230,7 +3256,7 @@ Use these details when your first-run path needs more control.
       Managed tools: none
       Messaging:     none
       Sandbox name:  my-gpt-claw
-      Note:          Sandbox build typically takes 5–15 minutes on this host.
+      Note:          Sandbox creation can take a few minutes on first run.
       ──────────────────────────────────────────────────
       Web search and messaging channels will be prompted next.
       Choose an action:
@@ -3256,7 +3282,7 @@ Use these details when your first-run path needs more control.
     After confirmation, NemoClaw registers the selected provider with the OpenShell gateway and sets the `inference.local` route.
     The wizard asks whether to enable web search and offers Brave Search or Tavily Search.
     Provide `BRAVE_API_KEY` for Brave Search or `TAVILY_API_KEY` for Tavily Search when prompted.
-    NemoClaw validates the selected key before it builds the sandbox, registers a sandbox-scoped OpenShell provider, and writes only an OpenShell resolver placeholder into the OpenClaw configuration.
+    NemoClaw validates the selected key before it creates the sandbox, registers a sandbox-scoped OpenShell provider, and writes only an OpenShell resolver placeholder into the OpenClaw configuration.
     OpenShell replaces the placeholder with the real key at egress.
 
     For non-interactive onboarding, select the provider explicitly and export its key.
@@ -3276,13 +3302,13 @@ Use these details when your first-run path needs more control.
     The onboarding flow also offers Telegram, Discord, Slack, WeChat, WhatsApp, Microsoft Teams, and Google Chat.
     Press a channel number to toggle it, then press Enter to continue.
     Leave every channel unselected to skip messaging setup.
-    When a channel accepts pasted credentials, NemoClaw validates the credential input before it builds the sandbox image.
+    When a channel accepts pasted credentials, NemoClaw validates the credential input before it creates the sandbox.
     For example, Slack bot tokens must start with `xoxb-`.
     WeChat, WhatsApp, Microsoft Teams, and Google Chat are experimental.
     Refer to [Choose Messaging Channels](../manage-sandboxes/messaging-channels/choose-messaging-channels) before enabling them.
 
-    After the sandbox image builds and OpenClaw starts, NemoClaw asks which network policy tier to apply.
-    Web search and messaging selections happen first so the sandbox image and policy suggestions stay aligned.
+    After the managed image starts OpenClaw, NemoClaw asks which network policy tier to apply.
+    Web search and messaging selections happen first so the startup profile and policy suggestions stay aligned.
     The default Balanced tier includes common development presets, such as npm, PyPI, Hugging Face, and Homebrew, plus the matching `brave` or `tavily` preset.
     Add the `weather` preset explicitly for read-only weather lookups.
     OpenClaw sandboxes also receive the `openclaw-pricing` preset automatically so session-cost records can populate without manual configuration.
@@ -3344,7 +3370,7 @@ Use these details when your first-run path needs more control.
     The wizard starts a background dashboard port forward and prints its URL in the ready summary.
     The default host port is `18789`.
     When that port is occupied, NemoClaw uses the next free dashboard port, such as `18790`, and includes the port in the URL.
-    For a new sandbox, NemoClaw reserves the selected loopback port through sandbox preparation and the image build.
+    For a new sandbox, NemoClaw reserves the selected loopback port through sandbox preparation and creation.
     If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources.
     If OpenShell returns the exact `sandbox is not ready` response, NemoClaw waits 5 seconds and retries the dashboard forward up to 12 times.
     The readiness-specific delays total at most 1 minute and preserve the existing sandbox and selected port.
@@ -5523,9 +5549,73 @@ Run:
 $$nemoclaw my-assistant destroy
 ```
 
+Although the setup steps above target DGX Spark, this removal and recovery behavior also applies to other experimental managed llama.cpp profiles on Linux.
+NemoClaw qualifies the Docker operation authority recorded during managed llama.cpp onboarding.
+It completes this qualification before it requests sandbox deletion or reconciles an already-absent sandbox.
+This authority includes Docker endpoint selection and identity, Docker executable identity, and command environment.
+When cleanup relies on private managed llama.cpp state, NemoClaw proves Docker availability and the exact container and network before OpenShell sandbox deletion.
+It retains the identity of that private lifecycle state across sandbox deletion and rejects cleanup if the identity changes.
+If any pre-delete proof fails, NemoClaw reports the error and stops the destroy operation.
+
+If the reported Docker operation authority mismatch involves endpoint selection, inspect the current Docker configuration and selectors:
+
+```bash
+docker context show
+printf 'DOCKER_CONFIG=%s\n' "${DOCKER_CONFIG:-<unset>}"
+printf 'DOCKER_CONTEXT=%s\n' "${DOCKER_CONTEXT:-<unset>}"
+printf 'DOCKER_HOST=%s\n' "${DOCKER_HOST:-<unset>}"
+printf 'DOCKER_TLS=%s\n' "${DOCKER_TLS:-<unset>}"
+printf 'DOCKER_TLS_VERIFY=%s\n' "${DOCKER_TLS_VERIFY:-<unset>}"
+printf 'DOCKER_CERT_PATH=%s\n' "${DOCKER_CERT_PATH:-<unset>}"
+```
+
+Compare this output with the shell or automation that ran onboarding.
+Restore the configuration and selection used during onboarding with the matching path:
+
+- If onboarding used a custom `DOCKER_CONFIG` directory, restore it first:
+
+  ```bash
+  export DOCKER_CONFIG="<onboarding-docker-config>"
+  ```
+
+  If onboarding used Docker's default configuration directory, unset `DOCKER_CONFIG`.
+
+- If onboarding used `DOCKER_CONTEXT` or Docker's persisted current context, select the original context explicitly:
+
+  ```bash
+  unset DOCKER_HOST
+  export DOCKER_CONTEXT="<onboarding-context>"
+  ```
+
+- If onboarding used `DOCKER_HOST`, restore that selection:
+
+  ```bash
+  unset DOCKER_CONTEXT
+  export DOCKER_HOST="<onboarding-docker-host>"
+  ```
+
+For either selection path, restore `DOCKER_TLS`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH` to their onboarding state.
+Unset each TLS variable that was unset or empty during onboarding.
+These variables are part of the endpoint-selection tuple for both Docker contexts and `DOCKER_HOST`.
+
+After restoring the recorded Docker configuration and selector, run `docker info`.
+Confirm that it reports the Docker daemon used during onboarding.
+Rerun the earlier `destroy` command.
+
+NemoClaw stores opaque authority identity and binding data, not the original Docker executable or command environment values.
+For any other authority mismatch, do not guess Docker selector values.
+Retry the earlier `destroy` command from the same shell or automation environment that ran onboarding.
 After OpenShell confirms sandbox deletion, the command removes the exact managed llama.cpp container, internal network, API key, and gateway-scoped ownership state.
 It preserves `~/.cache/huggingface/` because other applications can use that cache.
-If exact cleanup fails, NemoClaw preserves the sandbox registry entry and ownership state for a retry.
+If exact cleanup fails, NemoClaw preserves the ownership state and any existing sandbox registry entry for a retry.
+
+After `destroy` succeeds, run:
+
+```bash
+$$nemoclaw list
+```
+
+Confirm that `my-assistant` no longer appears.
 
 For full NemoClaw removal, run `$$nemoclaw uninstall`.
 Full uninstall applies the same exact-ownership checks and preserves the shared Hugging Face cache by default.
@@ -5848,6 +5938,23 @@ Linux upgrades use the sudo-driven system path because a user-local fallback wou
 If sudo is unavailable in a non-interactive run, rerun interactively or upgrade Ollama manually.
 An upgrade also needs sudo to restart the service onto the new binary, so it does not accept an already-loopback-only daemon as a reason to skip that step.
 A fresh install takes the latest version.
+
+Before a Linux systemd restart, NemoClaw reads the service's exact `User` and `ExecStart` executable.
+It requires one absolute executable path, one service user, a regular ELF executable, and one absolute ELF interpreter path.
+NemoClaw then runs the executable with `--version` as the service user, which proves that the executable and its interpreter can run for that user.
+After a failed run, NemoClaw verifies execute access to both paths before it considers permission repair.
+If it cannot prove execution, NemoClaw stops before it restarts the service.
+
+NemoClaw can repair execute permissions only for the regular file at `/usr/local/bin/ollama` when the root user and group own it.
+The file must have no special bits or group or world write access.
+Each ancestor from `/` through `/usr/local/bin` must be a real root-owned directory with execute access and without group or world write access.
+The repair adds the user, group, and other execute bits while preserving every other mode bit.
+NemoClaw then repeats the service-user verification.
+It does not change an ancestor directory or the ELF interpreter.
+If verification still fails, NemoClaw restores the original executable mode and stops before the service restart.
+If mode restoration fails, the error identifies the rollback failure for administrator recovery.
+Onboarding remains stopped.
+Inspect `/usr/local/bin/ollama` and restore its intended mode before you rerun onboarding.
 
 After an upgrade, NemoClaw probes the running daemon and the installed binary again.
 `ollama --version` reports the version of the daemon it can reach, so NemoClaw reads the binary's own version from the client-version line that the command prints when the two differ.
@@ -6317,7 +6424,9 @@ $$nemoclaw onboard --experimental-profile portable
 Do not run the loopback deletion command when onboarding reports another interface or prefix.
 Investigate and resolve the conflicting assignment before you rerun onboarding.
 
-If Portable onboarding reports that `openshell-docker` still uses `169.254.1.0/24`, use only the commands in that error. Before it shows a command, NemoClaw verifies the current-user Podman socket, the complete retired network record, and every running or stopped container connected to that network. Each command includes the verified socket URL and the complete 64-character resource ID.
+If Portable onboarding reports that `openshell-docker` still uses `169.254.1.0/24`, use only the commands in that error.
+Before it shows a command, NemoClaw verifies the current-user Podman socket, the complete retired network record, and every running or stopped container connected to that network.
+Each command includes the verified socket URL and the complete 64-character resource ID.
 
 When no container is connected, onboarding prints one network command:
 
@@ -6325,7 +6434,10 @@ When no container is connected, onboarding prints one network command:
 podman --url 'unix://<verified-current-user-socket>' network rm <64-character-network-id>
 ```
 
-When the exact NemoClaw-managed registry is the only connected container, onboarding prints the registry commands before the network command. A stopped registry does not need the first command. Run each printed command in order, and continue only after it succeeds:
+When the exact NemoClaw-managed registry is the only connected container, onboarding prints the registry commands before the network command.
+A stopped registry does not need the first command.
+Run each printed command in order.
+Continue only after it succeeds:
 
 ```bash
 podman --url 'unix://<verified-current-user-socket>' container stop <64-character-registry-id>
@@ -6333,7 +6445,13 @@ podman --url 'unix://<verified-current-user-socket>' container rm <64-character-
 podman --url 'unix://<verified-current-user-socket>' network rm <64-character-network-id>
 ```
 
-Do not change the socket or IDs, and do not add `--force` to any command. If inspection is inconclusive or any other container is connected, onboarding prints no removal command. Leave the network and containers unchanged. This recovery does not remove sandboxes, inference containers, or Hermes resources. Use the lifecycle that created each resource, then retry onboarding.
+Do not change the socket or IDs.
+Do not add `--force` to any command.
+If inspection is inconclusive or any other container is connected, onboarding prints no removal command.
+Leave the network and containers unchanged.
+This recovery does not remove sandboxes, inference containers, or Hermes resources.
+Use the lifecycle that created each resource.
+Then retry onboarding.
 
 Rerun Portable onboarding once the network is gone.
 </Warning>
@@ -7588,7 +7706,7 @@ It offers the fixed local vLLM profile as option 2.
 When you select option 2, the serving catalog supplies the pinned model, runtime image, container port, and serve arguments.
 The installer rejects provider and model overrides for that fixed profile.
 `NEMOCLAW_VLLM_MODEL` can select a catalog model only when the catalog resolves it to the matching fixed recipe, but the dedicated onboarder rejects a model that does not resolve to that recipe and all serve-argument overrides before it starts the managed container.
-`NEMOCLAW_VLLM_PORT` may select another host listener.
+Set `NEMOCLAW_VLLM_PORT` to select another host listener port.
 Explicit `NEMOCLAW_MODEL` or `NEMOCLAW_VLLM_MODEL` intent retains the customizable managed-vLLM path and skips the fixed-profile choice.
 If onboarding stops after you select option 2, `$$nemoclaw onboard --resume` reuses the recorded fixed profile instead of returning to automatic serving-profile selection.
 Refer to [Choose a Local Inference Server](choose-local-inference-server#install-a-fixed-vllm-profile) for fixed-profile installation and verification.
@@ -7720,6 +7838,7 @@ The host checks the token before `docker pull`, so a missing or empty token stop
 
 Set `NEMOCLAW_VLLM_EXTRA_ARGS_JSON` to a JSON array of individual non-blank `vllm serve` tokens for operator-owned options and overrides.
 NemoClaw trims and validates the array before downloads, shell-quotes each token, and appends the tokens after the registry defaults.
+When the array overrides `--gpu-memory-utilization`, NemoClaw validates the last value and uses that effective value for GPU-memory preflight, matching the final `vllm serve` command.
 
 ```bash
 NEMOCLAW_PROVIDER=install-vllm \
@@ -7728,6 +7847,10 @@ NEMOCLAW_PROVIDER=install-vllm \
 ```
 
 If the selected image does not support an argument, the managed container exits and NemoClaw prints the log tail.
+
+When the selected managed recipe defines a GPU-memory utilization value, NemoClaw requires valid `nvidia-smi` total/free-memory telemetry for the Docker-selected GPU before large downloads.
+It repeats the same check with fresh telemetry immediately before launch so another workload cannot consume the required free GPU memory unnoticed during the download.
+If telemetry is unavailable, the Docker-selected device cannot be resolved, or free memory is below the effective utilization requirement, onboarding stops with a diagnostic and can be resumed after the GPU state is corrected.
 
 To bound resource use while investigating long-context workflows on one DGX Spark or N1x host, select the Qwen profile.
 The following override disables async scheduling and lowers the context window, concurrent-sequence limit, and batch limit.
@@ -10459,8 +10582,9 @@ The next rebuild reuses the bridge provider without requiring the service-accoun
 Hermes Google Chat does not use the dedicated webhook endpoint or `$$nemoclaw tunnel` commands.
 </AgentOnly>
 
-When `channels start` re-enables a channel, NemoClaw reapplies the matching built-in policy preset before rebuild.
-If policy restoration fails, the command keeps the channel disabled and exits without rebuilding into a partially active state.
+When `channels start` re-enables a channel, NemoClaw records the channel as enabled in the messaging plan.
+The rebuild attaches the existing bridge provider before applying its matching built-in policy preset to the replacement sandbox.
+If the command queues the change without rebuilding, the running sandbox keeps its existing bridge and network policy until you rebuild it.
 
 ## Avoid Cross-Sandbox Conflicts
 
@@ -10768,7 +10892,15 @@ The lease has a fixed 24-hour lifetime that repeated launches do not extend.
 Leaving the agent with `/exit` does not revoke it, and users do not refresh it manually.
 
 During the lease, `launch` still verifies the owning OpenShell gateway, exact live sandbox identity, registry and agent configuration, effective policy, inference route, required forwards, and semantic runtime health.
+<AgentOnly variant="openclaw,hermes">
 Configured inference must return HTTP 2xx from the semantic `inference.local` probe, which is stricter than the HTTP 200–499 reachability diagnostic used by ordinary `connect`.
+</AgentOnly>
+<AgentOnly variant="deepagents">
+Configured inference must return HTTP 2xx from the semantic `inference.local` probe for every provider except `openrouter-api`.
+The OpenRouter adapter returns HTTP 404 for `GET /v1/models`.
+NemoClaw accepts that result only after a bounded inference request for the recorded model succeeds.
+A failed request rejects launch readiness and identifies the inference request as the failed check.
+</AgentOnly>
 <AgentOnly variant="openclaw">
 
 For OpenClaw, `connect --probe-only` settles the existing allowlisted pairing flow before it publishes a credential-free pairing qualification with the lease.
@@ -11187,15 +11319,52 @@ printf '%s\n' '{"worker":"worker-17","nonce":"request-42"}' | \
   dcode tools call-read-only worker_task_context --json
 ```
 
-The command runs only a tool that the managed MCP configuration exposes exactly once and marks coherently read-only.
-It rejects unavailable, ambiguous, mutating, malformed, oversized, and timed-out calls.
-It runs for at most 15 seconds and allows up to three seconds for cleanup.
+The command reads standard input to end-of-file and requires one UTF-8 JSON object of at most 131,072 bytes.
+It rejects terminal input, empty input, duplicate object keys, non-object JSON, non-finite constants, malformed UTF-8, and additional JSON values.
 
-Standard output contains exactly one version 1 JSON envelope.
-Successful output includes the exact tool name, `content`, and, when supplied by the MCP server, `structured_content`.
-NemoClaw redacts recognized credential-shaped values before it writes successful output.
-Errors use a bounded `data` object with `ok: false`, `status: "error"`, `code`, and `message`.
-The command writes no server diagnostics to standard error.
+The command loads only MCP servers registered through NemoClaw.
+The exact tool name must contain 1 to 128 ASCII letters, digits, underscores, or hyphens, and its first character must be alphanumeric.
+It must resolve once, identify an MCP tool, and pass the managed coherent read-only annotation check.
+A prompt, agent, or model does not select the tool, modify its arguments, or participate in the call.
+Unavailable, ambiguous, non-MCP, and mutating tools fail before invocation.
+
+For the fixed call form, standard output contains exactly one version 1 JSON envelope followed by a newline unless the write itself fails.
+`dcode tools call-read-only --help` is the exception: it prints plain usage and exits `0`.
+A successful call has this shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "tools call-read-only",
+  "data": {
+    "ok": true,
+    "status": "ok",
+    "tool": "worker_task_context",
+    "content": [],
+    "structured_content": {}
+  }
+}
+```
+
+`content` preserves the successful MCP `ToolMessage` content.
+`structured_content` appears only when the server returns one mapping under that exact artifact field.
+A tool-reported failure, unsupported result type, malformed artifact, non-finite value, cyclic value, non-string object key, or another container at depth 64 fails closed.
+A primitive value at depth 64 is accepted.
+There is no separate string-length or item-count limit.
+The input, successful result before redaction, and final serialized envelope each have a 131,072-byte bound.
+NemoClaw applies best-effort redaction for recognized credential-shaped values in successful `content` and `structured_content` without changing the JSON structure.
+This redaction does not guarantee detection of a secret embedded in ordinary content.
+
+Errors use the same envelope with a bounded `data` object containing `ok: false`, `status: "error"`, `code`, and `message`.
+Command-shape and tool-name errors exit `2`.
+A successful call exits `0`, an interrupt exits `130`, and all managed input, discovery, eligibility, invocation, result, timeout, cleanup, or runtime failures exit `1`.
+The process exit code is the result authority; automation must reject empty, malformed, additional, or unsupported-version stdout.
+
+Discovery, invocation, and normal manager cleanup share a 15-second deadline.
+After that deadline, NemoClaw cancels the task and waits up to 3 seconds for that task, including its cleanup.
+It then cancels other pending event-loop tasks and waits up to 0.1 seconds before closing the loop and emitting the fixed `timeout` error.
+The managed `dcode` wrapper suppresses Python, MCP child, logging, traceback, and write-failure diagnostics on stderr.
+A stdout write failure can therefore exit without a complete envelope and with no stderr diagnostic.
 
 This command uses only MCP servers registered through NemoClaw.
 For MCP registration and credential lifecycle operations, refer to [Add an MCP Server](../mcp-servers/add-an-mcp-server) and [Manage MCP Servers](../mcp-servers/manage-mcp-servers).
@@ -11744,6 +11913,10 @@ Without `DISCORD_USER_ID`, any member of the configured server can message the b
 
 <AgentOnly variant="openclaw">
 NemoClaw routes Discord REST and gateway traffic through the top-level managed proxy and does not write a per-account Discord proxy because OpenClaw accepts only loopback values for that field.
+</AgentOnly>
+
+<AgentOnly variant="hermes">
+NemoClaw binds the Discord bot credential to the Discord REST and gateway policy entries for the named sandbox.
 </AgentOnly>
 
 ## Enable Discord
@@ -12672,6 +12845,11 @@ $$nemoclaw uninstall
 
 Full uninstall does not remove a Docker container or image only because its name or image reference contains `openclaw`.
 It preserves resources from a separate OpenClaw installation while continuing to remove NemoClaw and OpenShell Docker resources.
+During full uninstall, NemoClaw stops a Bedrock Runtime adapter when its recorded process ID matches the adapter command line.
+When `lsof` is available, full uninstall also scans the configured adapter port and stops only a matching process owned by the current user.
+If `lsof` is unavailable and no recorded process was stopped, uninstall warns that it skipped the orphan scan.
+A selected-gateway uninstall uses only that gateway's process record and does not scan or signal a sibling adapter.
+Uninstall preserves an unrelated process that uses the same port.
 
 | Flag | Effect |
 |---|---|
