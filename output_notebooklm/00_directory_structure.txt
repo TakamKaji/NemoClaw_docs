@@ -152,6 +152,14 @@
 │       │       └── openai.yaml
 │       ├── nemoclaw-maintainer-release-notes
 │       │   └── SKILL.md
+│       ├── nemoclaw-maintainer-runtime-provider
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── references
+│       │       ├── activation-and-qualification.md
+│       │       ├── api-contract.md
+│       │       └── implementation-and-review.md
 │       ├── nemoclaw-maintainer-security-code-review
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-triage
@@ -488,6 +496,7 @@
 │   │   ├── prerequisites.mdx
 │   │   ├── quickstart-hermes.mdx
 │   │   ├── quickstart-langchain-deepagents-code.mdx
+│   │   ├── quickstart-pi.mdx
 │   │   ├── quickstart.mdx
 │   │   └── windows-preparation.mdx
 │   ├── index.mdx
@@ -539,6 +548,7 @@
 │   │   ├── messaging-channels.mdx
 │   │   ├── recover-rebuild-sandboxes.mdx
 │   │   ├── run-deep-agents-code.mdx
+│   │   ├── run-pi.mdx
 │   │   ├── run-sandboxes.mdx
 │   │   ├── runtime-controls.mdx
 │   │   ├── set-up-discord.mdx
@@ -578,6 +588,8 @@
 │   │   ├── extension-taxonomy-sdk-readiness.mdx
 │   │   ├── host-files-and-state.mdx
 │   │   ├── network-policies.mdx
+│   │   ├── pi-commands.mdx
+│   │   ├── pi-support.mdx
 │   │   ├── platform-support.mdx
 │   │   ├── system-readiness.mdx
 │   │   ├── troubleshoot-mcp-servers.mdx
@@ -3310,4 +3322,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-278 directories, 3033 files
+281 directories, 3042 files

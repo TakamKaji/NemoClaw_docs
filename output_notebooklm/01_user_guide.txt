@@ -345,6 +345,8 @@ Hermes core tools remain directly visible.
 ## Understand Deep Agents Tool Search
 
 Deep Agents Code activates its middleware after at least one MCP tool loads successfully.
+It derives loaded tools from the pinned runtime's executable catalog and rejects duplicate loaded implementations before disclosure.
+A late-discovered managed MCP tool becomes available to `search_tools` after the tool loads; a gateway tool that is not loaded does not appear.
 It initially exposes `search_tools` and the core filesystem, shell, user-input, and todo tools.
 
 Each search returns up to 20 name-sorted tools whose names or descriptions match case-insensitively.
@@ -2921,6 +2923,119 @@ There is no dashboard port or long-running gateway process for this harness.
 
 
 ========================================
+[FILE: docs/get-started/quickstart-pi.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Quickstart with Pi"
+sidebar-title: "Quickstart with Pi"
+description: "Prepare for the Pi release candidate, review its activation gate, and learn its accepted interactive and headless workflows."
+description-agent: "Explains candidate-gated Pi onboarding, managed inference, interactive use, and headless automation in a NemoClaw sandbox."
+keywords: ["nemoclaw pi", "pi coding agent sandbox", "pi managed inference", "pi agent quickstart"]
+topics: ["get-started", "terminal-runtime", "pi"]
+tags: ["pi", "managed-inference", "docker"]
+difficulty: "intermediate"
+audience: "operators"
+status: published
+content:
+  type: "get_started"
+agent-variants: ["pi"]
+---
+Run the pinned Pi coding agent inside a NemoClaw-managed OpenShell sandbox.
+
+<Warning>
+Pi remains a qualified release candidate until the final activation change adds it to the supported agent inventory and managed-image release cohort. Normal installations reject `--agent pi` before that activation. The qualification controls are not a user setup path.
+</Warning>
+
+## Requirements
+
+Pi v1 requires:
+
+- Linux on AMD64 or ARM64.
+- Docker as the OpenShell compute runtime.
+- Node.js 22.19 or later for NemoClaw.
+- A provider and model that support OpenAI Chat Completions, streaming, and structured tool calls.
+
+Native Podman, macOS, Windows, WSL, messaging channels, dashboards, host mounts, and managed MCP are outside the initial Pi support matrix.
+
+## Install and Onboard
+
+After Pi activation is available in the selected NemoClaw release, install NemoClaw and select Pi explicitly.
+
+```bash
+curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
+  NEMOCLAW_AGENT=pi \
+  NEMOCLAW_SANDBOX_NAME=my-pi \
+  bash
+```
+
+For an existing installation, run the canonical onboarding command.
+
+```bash
+nemoclaw onboard --agent pi --name my-pi
+```
+
+Choose a provider and model that use the OpenAI Chat Completions API. NemoClaw keeps the upstream provider credential in OpenShell and gives Pi only the managed `https://inference.local/v1` route. The credential remains in the gateway across rebuild and sandbox destruction. When no sandbox needs that provider, remove it explicitly with `nemoclaw credentials reset <provider> --yes`.
+
+Stock onboarding selects an exact Pi managed-image digest. It does not build the Pi Dockerfile on the host. The reviewed Dockerfile is a trusted CI image-build source, not a user onboarding mechanism. A missing, incomplete, mutable, or inconsistent image contract fails before sandbox creation.
+
+## Check the Sandbox
+
+Wait for onboarding to finish, then inspect the registered agent and runtime.
+
+```bash
+nemoclaw my-pi status
+nemoclaw list
+```
+
+The status output identifies Pi as a terminal runtime. Pi has no dashboard, messaging, device-pairing, or managed MCP surface.
+
+## Start an Interactive Session
+
+Run Pi through the normal launch preflight.
+
+```bash
+nemoclaw launch my-pi
+```
+
+You can also open a shell and start Pi directly.
+
+```bash
+nemoclaw my-pi connect
+pi
+```
+
+Interactive Pi can ask before it trusts project-local skills, extensions, prompts, and packages. Pi loads `AGENTS.md` and `CLAUDE.md` context files before that trust decision; use `pi --no-context-files` when those files must not enter the prompt. OpenShell policy remains the execution and network authority.
+
+## Run a Headless Task
+
+Run one headless task through the public sandbox command boundary.
+
+```bash
+nemoclaw my-pi exec --workdir /sandbox --no-tty -- \
+  pi --no-approve --print "Summarise the files in this workspace"
+```
+
+Use JSON mode when automation needs structured event evidence.
+
+```bash
+nemoclaw my-pi exec --workdir /sandbox --no-tty -- \
+  pi --no-approve --mode json --print --tools read \
+    "Use the read tool to inspect README.md and report its title"
+```
+
+`--no-approve` ignores project-local executable resources but does not disable context files; add `--no-context-files` when required. `--tools read` limits that invocation to Pi's read tool. JSON mode writes newline-delimited session events, including structured tool execution events and the final assistant message.
+
+## Continue
+
+- [Run and Manage Pi](../manage-sandboxes/run-pi) covers lifecycle, state, backup, rebuild, recovery, and troubleshooting.
+- [NemoClaw for Pi CLI Commands Reference](../reference/commands) lists host and in-sandbox command forms.
+- [Pi Support and Security](../reference/pi-support) records the initial compatibility matrix, policy, credential, and qualification boundaries.
+
+
+========================================
 [FILE: docs/get-started/quickstart.mdx]
 ========================================
 
@@ -5107,7 +5222,7 @@ When importing a completed row from an issue comment, preserve the exact commit 
 | OpenClaw primary agent | Local vLLM | Any model from `VLLM_MODELS`. | Managed `inference.local` route to the host vLLM server. | `not-yet-run` | Add vLLM serve flags, model id, and trajectory evidence before changing state. | Record parser flags, reasoning parser, and tool-call parser behavior. | Add one row per audited vLLM model id. | `src/lib/inference/vllm-models.ts`, `src/lib/inference/config.ts`. |
 | OpenClaw primary agent | Other OpenAI-compatible endpoint | User-selected `custom-model` or another configured model id. | Managed `inference.local` route to the compatible endpoint. | `not-yet-run` | Add endpoint class and trajectory evidence before changing state. | Record endpoint API path forcing and store/streaming assumptions. | Add one row per endpoint class that is validated. | `src/lib/inference/config.ts`. |
 | OpenClaw primary agent | Other Anthropic-compatible endpoint | User-selected `custom-anthropic-model` or another configured model id. | `anthropic` route when supported, otherwise managed compatible route. | `not-yet-run` | Add endpoint class and trajectory evidence before changing state. | Record native Anthropic Messages or compatible-route transport behavior. | Add one row per endpoint class that is validated. | `src/lib/inference/config.ts`. |
-| Hermes sandbox API | Hermes Provider | Default `moonshotai/kimi-k2.6` or any model from `HERMES_PROVIDER_MODEL_OPTIONS`. | Hermes Provider route through NemoClaw managed inference. | `not-yet-run` | Add Hermes session, request dump, logs, and local API evidence before changing state. | Generated config uses native `tools.tool_search.enabled: on` with snake-case 5/20 limits; core tools stay direct while deferred MCP and non-core plugin tools use structured search, describe, and call. | Verify a deferred-tool trajectory and keep it separate from OpenClaw `mode: tools` evidence. | `agents/hermes/config/managed-policy.ts`, `test/generate-hermes-config.test.ts`. |
+| Hermes sandbox API | Hermes Provider | Default `moonshotai/kimi-k2.6` or any model from `HERMES_PROVIDER_MODEL_OPTIONS`. | Hermes Provider route through NemoClaw managed inference. | `not-yet-run` | Add Hermes session, request dump, logs, and local API evidence before changing state. | Generated config uses native `tools.tool_search.enabled: on` with snake-case 5/20 limits; core tools stay direct while deferred MCP and non-core plugin tools use structured search, describe, and call. | Verify a deferred-tool trajectory and keep it separate from OpenClaw `mode: tools` evidence. | `agents/hermes/config/managed-policy.ts`, `test/generation/generate-hermes-config.test.ts`. |
 | Deep Agents interactive `dcode` | NVIDIA Endpoints | `nvidia/nemotron-3-ultra-550b-a55b` | Managed `inference.local` OpenAI-compatible Chat Completions with `use_responses_api = false`. | `not-yet-run` | Add separate default-disabled and thread-opt-in terminal transcripts, host status output, reset evidence, and route evidence before changing state. | The managed Ultra profile preserves required nonempty tool-call content and rejects the observed literal `[content]` execute placeholder before shell dispatch; optional `thread-opt-in` remains a per-thread approval affordance. | Verify a terminal task with approval prompts intact, then separately verify explicit thread activation, reset behavior, policy enforcement, placeholder rejection, and no provider credential in sandbox-visible files. | `agents/langchain-deepagents-code/generate-config.ts`, `agents/langchain-deepagents-code/profile-plugin`, `docs/get-started/quickstart-langchain-deepagents-code`. |
 | Deep Agents headless `dcode -n` | NVIDIA Endpoints | `nvidia/nemotron-3-ultra-550b-a55b` | Managed `inference.local` OpenAI-compatible Chat Completions with `use_responses_api = false`. | `not-yet-run` | Add headless command transcript and status output before changing state. | Headless mode uses the managed Ultra profile, preserves required nonempty tool-call content, rejects the observed literal `[content]` execute placeholder, has no approval UI, and auto-approves non-shell tools while managed shell execution remains disabled. | Verify a bounded non-shell task, placeholder rejection, and the approval boundary separately from interactive evidence. | `agents/langchain-deepagents-code/dcode-wrapper.sh`, `agents/langchain-deepagents-code/profile-plugin`, `docs/security/best-practices`. |
 
@@ -7400,6 +7515,24 @@ If `NEMOCLAW_SERVING_PRESET` is already set, it must select the same stable prof
 
 The profile selector is model-independent, so a catalog can add profiles without adding model-specific CLI flags.
 Omitting `--profile` preserves the existing provider and model defaults.
+
+### Select a Managed vLLM GPU
+
+Use `--vllm-gpu-device <index-or-uuid>` to select the host GPU for a managed single-host vLLM container.
+The value must be a non-negative index or a full `GPU-...` UUID reported by `nvidia-smi`.
+This selection is independent of `--sandbox-gpu-device`, which controls direct GPU access inside the sandbox.
+NemoClaw applies the vLLM selection to Docker placement, compute-capability validation, and GPU-memory checks.
+It rejects this selector for an existing local vLLM provider or a managed multi-node topology.
+Only managed single-host vLLM installation accepts this selector.
+
+```bash
+$$nemoclaw onboard --profile <profile-id> --vllm-gpu-device <index-or-uuid>
+```
+
+NemoClaw requires a resumed session to reuse the recorded GPU selector.
+A legacy in-progress session cannot add one, and a resumed session cannot change one.
+Run `$$nemoclaw onboard --fresh` when you need a different GPU selection.
+
 If onboarding is interrupted, `$$nemoclaw onboard --resume` reuses the recorded catalog, preset, and recipe digests.
 It exits before runtime effects if the installed catalog changed instead of silently switching the recipe; use `$$nemoclaw onboard --fresh --profile <profile-id>` to review and start with the current definition.
 Legacy sessions that predate profile provenance still resume with their original behavior, but you cannot add `--profile` to one of those in-progress sessions.
@@ -7462,6 +7595,8 @@ NemoClaw also accepts `HUGGING_FACE_HUB_TOKEN` as a compatibility alias, but new
 When neither variable is present, public-model downloads continue anonymously.
 
 If `hf download` reports HTTP `429`, export `HF_TOKEN` and resume onboarding.
+After an image-pull or managed-vLLM setup failure, resume retains the validated selected model and recorded GPU selector.
+A conflicting model, a changed GPU selector, or a selector introduced only during resume stops instead of changing the recorded install intent.
 The downloader reuses files already stored in `~/.cache/huggingface` instead of starting the model download from an empty cache.
 
 ```bash
@@ -7848,9 +7983,13 @@ NEMOCLAW_PROVIDER=install-vllm \
 
 If the selected image does not support an argument, the managed container exits and NemoClaw prints the log tail.
 
-When the selected managed recipe defines a GPU-memory utilization value, NemoClaw requires valid `nvidia-smi` total/free-memory telemetry for the Docker-selected GPU before large downloads.
+When the selected managed recipe defines a GPU-memory utilization value, NemoClaw checks `nvidia-smi` total and free memory for the Docker-selected GPU before large downloads.
 It repeats the same check with fresh telemetry immediately before launch so another workload cannot consume the required free GPU memory unnoticed during the download.
-If telemetry is unavailable, the Docker-selected device cannot be resolved, or free memory is below the effective utilization requirement, onboarding stops with a diagnostic and can be resumed after the GPU state is corrected.
+For a qualified N1x or DGX Spark profile, if the selected GPU has a valid index and UUID but both memory values are exactly `[N/A]`, NemoClaw warns that it cannot pre-validate utilization and continues without inferring available memory.
+Every other unavailable, missing, or malformed telemetry result stops onboarding.
+Insufficient numeric free memory also stops onboarding.
+Follow the diagnostic to restore valid telemetry, correct the selected GPU, or free the required memory.
+Then run `$$nemoclaw onboard --resume`.
 
 To bound resource use while investigating long-context workflows on one DGX Spark or N1x host, select the Qwen profile.
 The following override disables async scheduling and lowers the context window, concurrent-sequence limit, and batch limit.
@@ -10584,6 +10723,12 @@ Hermes Google Chat does not use the dedicated webhook endpoint or `$$nemoclaw tu
 
 When `channels start` re-enables a channel, NemoClaw records the channel as enabled in the messaging plan.
 The rebuild attaches the existing bridge provider before applying its matching built-in policy preset to the replacement sandbox.
+While a channel remains stopped, the rebuild omits its runtime configuration, token upsert, and channel startup effects.
+Generic providers and refresh bridges remain detached.
+<AgentOnly variant="hermes">
+For stopped Hermes Discord, a preserved credential-bound policy requires the exact validated static provider, so the rebuild retains and attaches only that provider without starting Discord or recreating its credentials.
+A missing or incompatible required provider stops the rebuild before the replacement can use the policy.
+</AgentOnly>
 If the command queues the change without rebuilding, the running sandbox keeps its existing bridge and network policy until you rebuild it.
 
 ## Avoid Cross-Sandbox Conflicts
@@ -11052,6 +11197,10 @@ The session then follows the current default selected through `inference set`, w
 
 <AgentOnly variant="hermes">
 The rebuild command preserves Hermes state, registered policies, and managed MCP configuration while recreating the container.
+It reuses a messaging provider only when its exact type and credential keys match the recorded channel binding.
+A stopped channel remains inactive and contributes no token upsert, rendered runtime configuration, or channel startup effect.
+A policy-required provider attachment is the narrow exception: when stopped Hermes Discord retains a credential-bound policy, rebuild attaches its exact validated static provider without starting Discord.
+If that required provider is missing or incompatible, restore or re-add the channel credentials, then rerun the rebuild.
 A rebuild creates a new sandbox home and a new Hermes API bearer token.
 After the rebuild succeeds, retrieve the replacement token before reconnecting API clients:
 
@@ -11492,6 +11641,163 @@ Re-onboard the named sandbox to change its managed provider or model selection.
 - [Recover and Rebuild Sandboxes](recover-and-rebuild-sandboxes) explains recovery and transactional rebuild behavior.
 - [Understand Sandbox State](../state-and-backups/understand-sandbox-state) explains the Deep Agents state directory and preservation boundaries.
 - [Troubleshooting](../../reference/troubleshooting) covers common setup and runtime failures.
+
+
+========================================
+[FILE: docs/manage-sandboxes/run-pi.mdx]
+========================================
+
+---
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+title: "Run and Manage Pi"
+sidebar-title: "Run and Manage Pi"
+description: "Operate Pi interactively or headlessly and manage its sandbox lifecycle and persistent state."
+description-agent: "Covers Pi terminal commands, lifecycle operations, state, snapshots, rebuild, recovery, and troubleshooting."
+keywords: ["run pi agent", "pi headless mode", "pi sandbox rebuild", "pi session backup"]
+topics: ["manage-sandboxes", "terminal-runtime", "pi"]
+tags: ["pi", "lifecycle", "backup", "recovery"]
+difficulty: "intermediate"
+audience: "operators"
+status: published
+content:
+  type: "how_to"
+agent-variants: ["pi"]
+---
+Use NemoClaw for host-side lifecycle operations and Pi for work inside the sandbox.
+
+<Note>
+Pi remains unavailable to normal installations until final release activation. These commands describe the accepted runtime once the installed release lists `pi` as a supported agent.
+</Note>
+
+## Connect and Run Pi
+
+Start the interactive terminal through the launch preflight.
+
+```bash
+nemoclaw launch <sandbox-name>
+```
+
+Open a sandbox shell when you want to invoke Pi or inspect workspace files yourself.
+
+```bash
+nemoclaw <sandbox-name> connect
+pi
+```
+
+For one non-interactive task from the host, use the managed sandbox command boundary.
+
+```bash
+nemoclaw <sandbox-name> exec --workdir /sandbox --no-tty -- \
+  pi --no-approve --print "Review the current changes"
+```
+
+For automation, select JSON mode and an explicit tool set.
+
+```bash
+nemoclaw <sandbox-name> exec --workdir /sandbox --no-tty -- \
+  pi --no-approve --mode json --print --tools read,grep,find,ls \
+    "Find the configuration entry that selects the default model"
+```
+
+Pi JSON mode emits newline-delimited events. Automation must reject malformed output, require a successful process exit, validate the expected `tool_execution_start` and `tool_execution_end` events, and validate the final assistant message independently.
+
+## Inspect Runtime State
+
+```bash
+nemoclaw <sandbox-name> status
+nemoclaw <sandbox-name> logs
+nemoclaw <sandbox-name> doctor
+nemoclaw list
+```
+
+Pi stores runtime state under `/sandbox/.pi/agent`:
+
+| Path | Ownership | Snapshot behaviour |
+|---|---|---|
+| `sessions/` | Confidential user state | Preserved |
+| `prompts/` | Read-only user resources | Preserved |
+| `themes/` | Read-only user resources | Preserved |
+| `tools/` | Executable resource state | Reconstructed, not restored |
+| `bin/` | Executable resource state | Reconstructed, not restored |
+| `settings.json` | User preferences | Restores only accepted keys |
+| `models.json` | Managed inference configuration | Reconstructed, not restored |
+
+The accepted `settings.json` restore keys are `theme`, `hideThinkingBlock`, `showCacheMissNotices`, `quietStartup`, `steeringMode`, `followUpMode`, and `defaultThinkingLevel`. Unknown keys, managed routing, authentication, project trust, and executable extension state are not restored.
+
+## Create and Restore Snapshots
+
+Finish active Pi tasks and lower Shields before creating a snapshot. Snapshot creation refuses to continue while Shields are up.
+
+```bash
+nemoclaw <sandbox-name> shields down
+nemoclaw <sandbox-name> snapshot create --name before-change
+nemoclaw <sandbox-name> snapshot list
+```
+
+Snapshots preserve declared user state. They do not preserve `auth.json`, managed route credentials, generated model configuration, project trust decisions, or executable tool and extension state.
+
+Restore replaces sandbox state from a selector returned by `snapshot list`: a version such as `v3`, an exact snapshot name, or a timestamp. Review the target and retain any newer state before continuing.
+
+```bash
+nemoclaw <sandbox-name> snapshot restore <version-or-name-or-timestamp>
+```
+
+## Rebuild and Recover
+
+Rebuild validates the recorded workload authority, resolves the current release's exact Pi image, and preserves declared Pi state.
+
+```bash
+nemoclaw <sandbox-name> rebuild --yes
+```
+
+Use recovery when status reports a stopped or inconsistent sandbox.
+
+```bash
+nemoclaw <sandbox-name> recover
+nemoclaw <sandbox-name> status
+```
+
+After a NemoClaw update, rebuild the sandbox to consume a newer reviewed Pi package and image. Each Pi update requires a new exact package integrity, dependency review, image digest, and qualification result.
+
+## Stop, Start, and Destroy
+
+Destroy removes the registered sandbox and its managed runtime resources. It does not remove gateway-held provider credentials. Create a snapshot before destroy when you need declared user state, and reset a provider credential separately after every dependent sandbox is gone.
+
+```bash
+nemoclaw <sandbox-name> stop
+nemoclaw <sandbox-name> start
+nemoclaw <sandbox-name> shields down
+nemoclaw <sandbox-name> snapshot create --name before-destroy
+nemoclaw <sandbox-name> destroy --yes
+nemoclaw credentials reset <provider> --yes
+```
+
+## Troubleshoot Pi
+
+### Resolve `Unknown agent 'pi'`
+
+The installed release has not activated Pi. Update NemoClaw only after a release lists Pi as supported. Do not enable internal candidate qualification settings.
+
+### Fix a Candidate Receipt or Managed-Image Contract Error
+
+The selected build cannot prove an accepted immutable Pi image. Do not replace the receipt, use a mutable image tag, or fall back to a host Dockerfile build. Use a release whose Pi activation and image cohort completed together.
+
+### Fix an Unsupported API
+
+Pi v1 accepts `openai-completions`. Select a Chat Completions-compatible provider or re-onboard with a supported provider and model.
+
+### Diagnose an Inference Failure
+
+Run `nemoclaw <sandbox-name> status` and `nemoclaw <sandbox-name> doctor`. Confirm that the host credential remains registered with OpenShell and that the selected model supports streaming and structured tool calls.
+
+### Load a Project Resource
+
+Headless `--no-approve` intentionally ignores project-local skills, extensions, prompts, and packages. Use an interactive session to make an explicit Pi project-trust decision. A restored backup never raises project trust automatically.
+
+### Diagnose Direct Internet Access
+
+The baseline permits only the managed inference route. GitHub, npm, and other services require explicit policy selection. Do not put provider or service credentials in Pi state to bypass the managed policy.
 
 
 ========================================
@@ -12860,6 +13166,14 @@ Uninstall preserves an unrelated process that uses the same port.
 | `--all-gateway-ports` | Uninstall every gateway port on the host instead of only the selected one. |
 | `--gateway <name>` | Optional consistency check; must match the name derived from `NEMOCLAW_GATEWAY_PORT`. |
 
+<AgentOnly variant="hermes">
+<Warning>
+For a non-portable Docker Hermes sandbox that uses the NemoClaw-managed image, uninstall removes its managed state volume even without `--destroy-user-data`.
+Back up required Hermes state first.
+NemoClaw removes only a volume with exact ownership labels; inspection or removal failure exits nonzero and preserves registry state for retry.
+</Warning>
+</AgentOnly>
+
 On macOS, Homebrew owns its OpenShell formula and executable links.
 Full uninstall preserves OpenShell executable paths instead of assuming NemoClaw owns them.
 When Homebrew confirms the `nvidia/openshell/openshell` formula, NemoClaw reports this separate removal command:
@@ -13158,7 +13472,7 @@ That flag does not override gateway-scoped preservation of the managed runtime r
 Interactive runs prompt before they remove the preserved entries, and the default answer keeps them.
 For non-interactive runs using `--yes`, `NEMOCLAW_NON_INTERACTIVE=1`, or a non-TTY shell, pass `--destroy-user-data` or set `NEMOCLAW_UNINSTALL_DESTROY_USER_DATA=1` to acknowledge data loss and remove the preserved entries.
 
-`--yes` stays non-destructive by design and never purges preserved user data on its own.
+`--yes` never purges the preserved host-side entries listed above on its own.
 After a successful or already-absent sandbox deletion, preserving other `sandboxes.json` entries does not preserve the selected sandbox entry or its gateway registration.
 Outside portable cleanup, after uninstall confirms that no sibling gateways remain, it also removes the provider registrations and Docker image that the recorded sandboxes depend on.
 
