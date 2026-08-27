@@ -326,6 +326,19 @@ The keys, tool names, and result limits are not interchangeable across agents.
 Progressive disclosure changes model context, not authorization.
 Final tool calls still use the agent's normal execution, policy, approval, and hook paths.
 
+## Choose the Portable Default
+
+Fresh Portable onboarding defaults to `direct` when `--tool-disclosure` is absent.
+This default ignores `NEMOCLAW_TOOL_DISCLOSURE`, including the generic value exported by the hosted installer.
+Pass the flag explicitly when you want progressive disclosure for a fresh Portable sandbox.
+
+```bash
+$$nemoclaw onboard --experimental-profile portable --fresh --tool-disclosure progressive
+```
+
+A Portable resume without the flag preserves the disclosure mode recorded by the interrupted onboarding session.
+A different explicit mode stops the resume with a conflict instead of changing the mode.
+
 ## Understand OpenClaw Tool Search
 
 OpenClaw uses `mode: "tools"` to select its structured bridge instead of the JavaScript-based `tool_search_code` bridge.
@@ -1536,7 +1549,7 @@ The NemoClaw sandbox image applies several security measures to reduce the attac
 ## Immutable Managed Image Selection
 
 Stock onboarding through the OpenShell Docker driver selects an exact managed-image digest and validates the complete OpenClaw, Hermes, and LangChain Deep Agents Code publication cohort before sandbox creation.
-If registry or catalog availability prevents resolution, the ordinary `prefer-managed` path builds the shipped, reviewed repository Dockerfile instead; it never selects an unpinned `:latest` image.
+If registry or catalog availability prevents resolution, stock onboarding stops before sandbox creation and does not build a shipped Dockerfile.
 An available but incomplete, mixed, mutable, wrong-platform, or identity-inconsistent cohort fails closed before sandbox creation.
 Passing `--from <Dockerfile>` remains a separate explicit opt-in whose complete custom image must be reviewed independently.
 
@@ -1752,8 +1765,13 @@ The decision record is tracked in [NVIDIA/NemoClaw#566](https://github.com/NVIDI
 ## Authenticated MCP Security Boundary
 
 Authenticated MCP is the intended configuration.
-The agent stores only the `openshell:resolve:env:KEY` placeholder.
+The agent stores only an OpenShell resolver placeholder for the recorded credential key.
 OpenShell keeps the raw credential in its provider store and combines credential replacement with generated MCP policy at egress.
+
+<AgentOnly variant="hermes">
+Hermes includes the credential revision from the readiness check in this placeholder.
+Registration, inspection, rollback, and lifecycle reconciliation preserve that revision while OpenShell still reports it.
+</AgentOnly>
 
 For the normal MCP client path, OpenShell evaluates the effective policy for the destination host and port, adapter binary, literal endpoint path, and MCP method before replacing placeholders in allowed HTTP request headers.
 The generated policy grants only the configured destination, path, adapter binaries, pinned addresses, explicit MCP method profile, and a 131,072-byte maximum request body.
@@ -1827,8 +1845,11 @@ mcp_servers:
       resources: true
       prompts: true
     headers:
-      Authorization: Bearer openshell:resolve:env:GITHUB_MCP_TOKEN
+      Authorization: Bearer openshell:resolve:env:v12_GITHUB_MCP_TOKEN
 ```
+
+The `v12_` prefix is an illustrative OpenShell credential revision.
+Hermes records the revision that the readiness check proves for the live provider.
 
 ### Prepare Hermes for Mutation
 
@@ -2276,8 +2297,9 @@ Review the [Prerequisites](prerequisites) before you begin.
     If the installer does not offer Express setup, or if you enter `n` at the Express prompt on a supported non-N1x host, choose an inference provider and model, then provide its credential when prompted.
     For that interactive path, skip optional web search and messaging setup on a first run, then accept the suggested network policy tier.
     With the OpenShell Docker driver, stock Hermes onboarding normally uses the release's exact managed-image digest.
-    If registry or catalog availability prevents resolution, it builds the shipped repository Dockerfile instead; it never selects an unpinned `:latest` image.
+    If registry or catalog availability prevents resolution, stock onboarding stops before sandbox creation and does not build a shipped Dockerfile.
     Invalid or inconsistent catalog evidence fails closed before sandbox creation.
+    An explicit `nemohermes onboard --from <Dockerfile>` remains a separate custom-image path.
   </Step>
 
   <Step title="Confirm the Sandbox Is Ready">
@@ -2669,8 +2691,9 @@ Review the [Prerequisites](prerequisites) before you begin.
     If the installer does not offer Express setup, or if you enter `n` at the Express prompt on a supported non-N1x host, choose an inference provider and model, then provide its credential when prompted.
     For that interactive path, accept the suggested network policy tier on a first run.
     With the OpenShell Docker driver, stock Deep Agents Code onboarding normally uses the release's exact managed-image digest.
-    If registry or catalog availability prevents resolution, it builds the shipped repository Dockerfile instead; it never selects an unpinned `:latest` image.
+    If registry or catalog availability prevents resolution, stock onboarding stops before sandbox creation and does not build a shipped Dockerfile.
     Invalid or inconsistent catalog evidence fails closed before sandbox creation.
+    An explicit `nemo-deepagents onboard --from <Dockerfile>` remains a separate custom-image path.
   </Step>
 
   <Step title="Confirm the Sandbox Is Ready">
@@ -3094,8 +3117,9 @@ Review the [Prerequisites](prerequisites) before you begin.
     Press Enter to accept the suggested `my-assistant` sandbox name.
     For a first run, skip optional web search and messaging setup, then accept the suggested network policy tier.
     With the OpenShell Docker driver, stock OpenClaw onboarding normally uses the release's exact managed-image digest.
-    If registry or catalog availability prevents resolution, it builds the shipped repository Dockerfile instead; it never selects an unpinned `:latest` image.
+    If registry or catalog availability prevents resolution, stock onboarding stops before sandbox creation and does not build a shipped Dockerfile.
     Invalid or inconsistent catalog evidence fails closed before sandbox creation.
+    An explicit `nemoclaw onboard --from <Dockerfile>` remains a separate custom-image path.
 
     <Note>
       The installer can display `Run express install with these settings? [Y/n]:` before the agent-selection prompt on DGX Spark, qualifying DGX Station, or Windows Subsystem for Linux (WSL) hosts.
@@ -3111,9 +3135,14 @@ Review the [Prerequisites](prerequisites) before you begin.
 
   <Step title="Confirm the Sandbox Is Ready">
     Wait for the ready summary, then check the sandbox state.
-    Before it prints this summary, default-profile OpenClaw onboarding waits for exactly one matching local CLI operator device.
-    It verifies the required baseline scopes and confirms that no pairing request for the same device remains pending.
-    If this bounded readiness check does not settle, NemoClaw keeps onboarding resumable and tells you to resume or rerun onboarding.
+    Before it prints this summary, ordinary fresh OpenClaw onboarding waits for exactly one matching local CLI operator device.
+    The in-sandbox auto-pair watcher is the only component that approves this device's baseline scope upgrade.
+    The host runs one bounded warm-up only when the canonical device is pairing-only, then observes the same device without sending another approval.
+    Onboarding verifies the exact paired and token scopes and confirms that no same-device request remains pending.
+    Onboarding reports whether settlement failed because of an unavailable pairing, failed warm-up, missing request, persistent pending request, stopped watcher, policy rejection, approval timeout, or approval failure.
+    The failure message omits device identifiers, request identifiers, public keys, tokens, and child command output.
+    If this bounded readiness check does not settle, NemoClaw keeps onboarding resumable.
+    Run `nemoclaw onboard --resume` after you correct the reported condition.
 
     ```bash
     nemoclaw my-assistant status
@@ -6030,6 +6059,10 @@ It creates a receipt-owned Ollama runner through the current user's rootless Pod
 Run the fresh Portable command in the [Hermes quickstart](../../get-started/quickstart#use-portable-ollama) with `NEMOCLAW_PROVIDER=ollama` and an explicit `NEMOCLAW_MODEL`.
 
 Before the provider-selection step completes, NemoClaw verifies the Portable network, registry, GPU, and Podman authority.
+NemoClaw launches the runner with `OLLAMA_CONTEXT_LENGTH=64000`.
+That value is part of the runner's launch and runtime identity.
+Before NemoClaw accepts or reuses the runner, the recorded launch arguments and inspected container environment must agree on the exact value.
+A missing or changed value causes a configuration drift error instead of runner reuse.
 It then creates the runner, sends one validation request for the selected model, and confirms that the exact model is loaded.
 This path does not inspect, start, or use a host Ollama process, and it does not use the default Docker runtime.
 
@@ -9248,6 +9281,8 @@ The early capability check identifies managed image version only; NemoClaw still
 </AgentOnly>
 <AgentOnly variant="hermes">
 Hermes performs its managed runtime probe before an active add or restart changes a live provider or policy.
+Hermes stores the credential revision from the readiness check in the OpenShell resolver placeholder.
+Registration, inspection, rollback, and lifecycle reconciliation preserve that revision while it remains observable.
 </AgentOnly>
 <AgentOnly variant="openclaw">
 OpenClaw verifies the pinned `mcporter` during adapter registration and rolls back an incomplete add.
@@ -9268,7 +9303,8 @@ The assignment is illustrative.
 Load real values from an approved secret manager or masked prompt so the credential is not recorded in shell history.
 
 `--env KEY` reads the value from the host process environment and stores it in OpenShell's provider store.
-NemoClaw persists only the variable name, writes `openshell:resolve:env:KEY` into sandbox-side MCP config, and relies on OpenShell to resolve the placeholder at egress.
+NemoClaw persists only the variable name and writes an OpenShell resolver placeholder for that key into sandbox-side MCP configuration.
+OpenShell resolves the placeholder at egress.
 
 After `mcp add` commits, NemoClaw performs a fresh status inspection and runs the gated credential-resolution probe once unless you pass `--no-probe`.
 If readiness is inconclusive, the command reports a probe skip without failing the committed add.
@@ -9328,7 +9364,7 @@ The command records the resulting exact trust intent, so later lifecycle command
 
 NemoClaw records the normalized trust intent and every validated address as exact policy pins.
 The raw bearer value passes transiently to the OpenShell provider and remains absent from NemoClaw state, sandbox configuration, command arguments, and logs.
-The sandbox configuration contains only the `openshell:resolve:env:LOCAL_MCP_TOKEN` credential placeholder.
+The sandbox configuration contains only an OpenShell resolver placeholder for `LOCAL_MCP_TOKEN`, not the raw bearer value.
 You can unset the host variable after `mcp add` returns because OpenShell retains the credential.
 An exported replacement updates it during restart, and `mcp remove` or sandbox destroy deletes the registry-owned provider.
 
@@ -10435,7 +10471,7 @@ Bounded partial results set `truncated` to `true` and include a redacted `detail
 
 ## Verify Credential Resolution
 
-Provider presence and metadata cannot prove that OpenShell rewrites `openshell:resolve:env:KEY` when a request leaves the sandbox.
+Provider presence and metadata cannot prove that OpenShell rewrites the recorded resolver placeholder when a request leaves the sandbox.
 `mcp status <server>` requests a differential wire-level credential-resolution probe by default.
 
 Before sending probe traffic, NemoClaw verifies exact generated policy, expected provider attachment, provider ID, `nemoclaw-mcp-v1` type, valid resource version, and exactly one matching credential key.
@@ -10540,6 +10576,11 @@ It never detaches the provider from other sandboxes.
 
 `rebuild` preserves providers that match the recorded ID and credential-key metadata and the active `nemoclaw-mcp-v1` type.
 It removes adapter entries and exact owned policies, then detaches providers before replacing the sandbox.
+Before changing each managed adapter, a fresh sandbox process must expose a revision-scoped OpenShell credential placeholder for that adapter.
+If an observation is absent, unscoped, or unavailable, NemoClaw leaves the affected adapter and every provider unchanged.
+It attempts to restore adapter entries prepared earlier in the operation and reports rollback failures.
+It does not substitute the provider resource version for the credential revision.
+Follow the reported [credential-revision recovery](../../reference/troubleshoot-mcp-servers#rebuild-or-destroy-cannot-prove-a-credential-revision), then retry rebuild.
 Restoration applies the credential-free policy, reattaches each provider, applies the endpoint-bound policy, waits for credential readiness, and restores adapters.
 For a trusted-private entry, the restored policy uses the recorded exact address pins and does not widen them from current DNS answers.
 Public entries continue to resolve and validate their endpoint addresses during restoration.
@@ -10560,6 +10601,10 @@ A later `mcp restart` can retry an incomplete post-rebuild restore.
 ## Destroy a Sandbox with MCP State
 
 Destroy removes adapter entries and exact owned policies, then detaches providers that match recorded metadata before asking OpenShell to delete the sandbox.
+Before changing each managed adapter, a fresh sandbox process must expose a revision-scoped OpenShell credential placeholder for that adapter.
+If an observation is absent, unscoped, or unavailable, NemoClaw leaves the affected adapter and every provider unchanged.
+It attempts to restore adapter entries prepared earlier in the operation and reports rollback failures.
+Follow the reported [credential-revision recovery](../../reference/troubleshoot-mcp-servers#rebuild-or-destroy-cannot-prove-a-credential-revision), then retry destroy.
 If deletion is refused, NemoClaw attempts to restore previous MCP state, reports rollback failures, and preserves recovery state.
 Provider deletion and registry cleanup happen only after OpenShell confirms the sandbox is gone.
 
@@ -10736,7 +10781,9 @@ The rebuild attaches the existing bridge provider before applying its matching b
 While a channel remains stopped, the rebuild omits its runtime configuration, token upsert, and channel startup effects.
 Generic providers and refresh bridges remain detached.
 <AgentOnly variant="hermes">
-For stopped Hermes Discord, a preserved credential-bound policy requires the exact validated static provider, so the rebuild retains and attaches only that provider without starting Discord or recreating its credentials.
+The rebuild also omits the stopped channel's inactive built-in messaging preset.
+Exact custom policies remain preserved for separate replay, including a custom policy whose name matches a built-in messaging preset.
+For stopped Hermes Discord, a preserved custom credential-bound policy requires the exact validated static provider, so the rebuild retains and attaches only that provider without starting Discord or recreating its credentials.
 A missing or incompatible required provider stops the rebuild before the replacement can use the policy.
 </AgentOnly>
 If the command queues the change without rebuilding, the running sandbox keeps its existing bridge and network policy until you rebuild it.
@@ -11213,8 +11260,9 @@ The session then follows the current default selected through `inference set`, w
 <AgentOnly variant="hermes">
 The rebuild command preserves Hermes state, registered policies, and managed MCP configuration while recreating the container.
 It reuses a messaging provider only when its exact type and credential keys match the recorded channel binding.
-A stopped channel remains inactive and contributes no token upsert, rendered runtime configuration, or channel startup effect.
-A policy-required provider attachment is the narrow exception: when stopped Hermes Discord retains a credential-bound policy, rebuild attaches its exact validated static provider without starting Discord.
+A stopped channel remains inactive and contributes no token upsert, rendered runtime configuration, channel startup effect, or inactive built-in messaging preset.
+Exact custom policies remain preserved for separate replay.
+A policy-required provider attachment is the narrow exception: when a preserved custom policy still credential-binds stopped Hermes Discord, rebuild attaches its exact validated static provider without starting Discord.
 If that required provider is missing or incompatible, restore or re-add the channel credentials, then rerun the rebuild.
 A rebuild creates a new sandbox home and a new Hermes API bearer token.
 After the rebuild succeeds, retrieve the replacement token before reconnecting API clients:

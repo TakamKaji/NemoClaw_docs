@@ -83,6 +83,7 @@
 │       │       ├── check-gates.ts
 │       │       ├── handoff-summary.ts
 │       │       ├── hotspots.ts
+│       │       ├── run-trusted-check-gates.sh
 │       │       ├── shared.ts
 │       │       ├── state.ts
 │       │       ├── triage.ts
@@ -110,7 +111,8 @@
 │       │   │   ├── queue-and-ownership.md
 │       │   │   └── review-and-merge.md
 │       │   └── scripts
-│       │       └── evaluate-policy.mts
+│       │       ├── evaluate-policy.mts
+│       │       └── run-trusted-policy.sh
 │       ├── nemoclaw-maintainer-morning
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-normalize-title-tags
@@ -3322,4 +3324,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-281 directories, 3042 files
+281 directories, 3044 files
