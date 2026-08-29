@@ -49,6 +49,10 @@
 │       │       └── collect-release-ledger.py
 │       ├── nemoclaw-contributor-update-docs
 │       │   └── SKILL.md
+│       ├── nemoclaw-maintainer-analyze-pr-value-stream
+│       │   ├── SKILL.md
+│       │   └── scripts
+│       │       └── analyze-pr-value-stream.mts
 │       ├── nemoclaw-maintainer-cross-issue-sweep
 │       │   ├── SKILL.md
 │       │   ├── checks
@@ -3327,4 +3331,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-281 directories, 3047 files
+283 directories, 3049 files
