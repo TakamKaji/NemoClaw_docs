@@ -8450,6 +8450,13 @@ NemoClaw sends another validation request in any of these cases:
 An endpoint that is reachable only through `http://host.openshell.internal:<port>` cannot receive the host-side API probe.
 Verify that route from inside the sandbox after onboarding.
 
+<AgentOnly variant="openclaw">
+
+For OpenClaw, the compatible endpoint check validates `inference.local` from inside the sandbox only when the selected provider is `compatible-endpoint`.
+The check runs whether or not you select a messaging channel and stops onboarding if the route fails.
+
+</AgentOnly>
+
 ## Related Topics
 
 - [Verify the Sandbox Inference Route](verify-inference-route) to test the route the agent uses.
@@ -11088,8 +11095,26 @@ Missing authority, a same-name replacement, or other drift stops recovery before
 Success requires a final route proof from inside the sandbox.
 
 Ordinary `connect` and direct `launch` do not resume the runner.
-If a check fails after recovery starts a stopped runner, NemoClaw returns the runner to stopped and returns the registry to its prior state.
-If the output says that restoration could not be proved, preserve the current Portable state and do not run another recovery probe or `launch` until you inspect the recorded runtime and registry authority.
+If a check fails after recovery starts a stopped runner, NemoClaw restores the runner and registry to their prior states or reports that restoration could not be proved.
+
+<Warning title="Unproved Rollback">
+If the output says that restoration could not be proved, save the complete recovery output.
+Run these read-only checks:
+
+```bash
+$$nemoclaw <sandbox-name> status
+$$nemoclaw <sandbox-name> doctor
+```
+
+Save both results.
+The expected status line is `Portable lifecycle phase: active`.
+The expected doctor line is `Portable lifecycle: agent=Hermes; phase=active`.
+These results prove only that the lifecycle receipt and sandbox registry agree.
+They do not prove that the Podman runner returned to stopped.
+Preserve the applicable sandbox registry and `~/.nemoclaw/portable-inference/<sandbox-digest>/` directory described in [Host Files and State](../../reference/host-files-and-state).
+Do not edit that state, change the Podman runtime directly, or run `connect --probe-only`, `recover`, or `launch`.
+Ask a NemoClaw maintainer to inspect the retained runtime and registry authority before you take another recovery action.
+</Warning>
 
 Use `gateway restart` when you intentionally need a supported Hermes gateway to reload runtime configuration or plugins.
 
@@ -13762,9 +13787,10 @@ During the automatic upgrade path, the installer prepares the current NemoClaw C
 If any sandbox is skipped or fails, the installer exits before it changes the gateway.
 After backup, the installer requires any existing OpenShell executable it will use to report a version, then compares that version with the supported range declared by the prepared current source.
 It retires the running gateway before replacing an out-of-range OpenShell installation, keeps the gateway when the installed version is supported, and stops without retiring it when the installed version or supported range cannot be validated.
-On Linux, failed OpenShell lifecycle commands cause the installer to check a verified NemoClaw-managed gateway PID file for any configured gateway port.
-For the default gateway on port `8080`, the installer first checks a verified active `nemoclaw-openshell-gateway.service`, then checks the PID file.
-The service path requires an active `nemoclaw-openshell-gateway.service` with a trusted unit path, NemoClaw-managed marker, file owner, and `ExecStart` binary.
+If OpenShell lifecycle commands cannot retire the gateway, the installer can use verified service or PID-file evidence on Linux and macOS.
+For the default gateway on port `8080`, Linux first checks verified systemd service evidence for `nemoclaw-openshell-gateway.service`, while macOS first checks verified Homebrew gateway service evidence.
+On either platform, the installer can then use a verified NemoClaw-managed gateway PID file for the configured gateway port.
+If macOS cannot obtain a conclusive `lsof` listener observation for a stale PID, the installer stops retirement and preserves the PID file, OpenShell registration, and every sandbox backup.
 After the service or PID-file check confirms the gateway process is stopped, the installer tries to remove the selected OpenShell registration.
 If registration removal fails, the installer warns that onboarding will replace the stale registration.
 If neither fallback can verify and stop the process, the installer stops after backup, preserves every sandbox backup, and reports the failed operation.

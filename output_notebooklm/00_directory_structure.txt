@@ -52,7 +52,8 @@
 │       ├── nemoclaw-maintainer-analyze-pr-value-stream
 │       │   ├── SKILL.md
 │       │   └── scripts
-│       │       └── analyze-pr-value-stream.mts
+│       │       ├── analyze-pr-value-stream.mts
+│       │       └── export-pr-lifetime-trace.mts
 │       ├── nemoclaw-maintainer-cross-issue-sweep
 │       │   ├── SKILL.md
 │       │   ├── checks
@@ -3331,4 +3332,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-283 directories, 3049 files
+283 directories, 3050 files
