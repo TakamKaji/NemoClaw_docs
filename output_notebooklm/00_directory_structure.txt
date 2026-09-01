@@ -489,6 +489,7 @@
 │   │   ├── 2026-08-20.mdx
 │   │   ├── 2026-08-23.mdx
 │   │   ├── 2026-08-28.mdx
+│   │   ├── 2026-08-31.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -596,6 +597,7 @@
 │   │   ├── configure-runtime-identity.mdx
 │   │   ├── enterprise-readiness.mdx
 │   │   ├── extension-taxonomy-sdk-readiness.mdx
+│   │   ├── headless-lifecycle-package.mdx
 │   │   ├── host-files-and-state.mdx
 │   │   ├── network-policies.mdx
 │   │   ├── pi-commands.mdx
@@ -3332,4 +3334,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-283 directories, 3050 files
+283 directories, 3052 files
