@@ -49,6 +49,15 @@
 │       │       └── collect-release-ledger.py
 │       ├── nemoclaw-contributor-update-docs
 │       │   └── SKILL.md
+│       ├── nemoclaw-maintainer-analyze-ci-performance
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── scripts
+│       │       ├── analyze-base-image-publication-timings.mts
+│       │       ├── analyze-recent-cli-timings.mts
+│       │       ├── runtime.mts
+│       │       └── statistics.mts
 │       ├── nemoclaw-maintainer-analyze-pr-value-stream
 │       │   ├── SKILL.md
 │       │   └── scripts
@@ -490,6 +499,7 @@
 │   │   ├── 2026-08-23.mdx
 │   │   ├── 2026-08-28.mdx
 │   │   ├── 2026-08-31.mdx
+│   │   ├── 2026-09-01.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3334,4 +3344,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-283 directories, 3052 files
+286 directories, 3059 files
