@@ -63,6 +63,12 @@
 │       │   └── scripts
 │       │       ├── analyze-pr-value-stream.mts
 │       │       └── export-pr-lifetime-trace.mts
+│       ├── nemoclaw-maintainer-classify-ci-failure
+│       │   ├── SKILL.md
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── scripts
+│       │       └── classify-ci-failure.mts
 │       ├── nemoclaw-maintainer-cross-issue-sweep
 │       │   ├── SKILL.md
 │       │   ├── checks
@@ -93,6 +99,8 @@
 │       │   ├── SKILL.md
 │       │   ├── STATE-SCHEMA.md
 │       │   ├── TEST-GAPS.md
+│       │   ├── evals
+│       │   │   └── evals.json
 │       │   └── scripts
 │       │       ├── check-gates.ts
 │       │       ├── handoff-summary.ts
@@ -500,6 +508,7 @@
 │   │   ├── 2026-08-28.mdx
 │   │   ├── 2026-08-31.mdx
 │   │   ├── 2026-09-01.mdx
+│   │   ├── 2026-09-02.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3344,4 +3353,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-286 directories, 3059 files
+290 directories, 3064 files
