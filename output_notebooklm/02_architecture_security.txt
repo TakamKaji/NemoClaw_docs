@@ -977,6 +977,36 @@ Run the same `policy add` command after you edit a maintained preset or a custom
 
 The merge starts from the round-trippable base policy returned by `openshell policy get --base`. It excludes provider-composed `_provider_*` entries because OpenShell reserves that namespace and rejects it in `policy set`. Existing presets and baseline entries remain in place.
 
+<AgentOnly variant="hermes">
+
+### Remove the Previous Hermes Discord Node Grant
+
+A Hermes sandbox that was created with an older Discord preset keeps its live policy during rebuild.
+Reapply the maintained `discord` preset before the next rebuild to remove the previous `/usr/local/bin/node` grant.
+
+Preview and apply the current preset:
+
+```bash
+$$nemoclaw <name> policy add discord --dry-run
+$$nemoclaw <name> policy add discord --yes
+```
+
+Inspect the resulting live policy:
+
+```bash
+$$nemoclaw <name> policy get
+```
+
+The `discord` binary list must contain `/opt/hermes/.venv/bin/python3`, `/opt/hermes/.venv/bin/python`, `/usr/bin/python3`, and the managed image's resolved interpreter `/usr/bin/python3.13`.
+It must not contain the broad `/usr/bin/python3*` wildcard or `/usr/local/bin/node`.
+The reapply operation retains the Discord credential binding and all policy entries outside the maintained `discord` entry.
+A later rebuild preserves this reconciled live policy.
+
+If the apply command fails, NemoClaw leaves the live policy unchanged.
+Resolve the reported policy or gateway error, then rerun the preview and apply commands.
+
+</AgentOnly>
+
 ## List and Remove Presets
 
 List available presets and identify which ones match the current OpenShell policy:
@@ -3074,7 +3104,7 @@ Use `openshell` when the docs explicitly call for a live OpenShell gateway opera
   openshell term
   ```
 
-- Manage service port forwards:
+- Manage arbitrary user-owned OpenShell forwards. For a NemoClaw-managed dashboard, API, or messaging forward, run `$$nemoclaw <name> recover` instead:
 
   ```bash
   openshell forward start --background <port> <sandbox-name>
@@ -4403,14 +4433,16 @@ Host-side validation runs before the sandbox dispatch:
 </AgentOnly>
 <AgentOnly variant="hermes">
 
-The `agent` wrapper rejects Hermes sandboxes with guidance for the Hermes HTTP API. Each Hermes sandbox exposes an OpenAI-compatible API inside the sandbox on its own port, which defaults to `8642`, so non-interactive use does not need a wrapper command. When another sandbox or a host listener already holds `8642`, the sandbox receives the next free port from `8642` through `8652`. The rejection message names that port and the `openshell forward start` command for it. Run `openshell forward list` to read the host bind for each of that sandbox's forwards.
+The `agent` wrapper rejects Hermes sandboxes with guidance for the Hermes HTTP API. Each Hermes sandbox exposes an OpenAI-compatible API inside the sandbox on its own port, which defaults to `8642`, so non-interactive use does not need a wrapper command. When another sandbox or a host listener already holds `8642`, the sandbox receives the next free port from `8642` through `8652`. The rejection message names that port and the NemoClaw recovery command for its managed forward. Use the allocated API port shown by `nemohermes <name> status` below.
 
-Forward the port and POST chat completions directly:
+Recover the managed forward, then POST chat completions directly:
 
 ```bash
-openshell forward start --background 8642 my-hermes
-curl -sN http://127.0.0.1:8642/v1/chat/completions \
+nemohermes my-hermes recover
+API_TOKEN=$(nemohermes my-hermes gateway-token --quiet)
+curl -sN http://127.0.0.1:<api-port>/v1/chat/completions \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $API_TOKEN" \
   -d '{"model":"<onboarded-model>","messages":[{"role":"user","content":"What is 2+2?"}],"stream":true}'
 ```
 
@@ -8625,7 +8657,8 @@ Pi starts with `umask 077`, so generated configuration and session files are pri
 
 ## Qualification Evidence
 
-The release gate runs one repository-owned target on native Linux AMD64 and Linux ARM64 runners. Each target records:
+The full lifecycle release gate runs one repository-owned target on a native Linux AMD64 runner.
+The target records:
 
 - CLI, workflow, receipt, package, image, platform, and OpenShell identities;
 - Docker as the compute runtime;
@@ -8638,7 +8671,13 @@ The release gate runs one repository-owned target on native Linux AMD64 and Linu
 - absence of the upstream credential from sandbox environment, files, registry, logs, and uploaded evidence;
 - cleanup after destroy.
 
-The [versioned qualification task](https://github.com/NVIDIA/NemoClaw/blob/main/test/e2e/live/pi-agent-qualification.test.ts) uses the [structured event oracle](https://github.com/NVIDIA/NemoClaw/blob/main/test/e2e/live/pi-agent-qualification-events.ts) and the checked-in [AMD64](https://github.com/NVIDIA/NemoClaw/blob/main/ci/pi-agent-qualification-v1-linux-amd64.json) and [ARM64](https://github.com/NVIDIA/NemoClaw/blob/main/ci/pi-agent-qualification-v1-linux-arm64.json) receipts. Each trusted run uploads a bounded `pi-agent-qualification.json` oracle result and the standard `evidence-manifest.json`. Final activation must retain durable links to passing results for both platforms and must not require manual sandbox repair.
+Linux ARM64 remains release-gated by its native managed-image build, startup, publication, and receipt evidence.
+The checked-in [AMD64](https://github.com/NVIDIA/NemoClaw/blob/main/ci/pi-agent-qualification-v1-linux-amd64.json) and [ARM64](https://github.com/NVIDIA/NemoClaw/blob/main/ci/pi-agent-qualification-v1-linux-arm64.json) receipts must identify one source revision, release, and publication cohort.
+
+The [versioned qualification task](https://github.com/NVIDIA/NemoClaw/blob/main/test/e2e/live/pi-agent-qualification.test.ts) uses the [structured event oracle](https://github.com/NVIDIA/NemoClaw/blob/main/test/e2e/live/pi-agent-qualification-events.ts) and the AMD64 receipt.
+Each trusted lifecycle run uploads a bounded `pi-agent-qualification.json` oracle result and the standard `evidence-manifest.json`.
+Final activation must retain durable links to the passing AMD64 lifecycle result and both platform managed-image results.
+It must not require manual sandbox repair.
 
 
 ========================================
@@ -8754,7 +8793,7 @@ NemoClaw routes inference through the OpenShell gateway. Each row below is a pro
 | Local llama.cpp (managed DGX Spark) | Experimental | Local OpenAI-compatible | Uses the repository-owned YAML recipe for NVIDIA Nemotron 3 Nano 30B-A3B, exact GGUF verification, and Docker lifecycle on a qualified DGX Spark host. The recipe remains unqualified for agent support. |
 | Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag. Onboarding filters the validated image list by usable memory. In non-interactive mode, onboarding selects the first compatible model unless the operator sets `NEMOCLAW_MODEL`. Model selection uses detected free GPU memory. If free memory is unavailable, NemoClaw uses total GPU memory. On DGX Spark, NemoClaw caps usable memory at 50 percent of total memory to match NIM's reported unified-memory limit. The Nemotron 3 Super catalog minimum includes NIM's reported runtime allocation. Local NVIDIA NIM is unavailable on N1x. NemoClaw omits the provider from onboarding and rejects `NEMOCLAW_PROVIDER=nim-local` on N1x. Use the Deferred managed-vLLM preview on N1x. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
 | Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Unavailable on N1x. On other hosts, it appears in the onboarding menu when NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. No flag is required. The model is whatever the existing server serves. |
-| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. A labeled Deferred preview appears on hosts that match the N1x identity requirements; N1x remains Deferred until a physical NemoClaw Express E2E test passes. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark and the Deferred N1x preview, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
+| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Managed install/start requires Docker on `PATH`; attaching an already-running local vLLM server is a separate path. Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. A labeled Deferred preview appears on hosts that match the N1x identity requirements; N1x remains Deferred until a physical NemoClaw Express E2E test passes. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark and the Deferred N1x preview, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status-full:end */}
 
 ## Messaging Integrations
@@ -8803,7 +8842,7 @@ Pick the row that matches the target environment.
 | Path | Status | Notes |
 |------|--------|-------|
 | Local CLI onboard | Tested | Run `$$nemoclaw onboard` on a tested platform with Docker available locally. Primary path. |
-| Native rootless Podman on Linux | Tested with limitations | Set `NEMOCLAW_GATEWAY_RUNTIME=podman` before standard onboarding. The provider requires a qualified current-user Podman socket, rootless service, cgroups v2, bridge networking and DNS, and exact managed-image receipts. Full native E2E qualification currently runs on Linux amd64; the managed-image contract accepts `linux/amd64` and `linux/arm64` receipts. Custom `--from` Dockerfiles and read-only host mounts are not qualified. The portable experimental profile remains separate. |
+| Native rootless Podman on Linux | Tested with limitations | Set `NEMOCLAW_GATEWAY_RUNTIME=podman` before standard onboarding. The provider requires a qualified current-user Podman socket, rootless service, cgroups v2, bridge networking and DNS, and exact managed-image receipts. Full native E2E qualification currently runs on Linux amd64; the managed-image contract accepts `linux/amd64` and `linux/arm64` receipts. Managed local vLLM install/start remains Docker-backed and is unavailable without Docker. Custom `--from` Dockerfiles and read-only host mounts are not qualified. The portable experimental profile remains separate. |
 | Headless Linux server | Tested with limitations | Provision a tested Linux host, connect over SSH, run the standard installer and `$$nemoclaw onboard`, and keep dashboards bound to loopback behind SSH port forwarding. Automatic recovery after a host reboot is not guaranteed; follow the documented manual recovery flow. |
 {/* deployment-status:end */}
 
@@ -9734,11 +9773,13 @@ Keep that variable set for later type-check, build, and test commands.
 
 ### Image push fails with out-of-memory errors
 
-The sandbox image is approximately 2.4 GB compressed. During image push, the Docker daemon, k3s, and the OpenShell gateway run alongside the export pipeline, which buffers decompressed layers in memory. On machines with less than 8 GB of RAM, this combined usage can trigger the OOM killer.
+The sandbox image is approximately 2.4 GB compressed. During image push, the selected container runtime, k3s, and the OpenShell gateway run alongside the export pipeline, which buffers decompressed layers in memory. On machines with less than 8 GB of RAM, this combined usage can trigger the OOM killer.
 
 If you cannot add memory, configure at least 8 GB of swap to work around the issue at the cost of slower performance.
 
 ### Docker is not running
+
+These steps apply to the default Docker path. Native rootless Podman does not require Docker; retain `NEMOCLAW_GATEWAY_RUNTIME=podman` and follow [Podman](#podman).
 
 Check the host before onboarding:
 
@@ -9748,7 +9789,7 @@ $$nemoclaw host probe
 
 The command does not start Docker or apply a repair. A `host.docker.daemon_unreachable` finding means Docker is installed but NemoClaw cannot reach the daemon. For JSON output and exit-code details, refer to [System Readiness](system-readiness).
 
-The installer and onboard wizard require Docker to be running. If you see a Docker connection error, start the Docker daemon:
+The installer and onboard wizard require Docker to be running on the default Docker path. If you see a Docker connection error on that path, start the Docker daemon:
 
 ```bash
 sudo systemctl start docker
@@ -9761,7 +9802,7 @@ On macOS with Docker Desktop, open the Docker Desktop application and wait for i
 On Linux, if the Docker daemon is running but you see "permission denied" errors, your user may not be in the `docker` group. The installer can add your user to the group, but Linux does not activate that membership in the current shell automatically. Add your user and activate the group in the current shell:
 
 <Warning title="Docker group access">
-  NemoClaw needs Docker access. On personal Linux development machines, adding your user to the
+  The default Docker path needs Docker access. On personal Linux development machines, adding your user to the
   `docker` group is the standard way to run Docker without sudo. Members of the `docker` group can
   control the daemon with root-level impact, so grant this access only to trusted local accounts; on
   shared or managed systems, use your organization's approved Docker access path. For background,
@@ -9954,7 +9995,7 @@ The NemoClaw dashboard uses port `18789` by default and the gateway uses port `8
 
 NemoClaw allocates each Hermes sandbox an OpenAI-compatible API port from `8642` through `8652`, so it rejects every port in that range as a dashboard port for any agent. When all ports in the API range are occupied, the error lists the owner for each port. Destroy a listed Hermes sandbox or stop a listed non-OpenShell listener, then rerun onboarding.
 
-On macOS, the port check also tries a privileged `lsof` probe without prompting for a password so root-owned listeners are detected before the sandbox build starts. For a new sandbox, NemoClaw reserves the selected loopback port through sandbox preparation and the image build. If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources. NemoClaw releases the reservation immediately before `openshell forward start` runs. If forwarding then fails, onboarding removes the new sandbox and tells you to resolve the reported error before retrying.
+On macOS, the port check also tries a privileged `lsof` probe without prompting for a password so root-owned listeners are detected before the sandbox build starts. For a new sandbox, NemoClaw reserves the selected loopback port through sandbox preparation and the image build. If another listener claims the port before NemoClaw binds the reservation, NemoClaw selects another port before changing sandbox resources. NemoClaw releases the reservation immediately before its receipt-owned ForwardTcp service starts. If forwarding then fails, onboarding removes the new sandbox and tells you to resolve the reported error before retrying.
 
 When a previous onboard, upgrade, or sandbox crash leaves a stale `openclaw-gateway` host process holding the dashboard port, `$$nemoclaw onboard --fresh`, `$$nemoclaw <name> destroy` (when destroying the last sandbox), and `$$nemoclaw uninstall` automatically sweep the dashboard port range and signal `SIGTERM` then `SIGKILL` to recover. The sweep only targets processes owned by the current user whose command line matches `openclaw-gateway` or `openshell forward` markers, and skips dashboard ports owned by other live sandboxes.
 
@@ -11867,11 +11908,11 @@ In that case:
 
 ### Discord preset validation behind a proxy
 
-The built-in Discord policy preset intentionally allows the Node binaries used by the messaging runtime and does not allow `curl`. As a result, `curl -s https://discord.com` failing, hanging, or printing no output is not proof that the Discord preset is broken.
+The built-in Discord policy preset allows the OpenClaw Node.js runtime and does not allow `curl`. As a result, `curl -s https://discord.com` failing, hanging, or printing no output is not proof that the Discord preset is broken.
 
 Behind the OpenShell proxy, direct DNS-only checks can also be the wrong signal. For example, `dns.resolve("gateway.discord.gg")` can fail even when HTTPS requests routed through the proxy are healthy.
 
-Use Node HTTPS as the manual REST probe:
+Use the OpenClaw Node.js runtime for the manual REST probe:
 
 ```bash
 node - <<'NODE'
@@ -11907,7 +11948,7 @@ https
 NODE
 ```
 
-Any HTTP status from these probes means the Node process reached the endpoint; the exact status can vary by unauthenticated path. If the Node REST probe works but the Discord channel is still unhealthy, investigate the native gateway path instead of widening the preset. Check the gateway logs and blocked-request output with `openshell term`, and look for `gateway.discord.gg` connection or WebSocket upgrade failures.
+Any HTTP status from these probes means the Node.js process reached the endpoint; the exact status can vary by unauthenticated path. A transport error or OpenShell policy denial means the probe failed. If the REST probe works but the Discord channel is still unhealthy, investigate the native gateway path instead of widening the preset. Check the gateway logs and blocked-request output with `openshell term`, and look for `gateway.discord.gg` connection or WebSocket upgrade failures.
 
 ### Messaging bridge appears running but no messages arrive
 
@@ -13925,6 +13966,28 @@ Continue only when onboarding no longer reports that the Podman service or OpenS
 
 The issues below are common problems you may encounter when running Hermes through `nemohermes`. For setup, refer to [Quickstart with Hermes](../../hermes/get-started/quickstart).
 
+### Discord preset validation behind a proxy
+
+The Hermes Discord policy allows its virtual-environment Python interpreter and the concrete system paths to which that interpreter resolves. It does not grant Node.js or `curl` Discord egress. A Node.js or `curl` failure is therefore not proof that the Discord preset is broken.
+
+Use the Hermes virtual-environment Python runtime inside the affected sandbox for the manual REST probe:
+
+```bash
+nemohermes <name> exec -- /opt/hermes/.venv/bin/python -c 'import urllib.error, urllib.request; u="https://discord.com/api/v10/gateway";
+try: print(urllib.request.urlopen(u, timeout=20).status)
+except urllib.error.HTTPError as error: print(error.code)'
+```
+
+To check Discord CDN egress, use the same sandbox-qualified Python runtime:
+
+```bash
+nemohermes <name> exec -- /opt/hermes/.venv/bin/python -c 'import urllib.error, urllib.request; u="https://cdn.discordapp.com/";
+try: print(urllib.request.urlopen(u, timeout=20).status)
+except urllib.error.HTTPError as error: print(error.code)'
+```
+
+Any HTTP status means the Python process reached the endpoint; the exact status can vary by unauthenticated path. A transport error or OpenShell policy denial means the probe failed. If the REST probe works but the Discord channel is still unhealthy, inspect the gateway logs and blocked-request output with `openshell term`. Look for `gateway.discord.gg` connection or WebSocket upgrade failures instead of widening the preset.
+
 ### Hermes dashboard config did not converge
 
 `nemohermes inference set` updates the OpenShell route, registry, and `/sandbox/.hermes/config.yaml` before it refreshes the separate dashboard profile. If the dashboard profile exists but NemoClaw cannot confirm that `/sandbox/.hermes/profiles/dashboard-home/config.yaml` was updated, the command exits nonzero without printing `Inference route synced`. The committed route and main Hermes config are not rolled back.
@@ -13992,32 +14055,24 @@ Deployment verification probes the OpenAI-compatible API inside the sandbox and 
 
 ```text
 ✗ api: port forward not working (connection refused)
-  The OpenAI-compatible API on port 8642 is not reachable from the host. Run: openshell forward start --background 8642 <name>
+  The OpenAI-compatible API on port 8642 is not reachable from the host. Run: nemoclaw <name> recover
 ```
 
-Use the forward recovery below only when the in-sandbox `gateway` check passed. The output omits passing checks, so confirm that it contains no `gateway` failure. If the output contains a `gateway` failure, follow that diagnostic first. Do not restart the host forward until the in-sandbox API responds.
+Use the forward recovery below only when the in-sandbox `gateway` check passed. The output omits passing checks, so confirm that it contains no `gateway` failure. If the output contains a `gateway` failure, follow that diagnostic first.
 
-When the `gateway` check passed and only the `api` check failed, the API remains reachable inside the sandbox. Each Hermes sandbox owns an API port allocated from `8642` through `8652`, so use the port from the `api` diagnostic instead of assuming the default. First, list the active OpenShell port forwards:
+When the `gateway` check passed and only the `api` check failed, the API remains reachable inside the sandbox. Restore the receipt-owned host forward through NemoClaw:
 
 ```bash
-openshell forward list
+nemoclaw <name> recover
 ```
 
-If no row owns the API port, start its port forward:
-
-```bash
-openshell forward start --background <port> <name>
-```
-
-Continue only when the command exits with status `0`. If the command reports that the port is in use, follow [Port Already in Use](#port-already-in-use) immediately. Replace that section's example port `18789` with the API port from the `api` diagnostic. Apply its process-ownership, service-manager, and active-work conditions before you stop a listener. Do not run the health probe after `openshell forward start` fails.
-
-After `openshell forward start` exits with status `0`, probe the health endpoint:
+Then probe the allocated API port from the diagnostic:
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' --max-time 3 http://127.0.0.1:<port>/health
 ```
 
-An HTTP status of `200` or `401` means the host port forward is reachable. Any other status, `000`, or connection failure requires fresh diagnostics. Rerun `$$nemoclaw onboard` and follow the reported `gateway` or `api` failure.
+An HTTP status of `200` or `401` means the managed host forward is reachable. Any other status, `000`, or connection failure requires fresh diagnostics. Run `$$nemoclaw <name> status`, then follow the reported gateway or ForwardTcp ownership guidance. Do not create a separate `openshell forward start` process for a NemoClaw-managed port.
 
 ### `docker port` shows no mapping for 8642 even though forwarding works
 
@@ -14673,7 +14728,8 @@ Review the data policies of any cloud provider you use.
 ### Experimental Providers
 
 The `NEMOCLAW_EXPERIMENTAL=1` environment variable gates local NVIDIA NIM on eligible hosts other than native N1x FASTOS and generic Linux managed vLLM install/start.
-DGX Spark and DGX Station managed vLLM entries appear by default.
+Managed vLLM install/start is Docker-backed and requires Docker on `PATH`; attaching an already-running local vLLM server is separate.
+DGX Spark and DGX Station managed vLLM entries appear by default when Docker is available.
 Native N1x FASTOS omits local NVIDIA NIM and offers only the Deferred managed-vLLM preview.
 Native N1x FASTOS remains outside the supported-platform set because its physical NemoClaw Express E2E validation is incomplete.
 After NemoClaw qualifies the native N1x identity, you must provide explicit managed-vLLM preview intent before onboarding can use this path.
@@ -14686,9 +14742,9 @@ On hosts other than native N1x FASTOS, an already-running vLLM server on `localh
 
 | Aspect | Detail |
 |---|---|
-| Default | Local NVIDIA NIM and generic Linux managed vLLM install/start are hidden. DGX Spark and DGX Station managed vLLM entries are offered by default. On hosts other than native N1x FASTOS, already-running vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}` is offered when detected. Qualifying Windows WSL N1x Express runs use managed llama.cpp. |
-| What you can change | On eligible hosts other than native N1x FASTOS, set `NEMOCLAW_EXPERIMENTAL=1` before onboarding to surface Local NIM and generic Linux managed vLLM. To request only the managed vLLM path non-interactively, set `NEMOCLAW_PROVIDER=install-vllm`. |
-| Risk if selected | NemoClaw has not fully validated these providers. NIM requires a NIM-capable GPU. The managed vLLM path pulls a container image and starts it on a supported NVIDIA GPU host. Misconfiguration can cause failed inference or unexpected behavior. |
+| Default | Local NVIDIA NIM and generic Linux managed vLLM install/start are hidden. When Docker is available, DGX Spark and DGX Station managed vLLM entries are offered by default. On hosts other than native N1x FASTOS, already-running vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}` is offered when detected. Qualifying Windows WSL N1x Express runs use managed llama.cpp. |
+| What you can change | On eligible hosts other than native N1x FASTOS, set `NEMOCLAW_EXPERIMENTAL=1` before onboarding to surface Local NIM and, when Docker is available on `PATH`, generic Linux managed vLLM. To request only the Docker-backed managed vLLM path non-interactively, set `NEMOCLAW_PROVIDER=install-vllm`. |
+| Risk if selected | NemoClaw has not fully validated these providers. NIM requires a NIM-capable GPU. The managed vLLM path requires Docker, pulls a container image, and starts it on a supported NVIDIA GPU host. Misconfiguration can cause failed inference or unexpected behavior. |
 | Recommendation | Use experimental providers only for evaluation. Do not rely on them for always-on assistants. |
 
 ## Posture Profiles
@@ -15200,7 +15256,7 @@ Replace `<api-port>` below with that API port.
 
 ```bash
 TOKEN=$($$nemoclaw <sandbox> gateway-token --quiet)
-openshell forward start --background <api-port> <sandbox>
+$$nemoclaw <sandbox> recover
 curl -sN http://127.0.0.1:<api-port>/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \

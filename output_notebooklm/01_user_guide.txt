@@ -1081,6 +1081,9 @@ $$nemoclaw status
 $$nemoclaw status --json
 ```
 
+In `nemoclaw-managed` mode, `gatewayAuthority.supervisor` is `null`.
+The owner source is `declared` when a declaration selected that mode; without a declaration it is the resolved lifecycle source, `packaged-service` or `standalone`.
+In `externally-supervised` mode, the owner is the declared supervisor `kind`, `serviceName`, and `execPath`.
 `$$nemoclaw debug` also records `gatewayAuthority` in `onboard-session-summary.txt`.
 The status and debug views omit the external state directory and never include credential values.
 
@@ -1111,21 +1114,35 @@ It does not transfer process ownership to NemoClaw.
 
 ## Fix a failure
 
+Run `$$nemoclaw status` to read the `Gateway authority` mode before you inspect a service.
+
+### Fix an externally supervised gateway
+
 Resolve an external gateway failure through the declared supervisor.
-For `systemd-system`, inspect the declared service with:
+Replace `<serviceName>` with the `serviceName` value from your declaration.
+For `systemd-system`, inspect the declared unit with the system manager:
 
 ```bash
-systemctl status openshell-gateway.service
+systemctl status <serviceName>
 ```
 
 For `systemd-user`, use the user manager:
 
 ```bash
-systemctl --user status openshell-gateway.service
+systemctl --user status <serviceName>
 ```
 
 Bring the supervised gateway up, leave exactly one verified process holding the configured port, and rerun `$$nemoclaw onboard`.
-To hand the lifecycle back to NemoClaw, remove the platform gateway service and declare `nemoclaw-managed`, or remove the declaration.
+To hand the lifecycle back to NemoClaw, first stop and remove or disable the external supervisor and its gateway so no process remains on the configured port.
+Then declare `nemoclaw-managed` or remove the declaration, and rerun `$$nemoclaw onboard`.
+
+### Inspect a NemoClaw-managed gateway
+
+In `nemoclaw-managed` mode, no declaration names a unit.
+NemoClaw uses a managed service only for the default gateway port `8080`.
+An owner of `standalone` has no service unit.
+For `packaged-service` or a declared managed mode, the owner record does not identify the concrete service, so do not infer a unit from the install type.
+Follow [Reconnect after a host reboot](../reference/troubleshooting#reconnect-after-a-host-reboot) for NemoClaw-owned service inspection, trust-scoped recovery, and standalone recovery.
 
 
 ========================================
@@ -2041,7 +2058,7 @@ Before you start, verify that your machine has the software and hardware needed 
 | Disk     | 20 GB free     | 40 GB free       |
 
 The sandbox image is approximately 2.4 GB compressed.
-During image push, the Docker daemon, k3s, and the OpenShell gateway run alongside the export pipeline.
+During image push, the selected container runtime, k3s, and the OpenShell gateway run alongside the export pipeline.
 The pipeline buffers decompressed layers in memory.
 On machines with less than 8 GB of RAM, this combined usage can trigger the OOM killer.
 If you cannot add memory, configure at least 8 GB of swap to work around the issue at the cost of slower performance.
@@ -2054,14 +2071,21 @@ If you cannot add memory, configure at least 8 GB of swap to work around the iss
 | npm        | 10 or later |
 | SHA-256 tool | `sha256sum` or `shasum`, required only when the installer must install or upgrade Node.js through nvm |
 | Python     | Python 3 at a trusted system location, with POSIX descriptor-relative filesystem support |
-| Docker     | Docker Engine, Docker Desktop, or Colima on a tested platform |
+| Container runtime | Docker Engine, Docker Desktop, or Colima on a tested platform (default), or native rootless Podman on qualified Linux |
 | Platform   | Refer to [Platforms](#platforms) below |
 
-On Linux, the installer checks Docker before it installs the NemoClaw CLI.
+Docker is the default runtime provider and the primary onboarding path.
+On Linux, the installer checks Docker before it installs the NemoClaw CLI unless you explicitly select native rootless Podman with `NEMOCLAW_GATEWAY_RUNTIME=podman`.
 The installer can install Docker, start the Docker service, and add your user to the `docker` group.
 When Docker is missing, the installer downloads Docker's official convenience script, prompts for `sudo`, and starts the service when systemd is available.
 In a non-interactive run, the installer can reactivate the group through `sg docker` and continue onboarding.
 If that path is unavailable or does not restore Docker access, the installer exits with `newgrp docker` guidance before it starts onboarding.
+
+Native rootless Podman is an explicit Linux path and does not require the Docker CLI or daemon.
+Start standard onboarding with `NEMOCLAW_GATEWAY_RUNTIME=podman $$nemoclaw onboard`.
+Before selecting it, review its qualified host requirements and limitations in [Platform Support](../reference/platform-support#deployment-paths) and the [Podman troubleshooting guide](../reference/troubleshooting#podman).
+Managed local vLLM install/start remains Docker-backed and is unavailable when Docker is absent; attaching an already-running local vLLM server remains a separate path.
+The portable experimental profile is separate and still requires a Docker-compatible `docker` command.
 
 NemoClaw uses an isolated `python3` helper for descriptor-relative migration snapshot sanitization and deletion.
 NemoClaw does not resolve this credential-bearing helper through the host `PATH`.
@@ -2073,8 +2097,8 @@ Native Windows is not a supported execution path; use WSL.
 If you choose the native Linux Ollama install path, the onboard wizard also requires `zstd` for Ollama archive extraction.
 The installer also requires `strings` from `binutils` to verify the OpenShell binary before it continues with OpenShell install work.
 
-<Warning title="Docker Group Access">
-NemoClaw needs Docker access.
+<Warning title="Docker Group Access (Default Docker Path)">
+The default Docker runtime path needs Docker access.
 On personal Linux development machines, adding your user to the `docker` group is the standard way to run Docker without sudo.
 Members of the `docker` group can control the daemon with root-level impact.
 Grant this access only to trusted local accounts.
@@ -2120,6 +2144,7 @@ The following table lists platforms with a documented installation path.
 A Tested with limitations row applies only to the configuration in its notes.
 The table comes from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoClaw/blob/main/ci/platform-matrix.json), the single source of truth kept in sync by CI and QA.
 
+<!-- markdownlint-disable MD037 MD058 -->
 {/* platform-matrix:begin */}
 | OS | Container runtime | Status | Notes |
 |----|-------------------|--------|-------|
@@ -2132,6 +2157,7 @@ The table comes from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoC
 
 For the complete platform support matrix, including all deferred platforms and CI coverage, refer to [Platform Support](../reference/platform-support).
 {/* platform-matrix:end */}
+<!-- markdownlint-enable MD037 MD058 -->
 
 ## Additional Setup
 
@@ -2221,7 +2247,7 @@ Review the [Prerequisites](prerequisites) before you begin.
       Express install mode preserves the explicit Hermes selection in the install command.
       On supported non-N1x express platforms, enter `n` if you want to select a sandbox name, an inference provider, and a model interactively.
       On N1x, entering `n` stops installation because the Deferred managed-vLLM preview is the only admitted onboarding path.
-      Refer to [Use Docker and supported platforms](#use-docker-and-supported-platforms) for more information.
+      Refer to [Use a container runtime and supported platforms](#use-a-container-runtime-and-supported-platforms) for more information.
     </Note>
 
     The install command creates the `my-hermes` sandbox used in the commands that follow.
@@ -2412,8 +2438,11 @@ Use these details when your first-run path needs more control.
     Refer to [Recover and Rebuild Sandboxes](../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes) for the recovery workflow.
   </Accordion>
 
-  <Accordion title="Use Docker and supported platforms">
-    Review [Prerequisites](prerequisites) for Docker requirements and the setup-oriented platform table.
+  <Accordion title="Use a container runtime and supported platforms">
+    Review [Prerequisites](prerequisites) for container-runtime requirements and the setup-oriented platform table.
+    Docker is the default runtime provider and primary path.
+    On a qualified Linux host, you can instead select native rootless Podman explicitly with `NEMOCLAW_GATEWAY_RUNTIME=podman`; this path does not require the Docker CLI or daemon.
+    Review the native Podman requirements and limitations in [Platform Support](../reference/platform-support#deployment-paths) and [Troubleshooting](../reference/troubleshooting#podman) before onboarding.
     Before you install from Windows, follow [Prepare a Windows Machine to Install NemoClaw](additional-setup/windows-preparation).
     Before you install on DGX Station, follow [Prepare DGX Station to Install NemoClaw](additional-setup/dgx-station-preparation).
 
@@ -2548,10 +2577,10 @@ Use these details when your first-run path needs more control.
     curl -sf http://127.0.0.1:8642/health
     ```
 
-    If that command cannot connect after a reboot or terminal restart, restart the forward.
+    If that command cannot connect after a reboot or terminal restart, restore the managed forward.
 
     ```bash
-    openshell forward start --background 8642 my-hermes
+    nemohermes my-hermes recover
     ```
 
     Configure OpenAI-compatible clients with `http://127.0.0.1:8642/v1`.
@@ -2660,7 +2689,7 @@ If you use the coding-agent prompt in the preceding section, you can skip this p
       Express install mode preserves the explicit Deep Agents selection in the install command.
       On supported non-N1x express platforms, enter `n` if you want to select a sandbox name, an inference provider, and a model interactively.
       On N1x, entering `n` stops installation because the Deferred managed-vLLM preview is the only admitted onboarding path.
-      Refer to [Use Docker and supported platforms](#use-docker-and-supported-platforms) for more information.
+      Refer to [Use a container runtime and supported platforms](#use-a-container-runtime-and-supported-platforms) for more information.
     </Note>
 
     The install command creates the `my-deepagents` sandbox used in the commands that follow.
@@ -2709,10 +2738,16 @@ If you use the coding-agent prompt in the preceding section, you can skip this p
 Use these details when you need more control during setup or after the first sandbox is running.
 
 <AccordionGroup>
-  <Accordion title="Use Docker and supported platforms">
-    Review [Prerequisites](prerequisites) for Docker requirements and the setup-oriented platform table.
+  <Accordion title="Use a container runtime and supported platforms">
+    Review [Prerequisites](prerequisites) for container-runtime requirements and the setup-oriented platform table.
+    Docker is the default runtime provider and primary path.
+    On Linux, the installer can install Docker.
     If the installer prints a `newgrp docker` command, run that command before you retry the installer.
     On macOS, start Docker Desktop or Colima first.
+
+    On a qualified Linux host, you can instead select native rootless Podman explicitly with `NEMOCLAW_GATEWAY_RUNTIME=podman`.
+    This path does not require the Docker CLI or daemon.
+    Review the native Podman requirements and limitations in [Platform Support](../reference/platform-support#deployment-paths) and [Troubleshooting](../reference/troubleshooting#podman) before onboarding.
 
     Before you install from Windows, follow [Prepare a Windows Machine to Install NemoClaw](additional-setup/windows-preparation).
     Before you install on DGX Station, follow [Prepare DGX Station to Install NemoClaw](additional-setup/dgx-station-preparation).
@@ -3150,13 +3185,19 @@ Use these details when your first-run path needs more control.
     Refer to [Choose Messaging Channels](../manage-sandboxes/messaging-channels/choose-messaging-channels) and [Network Policies](../network-policy/approve-network-requests) before enabling them.
   </Accordion>
 
-  <Accordion title="Use Docker and supported platforms">
-    Review [Prerequisites](prerequisites) for Docker requirements and the setup-oriented platform table.
+  <Accordion title="Use a container runtime and supported platforms">
+    Review [Prerequisites](prerequisites) for container-runtime requirements and the setup-oriented platform table.
+    Docker is the default runtime provider and primary path.
     On Linux, the installer can install Docker.
     If it prints a `newgrp docker` command, run that command before you retry the installer.
     On macOS, start Docker Desktop or Colima first.
 
-    When a coding agent reports that its execution sandbox blocked Docker, use its command-scoped approval flow, if available.
+    On a qualified Linux host, you can instead select native rootless Podman explicitly with `NEMOCLAW_GATEWAY_RUNTIME=podman`.
+    The native Podman gateway path does not require the Docker CLI or daemon.
+    Managed local vLLM remains Docker-backed; without Docker, attach an existing local vLLM server instead.
+    Review the native Podman requirements and limitations in [Platform Support](../reference/platform-support#deployment-paths) and [Troubleshooting](../reference/troubleshooting#podman) before onboarding.
+
+    When using the Docker path, if a coding agent reports that its execution sandbox blocked Docker, use its command-scoped approval flow, if available.
     Approve only the Docker-dependent command that the coding agent requests to rerun outside the sandbox.
     Do not change Docker socket permissions or grant broad host access only to bypass the restriction.
     If your organization blocks command-scoped approval, stop the coding-agent setup and contact the administrator who manages coding-agent permissions.
@@ -3854,7 +3895,7 @@ Use this status table to distinguish validated provider integrations from adapte
 | Local llama.cpp (managed DGX Spark) | Experimental | Local OpenAI-compatible | Uses the repository-owned YAML recipe for NVIDIA Nemotron 3 Nano 30B-A3B, exact GGUF verification, and Docker lifecycle on a qualified DGX Spark host. The recipe remains unqualified for agent support. |
 | Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag. Onboarding filters the validated image list by usable memory. In non-interactive mode, onboarding selects the first compatible model unless the operator sets `NEMOCLAW_MODEL`. Model selection uses detected free GPU memory. If free memory is unavailable, NemoClaw uses total GPU memory. On DGX Spark, NemoClaw caps usable memory at 50 percent of total memory to match NIM's reported unified-memory limit. The Nemotron 3 Super catalog minimum includes NIM's reported runtime allocation. Local NVIDIA NIM is unavailable on N1x. NemoClaw omits the provider from onboarding and rejects `NEMOCLAW_PROVIDER=nim-local` on N1x. Use the Deferred managed-vLLM preview on N1x. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
 | Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Unavailable on N1x. On other hosts, it appears in the onboarding menu when NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. No flag is required. The model is whatever the existing server serves. |
-| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. A labeled Deferred preview appears on hosts that match the N1x identity requirements; N1x remains Deferred until a physical NemoClaw Express E2E test passes. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark and the Deferred N1x preview, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
+| Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Managed install/start requires Docker on `PATH`; attaching an already-running local vLLM server is a separate path. Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. A labeled Deferred preview appears on hosts that match the N1x identity requirements; N1x remains Deferred until a physical NemoClaw Express E2E test passes. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark and the Deferred N1x preview, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status:end */}
 
 ## Hosted Providers
@@ -3882,7 +3923,7 @@ Local providers run on the host and keep inference traffic on infrastructure tha
 |---|---|---|
 | Local Ollama | Ollama is installed or running on the host. | [Use Ollama](../local-inference/set-up-ollama) |
 | Local vLLM already running | On hosts other than native N1x FASTOS, NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | [Set Up vLLM](../local-inference/set-up-vllm) |
-| Local vLLM managed install | The host matches a supported GPU profile and any required opt-in is present. | [Set Up vLLM](../local-inference/set-up-vllm) |
+| Local vLLM managed install | Docker is available on `PATH`, the host matches a supported GPU profile, and any required opt-in is present. Attaching an already-running local vLLM server is separate. | [Set Up vLLM](../local-inference/set-up-vllm) |
 | Local llama.cpp already running | You explicitly select an authenticated server on loopback port `8081`. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
 | Local llama.cpp managed install | A qualified DGX Spark or Windows WSL N1x host satisfies the declarative recipe requirements. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
 | Local NVIDIA NIM | Unavailable on native N1x FASTOS. On other hosts, a NIM-capable NVIDIA GPU must be present and experimental setup must be enabled. | [Set Up NVIDIA NIM](../local-inference/set-up-nvidia-nim) |
@@ -3892,7 +3933,7 @@ Local providers run on the host and keep inference traffic on infrastructure tha
 | Provider | When it appears | Setup guide |
 |---|---|---|
 | Local vLLM already running | On hosts other than native N1x FASTOS, NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | [Set Up vLLM](../local-inference/set-up-vllm) |
-| Local vLLM managed install | The host matches a supported GPU profile and any required opt-in is present. | [Set Up vLLM](../local-inference/set-up-vllm) |
+| Local vLLM managed install | Docker is available on `PATH`, the host matches a supported GPU profile, and any required opt-in is present. Attaching an already-running local vLLM server is separate. | [Set Up vLLM](../local-inference/set-up-vllm) |
 | Local llama.cpp already running | You explicitly select an authenticated server on loopback port `8081`. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
 | Local llama.cpp managed install | A qualified DGX Spark or Windows WSL N1x host satisfies the declarative recipe requirements. | [Set Up llama.cpp](../local-inference/set-up-llama-cpp) |
 | Local NVIDIA NIM | Unavailable on native N1x FASTOS. On other hosts, a NIM-capable NVIDIA GPU must be present and experimental setup must be enabled. | [Set Up NVIDIA NIM](../local-inference/set-up-nvidia-nim) |
@@ -3954,7 +3995,7 @@ A qualifying Windows WSL N1x host instead uses the explicit managed llama.cpp re
 |---|---|---|---|
 | Ollama | You want the default local option and want NemoClaw to install, start, or use Ollama on supported hosts. | Appears when Ollama is installed or running, and the wizard can offer installation on supported hosts. | Ollama through the managed local route. |
 | Existing vLLM | You already run vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | Unavailable on native N1x FASTOS. On other hosts, it appears when NemoClaw detects the server. | `/v1/chat/completions`. |
-| Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station. Native N1x FASTOS offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
+| Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Requires Docker on `PATH`. Appears by default on DGX Spark and DGX Station. Native N1x FASTOS offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. Attaching an already-running local vLLM server is separate. | `/v1/chat/completions`. |
 | Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Appears as option 2 in DGX Spark Express. Direct installation can use the dedicated installer flag. The profile does not appear in the provider menu. | `/v1/chat/completions`. |
 | Existing llama.cpp | You already operate an authenticated llama.cpp server on loopback port `8081`. | Experimental. Always available for explicit selection and attaches only after cooperative fingerprinting succeeds. | `/v1/chat/completions`. |
 | Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Lists compatible profiles on qualified DGX Spark hosts. Qualifying Windows WSL N1x Express hosts use the explicit Qwen 3.6 recipe. | `/v1/chat/completions`. |
@@ -3965,7 +4006,7 @@ A qualifying Windows WSL N1x host instead uses the explicit managed llama.cpp re
 | Option | When to use it | Availability | Runtime API |
 |---|---|---|---|
 | Existing vLLM | You already run vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. | Unavailable on native N1x FASTOS. On other hosts, it appears when NemoClaw detects the server. | `/v1/chat/completions`. |
-| Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Appears by default on DGX Spark and DGX Station. Native N1x FASTOS offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. | `/v1/chat/completions`. |
+| Managed vLLM | You want NemoClaw to pull an image, download model weights, and manage the server container. | Requires Docker on `PATH`. Appears by default on DGX Spark and DGX Station. Native N1x FASTOS offers this route as its only admitted provider through a Deferred preview. Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`. Attaching an already-running local vLLM server is separate. | `/v1/chat/completions`. |
 | Fixed vLLM profile | You need the fixed catalog-selected vLLM model and serving configuration. | Appears as option 2 in DGX Spark Express. Direct installation can use the dedicated installer flag. The profile does not appear in the provider menu. | `/v1/chat/completions`. |
 | Existing llama.cpp | You already operate an authenticated llama.cpp server on loopback port `8081`. | Experimental. Always available for explicit selection and attaches only after cooperative fingerprinting succeeds. | `/v1/chat/completions`. |
 | Managed llama.cpp | You want NemoClaw to acquire a verified GGUF file and manage an authenticated llama.cpp container. | Experimental. Lists compatible profiles on qualified DGX Spark hosts. Qualifying Windows WSL N1x Express hosts use the explicit Qwen 3.6 recipe. | `/v1/chat/completions`. |
@@ -7388,7 +7429,7 @@ content:
   type: "how_to"
 ---
 
-NemoClaw can connect to an existing vLLM server or install and start a managed vLLM container on supported NVIDIA GPU hosts.
+NemoClaw can connect to an existing vLLM server or, when Docker is available on `PATH`, install and start a managed vLLM container on supported NVIDIA GPU hosts.
 It also provides a Deferred N1x preview pending a physical NemoClaw Express E2E run.
 
 <Note>
@@ -7476,6 +7517,8 @@ For the authenticated fixed profile, evaluate host exposure from its published D
 
 ## Install or Start Managed vLLM
 
+Managed install/start is Docker-backed and requires Docker on `PATH`.
+On a Docker-less native Podman host, attach an already-running local vLLM server or install Docker before selecting managed vLLM.
 NemoClaw displays the **Install vLLM** or **Start vLLM** entry by default on DGX Spark and DGX Station.
 N1x displays the same entry with a **Deferred preview** label.
 Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm` before the managed entry appears.
@@ -9702,11 +9745,20 @@ After a rebuild restores `dashboard-home` or `profiles`, NemoClaw reruns the das
 
 Credential-bearing Deep Agents files such as `.deepagents/.env` and user-authored `.deepagents/.mcp.json` are intentionally excluded from snapshots. Deep Agents auth state files such as `.deepagents/.state/auth.json` and `.deepagents/.state/chatgpt-auth.json` are also excluded because the managed launcher refuses to start when upstream credential state is present.
 
-The managed `.deepagents/.nemoclaw-mcp.json` projection and `hooks.json` are excluded because NemoClaw reconstructs managed MCP state and disables executable Deep Agents Code hooks in the managed harness. NemoClaw recreates the current inference route headers, `models` and `update` tables, managed MCP projection state, and provider credentials from host-side onboarding and OpenShell provider state during rebuild.
+The managed v2 `.deepagents/.nemoclaw-mcp.json` projection and `hooks.json` are excluded because NemoClaw disables executable Deep Agents Code hooks in the managed harness.
+For a managed v2 runtime, NemoClaw reconstructs the managed MCP projection from host-side registry state.
+NemoClaw recreates the current inference route headers, `models` and `update` tables, and provider credentials from host-side onboarding and OpenShell provider state during rebuild.
 
 ### Restore Managed Deep Agents Configuration
 
 For a NemoClaw-managed Deep Agents image, NemoClaw restores only the allowlisted `ui.show_scrollbar`, `ui.show_url_open_toast`, `threads.relative_time`, and `threads.sort_order` preferences from the previous `config.toml` when their values pass validation. Unknown, runtime-controlled, executable, and security-sensitive backup keys are dropped instead of replacing freshly generated settings on that managed path.
+
+Before it restores snapshot files for a managed v2 runtime, NemoClaw reconstructs the managed MCP projection from the host registry.
+For a legacy runtime, NemoClaw does not reconstruct the dedicated v2 projection.
+If the v2 projection path `/sandbox/.deepagents/.nemoclaw-mcp.json` is a directory, the restore leaves snapshot files unchanged and prints a recovery command.
+Run that command to move the directory into a new recovery location.
+The command prints the selected location and does not replace an existing recovery file or directory.
+Then rerun the same snapshot restore command.
 
 A Deep Agents target created from a custom Dockerfile restores `config.toml` as a whole file because the custom image owns its config schema. On the managed key-level restore path, malformed config, missing managed data, an unsafe link, or an unsafe file replacement fails the restore without falling back to a whole-file copy.
 
@@ -11726,15 +11778,13 @@ Use these workflows to keep existing sandboxes reachable and control the resourc
 
 ## Manage Dashboard Ports
 
-If the forward stopped, or the installer reported that no active forward was found and the URL does not load, restart the forward manually with the port from the install summary.
+If a managed forward stopped or the URL does not load, restore its identity-bound lifecycle through NemoClaw.
 
 ```bash
-openshell forward start --background <dashboard-port> my-gpt-claw
+nemoclaw my-gpt-claw recover
 ```
 
-On WSL, use `0.0.0.0:<dashboard-port>` as the forward target so the Windows host can continue to reach the dashboard.
-
-To list active forwards across all sandboxes, run the following command.
+For lower-level diagnostics, list OpenShell's legacy and user-managed forwards separately. Receipt-owned ForwardTcp services are verified by `nemoclaw <name> status` and `recover`.
 
 ```bash
 openshell forward list
@@ -11966,7 +12016,7 @@ If preflight detects an unsafe path, invalid config, invalid ownership posture, 
 | Network allowlist | Runtime on the next request | `openshell policy set` or the interactive approval prompt at the gateway |
 | Channel tokens | Rebuild required because the channel configuration and credential attachment are created during onboarding or rebuild | `$$nemoclaw <name> channels add <channel>`, then accept the rebuild prompt |
 | Channel enable or disable | Rebuild required because `/sandbox/.hermes/.env` and Hermes config are baked at image build time | `$$nemoclaw <name> channels stop <channel>`, then rebuild |
-| API or dashboard forward port | Runtime; the host-side forward is re-resolved on the next `connect` | `$$nemoclaw <name> connect` or `openshell forward start` |
+| API or dashboard forward port | Runtime; the host-side forward is re-resolved on the next `connect` | `$$nemoclaw <name> connect` or `$$nemoclaw <name> recover` |
 | Hermes plugin code, Langfuse settings, or other startup-only runtime config | Runtime after a supported host-side update and gateway restart | Bake plugin code into the image or use a supported host config command, then run `$$nemoclaw <name> gateway restart` |
 | Web search provider | Rebuild required because onboarding bakes `web.backend`, the environment placeholder, and the credential attachment into the image | Set `NEMOCLAW_WEB_SEARCH_PROVIDER=tavily` or `none`, then rerun onboarding and recreate the sandbox |
 | Filesystem layout | Locked at creation | Re-onboard with `$$nemoclaw onboard --recreate-sandbox` |
