@@ -681,7 +681,10 @@ Refer to [Recover and Rebuild Sandboxes](../manage-sandboxes/operate-sandboxes/r
 
 ## Inference Routing
 
-Managed agent runtimes send model requests to `inference.local` instead of an upstream endpoint. During onboarding, NemoClaw validates the selected provider and model, configures the OpenShell inference route, and writes the matching model reference into the managed agent configuration. OpenShell keeps the provider credential outside the sandbox and sends approved requests to the upstream endpoint. When you select the Model Router provider, `inference.local` routes to a host-side router that chooses from the configured NVIDIA model pool for each request.
+Managed agent runtimes send model requests to `inference.local` instead of an upstream endpoint.
+During onboarding, NemoClaw validates the selected provider and model, configures the OpenShell inference route, and writes the matching model reference into the managed agent configuration.
+OpenShell keeps the provider credential outside the sandbox and sends approved requests to the upstream endpoint.
+When you select the Model Router provider, `inference.local` routes to a host-side router that chooses from a configured model pool available through NVIDIA Endpoints for each request.
 
 <AgentOnly variant="hermes">
   For Hermes, `$$nemoclaw inference set` updates `/sandbox/.hermes/config.yaml` at runtime without
@@ -3486,6 +3489,33 @@ $$nemoclaw completion fish > ~/.config/fish/completions/$$nemoclaw.fish
 
 Start a new shell session to refresh the cached sandbox names after creating or removing a sandbox.
 
+### `$$nemoclaw config export <sandbox>`
+
+Export a supported registered OpenClaw sandbox as a secret-free `NemoClawConfig` document. The command reads the registry and current OpenShell state without changing the sandbox. It stops without writing output when required identity, policy, inference, or workload evidence is missing or inconsistent. If the source changes during observation, the command retries the complete observation once and stops without output if the retry also changes.
+
+Write a file on Linux:
+
+```bash
+$$nemoclaw config export my-assistant --output nemoclaw.yaml
+```
+
+Use `--output -` to write YAML to standard output on another supported host or in a pipeline:
+
+```bash
+$$nemoclaw config export my-assistant --output -
+```
+
+| Option | Description |
+| --- | --- |
+| `--output <path>`, `-o <path>` | Required. Write YAML to a Linux file path, or use `-` for standard output. |
+| `--name <name>` | Set `metadata.name` in the exported document. |
+| `--force` | Replace an existing regular file. The command refuses symbolic links and other file types. |
+| `--json` | Return a machine-readable result when writing a file. It cannot be combined with `--output -`. |
+
+The export contains credential environment-variable references, not credential values. File output uses mode `0600`. Without `--force`, an existing destination is preserved and the command fails. With `--force`, publication checks that the existing destination is a regular file before ordinary atomic replacement.
+
+Version 1 exports managed OpenClaw sandboxes that use hosted external inference, an immutable managed image, a NemoClaw-owned gateway, and an explicit representable policy. Other profiles fail with a diagnostic instead of producing an incomplete document.
+
 ### `$$nemoclaw resources`
 
 Display host hardware inventory and configured sandbox resource profiles. Use `--json` for machine-readable CPU, memory, GPU, Kubernetes allocatable-capacity, and profile data.
@@ -4691,7 +4721,7 @@ For Portable Hermes, `status` reports `Portable lifecycle phase: pending`, `conf
 
 For a `compatible-endpoint` route that uses `openai-completions`, the text output prints `Reasoning effort` as `low`, `medium`, `high`, or `endpoint-default`. The line is omitted for another provider or API family.
 
-Pass `--json` to emit a structured per-sandbox report instead of the text renderer. The JSON output includes at least `schemaVersion`, `name`, `found`, `agent`, `agentDisplayName`, `agentRuntime`, `dcodeAutoApprovalMode`, `model`, `provider`, `recordedRoute`, `liveRoute`, `routeDrift`, `phase`, `gatewayState`, `inferenceHealth`, `rpcIssue`, `hostGpuDetected`, `sandboxGpuEnabled`, `sandboxGpuMode`, `sandboxGpuDevice`, `openshellDriver`, `openshellVersion`, `policies`, `policiesAvailable`, `failureLayer`, `terminalRuntimeHealth`, `servingProcessHealth`, and `dockerPaused`. `policies` is derived from the current OpenShell policy; NemoClaw does not persist a second preset list or baseline-exclusion ledger. `policiesAvailable` is `false` when that live policy cannot be read or parsed, distinguishing an unavailable result from a verified empty `policies` array; text status prints `Policies: unavailable` for the same state. The schema-version `1` `model` and `provider` fields keep their established live-route meaning when the gateway route is readable. Use `recordedRoute` for the sandbox's durable provider and model and `liveRoute` for the gateway-global route. When the live shared route differs, text output prints both routes and JSON output sets `routeDrift.live`, `routeDrift.recorded`, and `routeDrift.canConnect`. When `routeDrift.canConnect` is `false`, `connect` cannot safely restore the recorded route because provider-global identity differs or required route or gateway metadata is incomplete. Refer to [Use Shared Gateway Routes](../inference/manage-inference/use-shared-gateway-routes) for the route-sharing workflow. `openshellDriver` and `openshellVersion` are always strings (falling back to `"unknown"` when the registry has no value), so consumers can rely on `typeof` checks. `agent` is always a string and reports `openclaw` when the registry records no agent for the sandbox. `failureLayer` is `null` when no preflight failure was detected and otherwise one of `docker_unreachable`, `sandbox_container_stopped`, or `sandbox_dashboard_port_conflict`; when set, `inferenceHealth` is suppressed to `null` so automation does not see a stale remote-provider healthy status during a local outage. `inferenceHealth.ok` reports whether the inference route returned a structurally valid result for one request sent from inside the sandbox. The result must match Chat Completions, Responses, or Anthropic Messages for the selected route. An empty body, malformed JSON, provider-error envelope, or wrong response shape reports `unhealthy`, even with a 2xx status. The probe captures at most 64 KiB and does not include the response body in diagnostics. The route probe treats any final HTTP status from `200` through `499` as reachable, so a route with an invalidated provider credential answers HTTP `401` while the route is up. The request uses the live gateway route's provider and model, and falls back to the recorded values when the live route is unreadable. When the live provider matches the recorded provider, the request uses the sandbox's recorded API family, even when only the model differs. This includes `openai-responses`. When the live provider differs, NemoClaw does not carry the recorded API family to the live provider. An ordinary run sends one 16-token request through the stored provider credential, with a 30-second timeout, and consumes provider tokens on a hosted route. When the same `status` run recovers a managed gateway, it retries the route and inference request together up to three total attempts, with a two-second delay between failed attempts. Each attempt can consume another 16 tokens on a hosted route. When NemoClaw sends an inference request, `inferenceHealth.subprobes` reports the route probe result as the `route reachability` hop, so a failing verdict still shows that the route itself answered. `inferenceHealth.failureLabel` reports why the inference request failed:
+Pass `--json` to emit a structured per-sandbox report instead of the text renderer. The JSON output includes at least `schemaVersion`, `name`, `found`, `agent`, `agentDisplayName`, `agentRuntime`, `dcodeAutoApprovalMode`, `model`, `provider`, `recordedRoute`, `liveRoute`, `routeDrift`, `phase`, `gatewayState`, `inferenceHealth`, `rpcIssue`, `hostGpuDetected`, `sandboxGpuEnabled`, `sandboxGpuMode`, `sandboxGpuDevice`, `openshellDriver`, `openshellVersion`, `policies`, `policiesAvailable`, `failureLayer`, `terminalRuntimeHealth`, `servingProcessHealth`, and `dockerPaused`. `policies` is derived from the current OpenShell policy; NemoClaw does not persist a second preset list or baseline-exclusion ledger. `policiesAvailable` is `false` when that live policy cannot be read or parsed, distinguishing an unavailable result from a verified empty `policies` array; text status prints `Policies: unavailable` for the same state. The schema-version `1` `model` and `provider` fields keep their established live-route meaning when the gateway route is readable. Use `recordedRoute` for the sandbox's durable provider and model and `liveRoute` for the gateway-global route. When the live shared route differs, text output prints both routes and JSON output sets `routeDrift.live`, `routeDrift.recorded`, and `routeDrift.canConnect`. When `routeDrift.canConnect` is `false`, `connect` cannot safely restore the recorded route because provider-global identity differs or required route or gateway metadata is incomplete. Refer to [Use Shared Gateway Routes](../inference/manage-inference/use-shared-gateway-routes) for the route-sharing workflow. `openshellDriver` and `openshellVersion` are always strings (falling back to `"unknown"` when the registry has no value), so consumers can rely on `typeof` checks. `agent` is always a string and reports `openclaw` when the registry records no agent for the sandbox. `failureLayer` is `null` when no preflight failure was detected and otherwise one of `docker_unreachable`, `sandbox_container_stopped`, or `sandbox_dashboard_port_conflict`; when set, `inferenceHealth` is suppressed to `null` so automation does not see a stale remote-provider healthy status during a local outage. `inferenceHealth.ok` reports whether the inference route returned a structurally valid result for one request sent from inside the sandbox. The result must match Chat Completions, Responses, or Anthropic Messages for the selected route. An empty body, malformed JSON, provider-error envelope, or wrong response shape reports `unhealthy`, even with a 2xx status. The probe captures at most 64 KiB and does not include the response body in diagnostics. The route probe treats any final HTTP status from `200` through `499` as reachable, so a route with an invalidated provider credential answers HTTP `401` while the route is up. The request uses the live gateway route's provider and model, and falls back to the recorded values when the live route is unreadable. When the live provider matches the recorded provider, the request uses the sandbox's recorded API family, even when only the model differs. This includes `openai-responses`. When the live provider differs, NemoClaw does not carry the recorded API family to the live provider. An ordinary run sends one 16-token request per attempt through the stored provider credential, with a 30-second timeout for each request, and consumes provider tokens on a hosted route. When the inference request returns HTTP `429`, `502`, `503`, or `504`, `status` retries the route and inference request together up to three total attempts, with a two-second delay between failed attempts, because those statuses are transient gateway and availability answers rather than evidence that the route is broken. Before each retry, it writes the failed probe boundary, an HTTP status when one is available, the next attempt, total attempts, and delay to stderr; `--json` keeps stdout machine-readable. On an ordinary run, every other failure is final on the first attempt with no delay: HTTP `401`, `403`, `404`, and `500`, an invalid 2xx response body, a request that returned no HTTP status, and a failing `/v1/models` route probe. When the same run recovers a managed gateway, `status` retries any failed route or inference probe on that schedule instead, while the restarted delivery chain settles. Each inference request can consume another 16 tokens on a hosted route. Each route probe has a 10-second timeout and each inference request has a 30-second timeout, so three complete probe pairs and two delays can take about 124 seconds. When NemoClaw sends an inference request, `inferenceHealth.subprobes` reports the route probe result as the `route reachability` hop, so a failing verdict still shows that the route itself answered. `inferenceHealth.failureLabel` reports why the inference request failed:
 
 - `unauthorized` when the route rejected it with HTTP `401` or `403`.
 - `unhealthy` when the route returned another failing HTTP status or an invalid 2xx response body.
@@ -4724,7 +4754,7 @@ $$nemoclaw my-assistant status --json
 $$nemoclaw sandbox status my-assistant --json
 ```
 
-The command probes `https://inference.local/v1/models` from inside the sandbox, and when that probe reports the route reachable it sends one inference request over the same route. That inference request is the authoritative inference health check, and both checks exercise the route that agent traffic uses. The main `Inference` line reports one of these states:
+The command probes `https://inference.local/v1/models` from inside the sandbox, and when that probe reports the route reachable it sends an inference request over the same route. That inference request is the authoritative inference health check, and both checks exercise the route that agent traffic uses. The main `Inference` line reports one of these states:
 
 | State | Meaning |
 | --- | --- |
@@ -4861,6 +4891,7 @@ If the sandbox is running an older Deep Agents Code version than this NemoClaw r
 ### `$$nemoclaw <name> doctor`
 
 Run a focused health check for one sandbox and the host services it depends on. The command checks the local CLI build, Docker daemon, OpenShell CLI, NemoClaw gateway container, gateway port mapping, live sandbox state, inference route, configured-provider model invocation, Ollama reachability, and the cloudflared tunnel state.
+Use `$$nemoclaw doctor` when you need only the host and gateway checks or when no sandbox exists yet. If a sandbox is named `doctor`, use `$$nemoclaw doctor --text` to select the global text report explicitly; bare `$$nemoclaw doctor` keeps the existing name-first sandbox connection behavior.
 
 <AgentOnly variant="openclaw,hermes">
   For gateway-based agents, it also reports messaging channel conflicts within the selected
@@ -6436,6 +6467,28 @@ This command remains as a compatibility alias to `$$nemoclaw onboard` and accept
 $$nemoclaw setup-spark
 ```
 
+### `$$nemoclaw doctor`
+
+Run read-only checks for the host and the NemoClaw gateway without selecting a sandbox.
+The command works before you create a sandbox.
+It checks the NemoClaw CLI build, the selected host runtime provider, the OpenShell CLI, the sandbox registry, and the gateway selected by `NEMOCLAW_GATEWAY_PORT`.
+It does not start, select, restart, or repair a gateway.
+It does not run sandbox, inference, messaging, agent-version, config-permission, or agent-service checks.
+Use `$$nemoclaw <name> doctor` when you need those sandbox checks.
+If a sandbox is named `doctor`, bare `$$nemoclaw doctor` connects to that sandbox under the name-first grammar. Use `$$nemoclaw doctor --text` for the global human-readable report or `$$nemoclaw doctor --json` for the global JSON report.
+
+```bash
+$$nemoclaw doctor [--json | --text]
+```
+
+The command exits nonzero when a required check fails.
+Pass `--json` for a redacted, schema-versioned report with `scope: "global"` and no sandbox field.
+
+| Flag | Description |
+| --- | --- |
+| `--json` | Emit the global report as JSON. |
+| `--text` | Emit the global human-readable report explicitly. |
+
 ### `$$nemoclaw debug`
 
 Collect diagnostics for bug reports. Gathers system info, Docker state, gateway logs, and sandbox status into a summary or tarball. Use `--sandbox <name>` to target a specific sandbox, `--quick` for a smaller snapshot, or `--output <path>` to save a tarball that you can attach to an issue.
@@ -6864,7 +6917,7 @@ The following variables let you tune onboarding without editing the Dockerfile o
 
 | Variable | Format | Effect |
 | --- | --- | --- |
-| `NEMOCLAW_PROVIDER` | provider key (e.g. `build`, `openrouter`, `openai`, `anthropic`, `anthropicCompatible`, `gemini`, `ollama`, `custom`, `vllm`, `nim-local`, `routed`, `hermes-provider`, `llama-cpp`, `install-llama-cpp`, `install-vllm`, `install-ollama`, `install-windows-ollama`, `start-windows-ollama`) | Selects the inference provider during onboarding. The wizard skips the provider menu in both interactive and non-interactive runs when this is set. On a qualified N1x host, only `install-vllm` supplies the explicit Deferred preview intent; another provider stops installation before onboarding. `llama-cpp` selects attachment of an authenticated, operator-managed llama.cpp server on loopback port `8081`. Set `NEMOCLAW_LLAMACPP_LOCAL_TOKEN`; set `NEMOCLAW_MODEL` to the served alias when the server exposes multiple models. `install-llama-cpp` selects the experimental DGX Spark managed path and rejects `NEMOCLAW_MODEL`; use `NEMOCLAW_LLAMACPP_RECIPE` for its declarative selection. If an operator-managed server does not provide consistent native llama.cpp evidence, select `custom`. Aliases: `cloud` → `build`, `open-router` / `openrouterai` → `openrouter`, `nim` → `nim-local`, `hermes` / `nous` / `nous-portal` → `hermes-provider`, `anthropiccompatible` → `anthropicCompatible`. Invalid values fail fast with the list of accepted keys. |
+| `NEMOCLAW_PROVIDER` | provider key (e.g. `build`, `openrouter`, `openai`, `anthropic`, `anthropicCompatible`, `gemini`, `ollama`, `custom`, `vllm`, `nim-local`, `routed`, `hermes-provider`, `llama-cpp`, `install-llama-cpp`, `install-vllm`, `install-ollama`, `install-windows-ollama`, `start-windows-ollama`) | Selects the inference provider during onboarding. The wizard skips the provider menu in both interactive and non-interactive runs when this is set. On a qualified N1x host, `install-vllm` supplies Deferred preview intent, while another provider supplies standard-onboarding intent and retains its existing requirements. Local NVIDIA NIM remains unavailable on N1x. `llama-cpp` selects attachment of an authenticated, operator-managed llama.cpp server on loopback port `8081`. Set `NEMOCLAW_LLAMACPP_LOCAL_TOKEN`; set `NEMOCLAW_MODEL` to the served alias when the server exposes multiple models. `install-llama-cpp` selects the experimental DGX Spark managed path and rejects `NEMOCLAW_MODEL`; use `NEMOCLAW_LLAMACPP_RECIPE` for its declarative selection. If an operator-managed server does not provide consistent native llama.cpp evidence, select `custom`. Aliases: `cloud` → `build`, `open-router` / `openrouterai` → `openrouter`, `nim` → `nim-local`, `hermes` / `nous` / `nous-portal` → `hermes-provider`, `anthropiccompatible` → `anthropicCompatible`. Invalid values fail fast with the list of accepted keys. |
 | `NEMOCLAW_LLAMACPP_RECIPE` | repository-owned managed-inference recipe ID | Selects the managed llama.cpp recipe when `NEMOCLAW_PROVIDER=install-llama-cpp`, including a compatible lower-priority profile. When unset, NemoClaw selects the unique highest-priority compatible automatic profile. An unknown recipe, an ambiguous selection, or a stale or incompatible readiness report fails before image, model, or runtime effects. |
 | `NEMOCLAW_MODEL` | model ID | Selects an explicit model for a non-interactive onboarding run. NemoClaw preserves it across a detected provider switch, even when it matches the recorded provider's default. When this variable is unset during such a switch, NemoClaw ignores the `NEMOCLAW_PROVIDER_MODEL` compatibility fallback and uses normal provider model selection. |
 | `NEMOCLAW_TOOL_DISCLOSURE` | `progressive` or `direct` | Selects progressive tool discovery or the prior direct-exposure behavior outside the Portable experimental profile. Defaults to `progressive`; `--tool-disclosure` takes precedence when both are set. Fresh Portable onboarding ignores this variable and defaults to `direct` unless the flag explicitly selects a mode. |
@@ -7085,7 +7138,7 @@ The following flags toggle optional behaviors during onboarding. Set them before
 | `NEMOCLAW_YES` | `1` to enable | Auto-accepts confirmation prompts (`--yes` equivalent) including in helpers like the Ollama proxy auth setup, but does not change managed-vLLM storage-warning handling. Express and other non-interactive setup stop after a verified insufficient-capacity warning, interactive setup still requires an explicit `y` or `yes`, and an inconclusive model-cache check stops non-interactive setup with guidance to rerun interactively. |
 | `NEMOCLAW_OLLAMA_NO_AUTOSTART` | `1` to enable | Skips the wizard's eager Ollama auto-start during inference-provider selection (equivalent to passing `--no-ollama-autostart`). When set and Ollama is not running on `localhost:11434`, an agent that uses the legacy `16384`-token context floor, currently OpenClaw, prints a warning and selects the default fallback model instead of spawning `ollama serve`. An agent that requires a larger verified runtime context, currently Hermes at `64000` tokens, returns to interactive provider selection or exits when the Ollama provider is pinned or onboarding is non-interactive. The flag covers only the provider-selection step; later setup steps (auth proxy, validation, model warm) still expect a reachable Ollama. On Linux hosts with a systemd Ollama unit, the loopback-override path may still restart the daemon before this gate runs. |
 | `NEMOCLAW_NON_INTERACTIVE_SUDO_MODE` | `prompt` or empty/unset | When set to `prompt`, allows non-interactive onboarding to use prompt-capable `sudo` for host setup steps that require elevation, which can ask for a password. Empty/unset is the default and uses `sudo -n`, which fails instead of asking for a password. Any other value is rejected. |
-| `NEMOCLAW_NO_EXPRESS` | `1` to enable | Installer-only. Skips the DGX Spark, DGX Station, and Windows WSL express prompt, then continues with the normal interactive onboarding flow. On N1x, setting this variable alone stops installation before onboarding. Combine it with `NEMOCLAW_PROVIDER=install-vllm` only when you intend to bypass the preview prompt with explicit Deferred managed-vLLM intent. |
+| `NEMOCLAW_NO_EXPRESS` | `1` to enable | Installer-only. Skips the express prompt, including the Deferred N1x preview, then continues with normal onboarding. On a qualified N1x host, this value supplies explicit standard-onboarding intent. Combine it with `NEMOCLAW_PROVIDER=install-vllm` only when you intend to bypass the preview prompt with Deferred managed-vLLM intent. |
 | `NEMOCLAW_EXPERIMENTAL` | `1` to enable | Surfaces experimental providers and flows in onboarding. |
 | `NEMOCLAW_IGNORE_RUNTIME_RESOURCES` | `1` to enable | Suppresses the under-provisioned runtime warning during preflight. Use only when you know the sandbox host meets the minimums. |
 | `NEMOCLAW_DISABLE_OVERLAY_FIX` | `1` to enable | Skips the Docker overlay-fix step during sandbox build. For environments where the fix is incompatible. |
@@ -7873,7 +7926,7 @@ content:
 ---
 
 Use `nemoclaw/lifecycle` when a service needs deterministic Hermes planning and read-only observation without invoking the NemoClaw command-line interface (CLI).
-The first API version supports Hermes `0.19.0` with OpenShell `0.0.106`.
+The first API version supports Hermes `0.20.6` with OpenShell `0.0.106`.
 
 ## Understand the Boundary
 
@@ -8768,7 +8821,7 @@ For install requirements and the shorter setup-oriented platform view, refer to 
 | DGX OS (Station) | Docker | Tested with limitations | P1 | No | The PRD marks this platform as P1. Physical validation on one DGX Station GB300 covers generic Ubuntu 24.04 ARM64, stock DGX OS `7.5.0`, the April 2026 NVIDIA Colossus BaseOS profile, and the June 2026 NVIDIA AI Developer Tools profile. A physical no-OTA DGX OS `7.6.0` host provided the release and hardware profile used for its stable workstation-family classifier and passed read-only eligibility and runtime-command preflight. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. The profile remains subject to the same physical GB300, driver, ECC, Docker, CDI, and container GPU validation. Clean-host end-to-end validation passed on generic Ubuntu and Colossus BaseOS; stock DGX OS and AI Developer Tools completed Station Express validation. The DGX OS `7.5.0` run used released OpenShell `0.0.85`, local Nemotron Ultra serving, sandbox `cuInit(0)`, and a Hermes write/read file-tool task. A dual-Station configuration has not been validated, and dedicated CI coverage is not available. Direct-GPU policies expose only the exact read-only BDF directory for each discovered display-class PCI device with NVIDIA vendor ID (`0x10de`) and GB300 device ID (`0x31c2` or `0x31c3`) plus required existing topology and module paths; they do not expose `/sys`, the PCI parent subtree, or sysfs write access. During physical validation, reads of `/sys/fs/cgroup/cgroup.controllers` and `/sys/class/net/lo/address` remained denied. For canonical hardware qualification, image requirements, preparation, repair limits, reboot handoff, and the explicit temporary metadata override, see [Prepare DGX Station to Install NemoClaw](../get-started/additional-setup/dgx-station-preparation). |
 | Linux | Docker | Tested | P0 | Yes | Primary tested path. Ubuntu 24.04 has host-level onboarding validation. A digest-pinned Ubuntu 26.04 userspace lane builds the CLI and runs preflight, installer, and platform contracts on eligible main pushes; Docker-host, AppArmor, Landlock, and live onboarding validation on 26.04 remain pending. Other distros (Ubuntu 22.04, Fedora, Rocky, Alma, NixOS, Arch) may work but are not validated. |
 | macOS (Apple Silicon) | Colima, Docker Desktop | Tested with limitations | P0 | Yes | Start the container runtime (Colima or Docker Desktop) before installing; NemoClaw verifies the pinned official OpenShell formula and grants formula-scoped trust only around each Homebrew install, inspection, start, or stop operation, requires a legacy or changed formula to be repaired by rerunning the pinned installer, uses the standalone gateway only when Homebrew is absent or both the staged formula and installed keg are absent, requires Homebrew Colima users to install both Colima and the Docker CLI (`brew install colima docker`) before `docker info` can work, and recommends Xcode Command Line Tools (`xcode-select --install`) for Node native modules. |
-| N1x FASTOS | Docker | Deferred | Unset | No | The accepted Deferred N1x Express preview selects one-host managed vLLM with `nvidia/Qwen3.6-35B-A3B-NVFP4`. It does not activate DGX Spark cluster discovery, the fixed catalog path, managed llama.cpp, or NVIDIA NIM. Host identity requires Linux `arm64`, a regular `/etc/fastos-release` file of 1 through 4,096 bytes that is owned by UID 0 and GID 0, is not a symbolic link, is not group- or world-writable, and contains exactly one `NAME="N1x FASTOS"` line. It also requires NVIDIA vendor ID `10de` on a display-class PCI device. Generic DMI values are supplemental and FastOS version is not pinned. Physical CUDA and CDI checks passed on one N1x host, but full NemoClaw Express E2E validation and dedicated CI coverage are pending. `host.platform.supported` remains absent; only explicit managed-vLLM preview intent can waive the pending-validation finding. Do not claim N1x as supported until that validation passes and this row is promoted. |
+| N1x FASTOS | Docker | Deferred | Unset | No | The accepted Deferred N1x Express preview selects one-host managed vLLM with `nvidia/Qwen3.6-35B-A3B-NVFP4`. It does not activate DGX Spark cluster discovery, the fixed catalog path, managed llama.cpp, or NVIDIA NIM. Host identity requires Linux `arm64`, a regular `/etc/fastos-release` file of 1 through 4,096 bytes that is owned by UID 0 and GID 0, is not a symbolic link, is not group- or world-writable, and contains exactly one `NAME="N1x FASTOS"` line. It also requires NVIDIA vendor ID `10de` on a display-class PCI device. Generic DMI values are supplemental and FastOS version is not pinned. Physical CUDA and CDI checks passed on one N1x host, but full NemoClaw Express E2E validation and dedicated CI coverage are pending. `host.platform.supported` remains absent. After identity qualifies, accepting Express can waive only the pending-validation finding. Declining or disabling Express can apply the same waiver when no provider is preselected or the explicit provider is recognized and is not Local NVIDIA NIM. An invalid or Local NVIDIA NIM provider remains blocked. Existing provider requirements still apply, and this waiver does not promote N1x. Do not claim N1x as supported until validation passes and this row is promoted. |
 | NVIDIA RTX (consumer and Pro workstation GPUs) | Docker | Deferred | P1 | No | The PRD marks this platform as P1. Covers RTX consumer cards and RTX Pro workstation cards on Linux hosts that meet the generic-Linux-GPU requirements (NVIDIA Container Toolkit + CDI present). The provider menu emits managed vLLM behind `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm` for this host class today; the end-to-end onboard path on this hardware is not yet validated in CI. |
 | Windows WSL2 | Docker Desktop (WSL backend) | Tested with limitations | P1 | No | Requires WSL2 with Docker Desktop backend. Qualifying Windows WSL N1x hosts can use the explicit Experimental managed llama.cpp Qwen 3.6 recipe after local-default Docker authority, N1x product identity, ARM64, 48,000 MiB Docker and GPU memory, driver, NVIDIA integration, and Docker Desktop GPU-passthrough checks pass. Other Windows WSL hosts retain Windows-host or WSL-local Ollama. Dedicated N1x WSL CI and physical end-to-end validation are pending. |
 {/* platform-matrix-full:end */}
@@ -8791,8 +8844,8 @@ NemoClaw routes inference through the OpenShell gateway. Each row below is a pro
 | Local Ollama | Tested with limitations | Local Ollama API | Available when Ollama is installed or running on the host. Validated default models: `qwen3.6:35b` (high VRAM), `nemotron-3-nano:30b` (medium VRAM), `qwen3.5:9b` (low VRAM fallback). |
 | Local llama.cpp (already running) | Experimental | Local OpenAI-compatible | Attaches only to an authenticated operator-managed server on loopback port `8081` that passes cooperative native llama.cpp fingerprinting. NemoClaw does not own its server, model, or lifecycle. |
 | Local llama.cpp (managed DGX Spark) | Experimental | Local OpenAI-compatible | Uses the repository-owned YAML recipe for NVIDIA Nemotron 3 Nano 30B-A3B, exact GGUF verification, and Docker lifecycle on a qualified DGX Spark host. The recipe remains unqualified for agent support. |
-| Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag. Onboarding filters the validated image list by usable memory. In non-interactive mode, onboarding selects the first compatible model unless the operator sets `NEMOCLAW_MODEL`. Model selection uses detected free GPU memory. If free memory is unavailable, NemoClaw uses total GPU memory. On DGX Spark, NemoClaw caps usable memory at 50 percent of total memory to match NIM's reported unified-memory limit. The Nemotron 3 Super catalog minimum includes NIM's reported runtime allocation. Local NVIDIA NIM is unavailable on N1x. NemoClaw omits the provider from onboarding and rejects `NEMOCLAW_PROVIDER=nim-local` on N1x. Use the Deferred managed-vLLM preview on N1x. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
-| Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | Unavailable on N1x. On other hosts, it appears in the onboarding menu when NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. No flag is required. The model is whatever the existing server serves. |
+| Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag. Onboarding filters the validated image list by usable memory. In non-interactive mode, onboarding selects the first compatible model unless the operator sets `NEMOCLAW_MODEL`. Model selection uses detected free GPU memory. If free memory is unavailable, NemoClaw uses total GPU memory. On DGX Spark, NemoClaw caps usable memory at 50 percent of total memory to match NIM's reported unified-memory limit. The Nemotron 3 Super catalog minimum includes NIM's reported runtime allocation. Local NVIDIA NIM is unavailable on N1x. NemoClaw omits the provider from onboarding and rejects `NEMOCLAW_PROVIDER=nim-local` on N1x. Select another standard provider or use the Deferred managed-vLLM preview on N1x. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
+| Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | On a qualified N1x host, this route requires explicit standard-onboarding intent and remains unvalidated. On other hosts, no explicit intent is required. It appears in the onboarding menu when NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. The model is whatever the existing server serves. |
 | Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Managed install/start requires Docker on `PATH`; attaching an already-running local vLLM server is a separate path. Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. A labeled Deferred preview appears on hosts that match the N1x identity requirements; N1x remains Deferred until a physical NemoClaw Express E2E test passes. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. Station Express defaults to `nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`; `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark and the Deferred N1x preview, `deepseek-ai/DeepSeek-V4-Flash` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status-full:end */}
 
@@ -9070,12 +9123,14 @@ Generic DMI values do not satisfy either requirement.
 
 A matching identity produces a `qualified` `host.platform.n1x` qualification, but `host.platform.supported` remains `absent` while N1x is Deferred.
 The blocking `host.platform.n1x_validation_pending` finding records the remaining physical NemoClaw Express E2E gate.
-Explicit `NEMOCLAW_PROVIDER=install-vllm` intent, including acceptance of the installer N1x preview prompt, lets onboarding waive only that finding after `host.platform.n1x` is `present`.
+After `host.platform.n1x` is `present`, accepting Express lets onboarding waive only that finding.
+Declining or disabling Express can apply the same waiver when no provider is preselected or the explicit provider is recognized and is not Local NVIDIA NIM.
+An invalid or Local NVIDIA NIM provider remains blocked.
 The read-only `host probe` report remains `incompatible` and does not apply that onboarding exception.
 
 Invalid marker metadata, invalid or ambiguous contents, the wrong PCI identity, the wrong architecture, or an unavailable NVIDIA GPU produces an `unqualified` qualification and the blocking `host.platform.n1x_unqualified` finding.
 Unreadable marker or PCI evidence produces an `unknown` qualification and the blocking `host.platform.n1x_inconclusive` finding.
-Neither finding can be waived by managed-vLLM intent.
+Neither finding can be waived by onboarding intent.
 Bounded evidence appears under `host.platform.identity` with `product`, `nvidiaPlatform`, `n1xCandidate`, `n1xFastOsMarker`, and `n1xPciGpu` fields.
 
 ## Interpret NVIDIA GPU Integration
@@ -11493,12 +11548,14 @@ The probe runs only for a failed `openclaw` command. A command that succeeds, a 
 
 </AgentOnly>
 
-### Sandbox creation reports a TLS certificate mismatch
+### Onboarding or Sandbox Creation Reports a TLS Certificate Error
 
-If sandbox creation reports a TLS or certificate mismatch, the OpenShell gateway certificate may have changed since the CLI last registered it. Remove the stale local gateway registration and then resume onboarding so NemoClaw refreshes the registration:
+Use this recovery when the preserved OpenShell detail for global policy inspection or sandbox creation identifies a gateway certificate-trust failure during onboarding.
+The OpenShell gateway certificate may have changed since the CLI last trusted it.
+Refresh trust for the registered gateway, then resume onboarding:
 
 ```bash
-openshell gateway remove nemoclaw
+openshell gateway trust -g nemoclaw
 $$nemoclaw onboard --resume
 ```
 
@@ -11554,7 +11611,7 @@ Verify that the inference provider endpoint is reachable from the host. Check th
 $$nemoclaw <name> status
 ```
 
-The main `Inference` line probes `https://inference.local/v1/models` from inside the sandbox and then sends one inference request over the same route, so it reflects the route the agent uses. If that line shows `unauthorized`, `unhealthy`, `unreachable`, or `not probed`, inspect the labeled diagnostic lines to identify the failing hop. An `unauthorized` line means the route answered but rejected the request, so refresh the provider credential rather than the route.
+The main `Inference` line probes `https://inference.local/v1/models` from inside the sandbox and then sends an inference request over the same route, so it reflects the route the agent uses. When that request returns a transient gateway status, `status` repeats both probes up to three total attempts before it reports a failure. It prints the HTTP status, next attempt, and two-second delay to stderr before each retry; the configured timeout envelope for three complete probe pairs and two delays is about 124 seconds. If that line shows `unauthorized`, `unhealthy`, `unreachable`, or `not probed`, inspect the labeled diagnostic lines to identify the failing hop. An `unauthorized` line means the route answered but rejected the request, so refresh the provider credential rather than the route.
 
 For local Ollama and local vLLM, `Inference (ollama backend)` or the corresponding local-backend line reports the host-side service separately. If a local-backend diagnostic fails, start the backend. For Local Ollama, current releases can also print `Inference (auth proxy)` when a proxy token is available. Docker Desktop on Windows Subsystem for Linux (WSL) reaches host loopback directly, so its auth-proxy diagnostic is non-authoritative. Native Docker Engine inside WSL is unqualified; enable Docker Desktop WSL integration, then rerun onboarding.
 
@@ -11705,7 +11762,7 @@ Ollama can serve local chat and some simple tool surfaces, but agent loops with 
 | Long system prompts or sender metadata | Risky | Yes |
 | Multi-turn tool dispatch | Risky | Yes |
 
-On hosts other than N1x, [set up vLLM](../inference/local-inference/set-up-vllm) with automatic tool choice and the tool-call parser that matches the model family for persistent agent use. After the parser-aware server is ready, re-run onboarding. Select the **Local vLLM** entry marked **running (suggested)** for a server detected on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`; for another address, select **Other OpenAI-compatible endpoint**. On generic hosts, the Local vLLM entry includes an experimental label; on DGX Spark or DGX Station, it does not. On N1x, stop any server that occupies `${NEMOCLAW_VLLM_PORT:-8000}`, then use only the Deferred managed-vLLM preview; existing and compatible servers are not admitted.
+[Set up vLLM](../inference/local-inference/set-up-vllm) with automatic tool choice and the tool-call parser that matches the model family for persistent agent use. After the parser-aware server is ready, re-run onboarding. Select the **Local vLLM** entry for a server detected on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`; for another address, select **Other OpenAI-compatible endpoint**. On generic hosts, the Local vLLM entry includes an experimental label; on DGX Spark or DGX Station, it does not. On N1x, decline or disable Express, or set `NEMOCLAW_PROVIDER=vllm`, to enter standard onboarding; this route remains unvalidated on N1x.
 
 Do not rely on direct edits to `openclaw.json` for a persistent provider change. NemoClaw-managed rebuilds can overwrite those edits, while onboarding keeps the sandbox image, OpenShell route, and host-managed credentials aligned.
 
@@ -14325,11 +14382,13 @@ The same #7338 sign-off gate applies to this work.
 
 Each reviewed npm audit report has a `*.provenance.json` sidecar.
 The sidecars include `coverage/reviewed-npm-audit/` artifacts and `npm-audit.provenance.json` for the WeChat locked runtime graph audit.
-Each sidecar records:
+A configured cache reuses a response only when the package and lock bytes, npm version, fixed Yarn audit registry origin, command arguments, and parser identity match. Until 2026-09-11, image builds may accept a still-current npmjs receipt only through the explicit legacy transition. Remove the legacy option and verifier path after Yarn-bound receipts replace the retained npmjs receipts.
+The sidecar records whether the response came from the cache or a live registry request, plus its creation time, age, input digest, and response digest.
+Each sidecar also records:
 
 - Scanner identity, including `npm audit`, npm version, and Node.js version.
-- The configured registry with URL credentials removed.
-  The sidecar also records the derived bulk advisory endpoint where npm posts the dependency graph.
+- The fixed Yarn audit registry.
+  The sidecar also records its derived bulk advisory endpoint where npm posts the dependency graph.
   npm 7 and newer have no quick-audit fallback.
   When the request fails, npm reports no advisory data, and the note records this condition.
 - Run start and finish timestamps in ISO 8601 format.
@@ -14730,19 +14789,20 @@ Review the data policies of any cloud provider you use.
 The `NEMOCLAW_EXPERIMENTAL=1` environment variable gates local NVIDIA NIM on eligible hosts other than native N1x FASTOS and generic Linux managed vLLM install/start.
 Managed vLLM install/start is Docker-backed and requires Docker on `PATH`; attaching an already-running local vLLM server is separate.
 DGX Spark and DGX Station managed vLLM entries appear by default when Docker is available.
-Native N1x FASTOS omits local NVIDIA NIM and offers only the Deferred managed-vLLM preview.
+Native N1x FASTOS omits local NVIDIA NIM and offers the Deferred managed-vLLM preview or explicitly selected standard onboarding.
 Native N1x FASTOS remains outside the supported-platform set because its physical NemoClaw Express E2E validation is incomplete.
-After NemoClaw qualifies the native N1x identity, you must provide explicit managed-vLLM preview intent before onboarding can use this path.
+After NemoClaw qualifies the native N1x identity, you must provide explicit Express or standard-onboarding intent.
 A qualifying Windows WSL N1x host uses managed llama.cpp through Windows Express.
 The installer uses local Docker Desktop, Arm64, the Windows N1x product identity, and at least 48,000 MiB of GPU memory as preliminary selection conditions.
 Onboarding also requires the default local Docker context, at least 48,000 MiB of Docker memory, driver version `580.65.06` or later, Docker storage and runtime readiness, NVIDIA GPU integration, and a successful Docker Desktop GPU passthrough proof.
 Onboarding stops managed selection when any required readiness check fails.
 Other Windows WSL hosts retain Windows-host or WSL-local Ollama.
-On hosts other than native N1x FASTOS, an already-running vLLM server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}` also appears in the menu without a flag because selecting it is an explicit user action.
+An already-running vLLM server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}` appears in standard onboarding because selecting it is an explicit user action.
+Native N1x requires you to decline or disable Express or set `NEMOCLAW_PROVIDER=vllm` first.
 
 | Aspect | Detail |
 |---|---|
-| Default | Local NVIDIA NIM and generic Linux managed vLLM install/start are hidden. When Docker is available, DGX Spark and DGX Station managed vLLM entries are offered by default. On hosts other than native N1x FASTOS, already-running vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}` is offered when detected. Qualifying Windows WSL N1x Express runs use managed llama.cpp. |
+| Default | Local NVIDIA NIM and generic Linux managed vLLM install/start are hidden. When Docker is available, DGX Spark and DGX Station managed vLLM entries are offered by default. Native N1x separately offers the Deferred managed-vLLM preview; its standard onboarding offers already-running vLLM on `localhost:${NEMOCLAW_VLLM_PORT:-8000}` when detected and requires explicit standard-onboarding intent. Qualifying Windows WSL N1x Express runs use managed llama.cpp. |
 | What you can change | On eligible hosts other than native N1x FASTOS, set `NEMOCLAW_EXPERIMENTAL=1` before onboarding to surface Local NIM and, when Docker is available on `PATH`, generic Linux managed vLLM. To request only the Docker-backed managed vLLM path non-interactively, set `NEMOCLAW_PROVIDER=install-vllm`. |
 | Risk if selected | NemoClaw has not fully validated these providers. NIM requires a NIM-capable GPU. The managed vLLM path requires Docker, pulls a container image, and starts it on a supported NVIDIA GPU host. Misconfiguration can cause failed inference or unexpected behavior. |
 | Recommendation | Use experimental providers only for evaluation. Do not rely on them for always-on assistants. |
@@ -15229,7 +15289,7 @@ Plan for recreation downtime when automating messaging or web search rotation.
 
 `$$nemoclaw credentials list` confirms that a provider exists, but it does not reveal or validate the stored value.
 `$$nemoclaw status` performs host-side reachability checks without sending cloud API keys, so even an HTTP `401` or `403` can count as reachable there.
-`$$nemoclaw <name> status` also sends one inference request through the stored provider credential and reports `unauthorized` when the route rejects it with HTTP `401` or `403`.
+`$$nemoclaw <name> status` also sends an inference request through the stored provider credential and reports `unauthorized` when the route rejects it with HTTP `401` or `403`. It does not retry that rejection.
 `$$nemoclaw inference get` reports the active route and does not authenticate a model request.
 
 Complete a real request through the rotated integration before declaring the rotation successful.
