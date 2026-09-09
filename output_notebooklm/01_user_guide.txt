@@ -938,9 +938,18 @@ The installer verifies that identity and the gateway version before NemoClaw use
 It does not parse a static package unit as the effective service identity.
 
 If the systemd user manager reports a recognized unavailable condition, the installer can keep the existing standalone gateway lifecycle.
-This fallback requires no `.wants`, `.requires`, or `.upholds` activation link for either gateway service in the standard systemd user unit paths.
+When `NEMOCLAW_GATEWAY_PORT` selects port `8080` and neither gateway service has a `.wants`, `.requires`, or `.upholds` activation link, the standalone gateway keeps port `8080`.
 The installer stops when `SYSTEMD_UNIT_PATH` overrides those paths because it cannot verify the activation state.
-An activation path stops installation until you restore the user manager or resolve the competing service through its owner.
+When `NEMOCLAW_GATEWAY_PORT` is unset, one qualified package-service activation can make the installer move the standalone NemoClaw gateway to a port from `8990` through `9005`.
+Qualification requires one canonical `openshell-gateway.service` link, a trusted package unit without drop-ins, and an effective `OPENSHELL_SERVER_PORT=8080` setting.
+The installer rejects reserved or configured service ports, existing listeners, gateway registrations, and port-scoped NemoClaw state.
+It also rejects a candidate when no supported listener probe can conclusively confirm that the port is unused.
+Installation stops when no candidate passes.
+It exports the selected port and writes a pending port identity before onboarding runs or is deferred.
+Successful installer-driven or direct CLI onboarding promotes that identity to the completed marker. Deferred or interrupted onboarding keeps the pending identity so a later installer or CLI process can reach the same state.
+Later NemoClaw commands restore either recorded identity when `NEMOCLAW_GATEWAY_PORT` is unset, while an explicit supported value remains authoritative.
+A supported explicit non-default port remains authoritative and uses its detached lifecycle without automatic selection.
+An explicit port of `8080`, an ambiguous activation, or an unqualified service still stops installation until you restore the user manager or resolve the service through its owner.
 Other service query errors, malformed metadata, untrusted paths, executable failures, and version mismatches stop installation.
 
 ## Declare the mode
@@ -2071,20 +2080,21 @@ If you cannot add memory, configure at least 8 GB of swap to work around the iss
 | npm        | 10 or later |
 | SHA-256 tool | `sha256sum` or `shasum`, required only when the installer must install or upgrade Node.js through nvm |
 | Python     | Python 3 at a trusted system location, with POSIX descriptor-relative filesystem support |
-| Container runtime | Docker Engine, Docker Desktop, or Colima on a tested platform (default), or native rootless Podman on qualified Linux |
+| Container runtime | Docker Engine, Docker Desktop, or Colima on a tested platform (default), or rootless Podman on qualified native Linux and Windows WSL2 paths |
 | Platform   | Refer to [Platforms](#platforms) below |
 
 Docker is the default runtime provider and the primary onboarding path.
-On Linux, the installer checks Docker before it installs the NemoClaw CLI unless you explicitly select native rootless Podman with `NEMOCLAW_GATEWAY_RUNTIME=podman`.
+On native Linux or inside WSL2, the installer checks Docker before it installs the NemoClaw CLI unless you explicitly select rootless Podman with `NEMOCLAW_GATEWAY_RUNTIME=podman`.
 The installer can install Docker, start the Docker service, and add your user to the `docker` group.
 When Docker is missing, the installer downloads Docker's official convenience script, prompts for `sudo`, and starts the service when systemd is available.
 In a non-interactive run, the installer can reactivate the group through `sg docker` and continue onboarding.
 If that path is unavailable or does not restore Docker access, the installer exits with `newgrp docker` guidance before it starts onboarding.
 
-Native rootless Podman is an explicit Linux path and does not require the Docker CLI or daemon.
+Rootless Podman is an explicit provider choice and does not require the Docker CLI or daemon. It is qualified for standard onboarding on supported native Linux hosts and for WSL-local Ollama on the documented Windows WSL2 path.
+Native Podman gateway readiness also requires `lsof` on `PATH` to verify the gateway listener. NemoClaw does not install it; use the host's package-management policy to install `lsof` before retrying onboarding.
 Start standard onboarding with `NEMOCLAW_GATEWAY_RUNTIME=podman $$nemoclaw onboard`.
 Before selecting it, review its qualified host requirements and limitations in [Platform Support](../reference/platform-support#deployment-paths) and the [Podman troubleshooting guide](../reference/troubleshooting#podman).
-Managed local vLLM install/start remains Docker-backed and is unavailable when Docker is absent; attaching an already-running local vLLM server remains a separate path.
+Managed llama.cpp and Windows-host Ollama remain Docker Desktop-only on WSL. Managed local vLLM install/start remains Docker-backed and is unavailable when Docker is absent; attaching an already-running local vLLM server remains a separate path.
 The portable experimental profile is separate and still requires a Docker-compatible `docker` command.
 
 NemoClaw uses an isolated `python3` helper for descriptor-relative migration snapshot sanitization and deletion.
@@ -2153,7 +2163,7 @@ The table comes from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoC
 | Linux | Docker | Tested | Primary tested path. Ubuntu 24.04 has host-level onboarding validation. A digest-pinned Ubuntu 26.04 userspace lane builds the CLI and runs preflight, installer, and platform contracts on eligible main pushes; Docker-host, AppArmor, Landlock, and live onboarding validation on 26.04 remain pending. Other distros (Ubuntu 22.04, Fedora, Rocky, Alma, NixOS, Arch) may work but are not validated. |
 | macOS (Apple Silicon) | Colima, Docker Desktop | Tested with limitations | Start the container runtime (Colima or Docker Desktop) before installing; NemoClaw verifies the pinned official OpenShell formula and grants formula-scoped trust only around each Homebrew install, inspection, start, or stop operation, requires a legacy or changed formula to be repaired by rerunning the pinned installer, uses the standalone gateway only when Homebrew is absent or both the staged formula and installed keg are absent, requires Homebrew Colima users to install both Colima and the Docker CLI (`brew install colima docker`) before `docker info` can work, and recommends Xcode Command Line Tools (`xcode-select --install`) for Node native modules. |
 | N1x FASTOS | Docker | Deferred | N1x Express remains Deferred until a physical NemoClaw Express E2E test passes. Host identity requires Linux `arm64`, a trusted `/etc/fastos-release` marker with `NAME="N1x FASTOS"`, and NVIDIA vendor ID `10de` on a display-class PCI device. CUDA and Container Device Interface (CDI) readiness are still required. |
-| Windows WSL2 | Docker Desktop (WSL backend) | Tested with limitations | Requires WSL2 with Docker Desktop backend. See [Additional Setup for Windows Machines](additional-setup/windows-preparation) before the Quickstart. |
+| Windows WSL2 | Docker Desktop (WSL backend), Qualified rootless Podman | Tested with limitations | Requires WSL2 with either the Docker Desktop backend or the qualification-backed rootless Podman provider. See [Additional Setup for Windows Machines](additional-setup/windows-preparation) before the Quickstart. |
 
 For the complete platform support matrix, including all deferred platforms and CI coverage, refer to [Platform Support](../reference/platform-support).
 {/* platform-matrix:end */}
@@ -3521,9 +3531,9 @@ Run `nemoclaw onboard`, then use [Troubleshooting](../reference/troubleshooting)
 # SPDX-License-Identifier: Apache-2.0
 title: "Prepare a Windows Machine to Install NemoClaw"
 sidebar-title: "Additional Setup for Windows Machines"
-description: "Prepare a Windows machine for NemoClaw before running the Quickstart: enable WSL 2, install Ubuntu, and configure Docker Desktop."
-description-agent: "Covers Windows-only preparation steps required before the Quickstart. Use when preparing a Windows machine for NemoClaw, enabling WSL 2, configuring Docker Desktop for Windows, or troubleshooting a Windows-specific install error."
-keywords: ["nemoclaw windows wsl2 setup", "nemoclaw install windows docker desktop"]
+description: "Prepare a Windows machine for NemoClaw before running the Quickstart: enable WSL 2, install Ubuntu, and choose Docker Desktop or qualified rootless Podman for WSL-local Ollama."
+description-agent: "Covers Windows-only preparation steps required before the Quickstart. Use when preparing a Windows machine for NemoClaw, enabling WSL 2, configuring Docker Desktop or qualified rootless Podman, or troubleshooting a Windows-specific install error."
+keywords: ["nemoclaw windows wsl2 setup", "nemoclaw install windows docker desktop podman"]
 content:
   type: "reference"
 ---
@@ -3564,7 +3574,16 @@ Verify the following before you begin:
 
 </AgentOnly>
 
+## Choose a Container Runtime
+
+Use Docker Desktop unless you specifically need the qualified rootless Podman path for WSL-local Ollama.
+
+- **Docker Desktop:** Follow the bootstrap-script route below. Docker Desktop is required for managed llama.cpp and Windows-host Ollama.
+- **Rootless Podman:** Skip the bootstrap script and the Docker Desktop section. Complete [Enable WSL 2](#enable-wsl-2) and [Install and Register Ubuntu](#install-and-register-ubuntu) manually, then follow the [native Podman prerequisites and recovery guidance](../../reference/troubleshooting#podman) inside WSL. Before onboarding, set `NEMOCLAW_GATEWAY_RUNTIME=podman` and confirm the current-user Podman socket and service, rootless engine, cgroups v2, bridge networking, and DNS are available. NVIDIA CDI is additionally required when you enable sandbox GPU passthrough or need the N1x CUDA capacity proof. This route supports WSL-local Ollama; it does not enable managed llama.cpp or Windows-host Ollama.
+
 ## Use the Bootstrap Script
+
+The bootstrap script is the Docker Desktop route. It is not a prerequisite for the rootless Podman route.
 
 Open Windows PowerShell on the Windows host and run the bootstrap script:
 
@@ -3606,7 +3625,7 @@ You can also download and install Docker Desktop manually from [docker.com](http
 After you install Docker Desktop, rerun the bootstrap script.
 The script skips the install step after it detects Docker Desktop.
 
-The manual steps below describe the same Windows preparation pieces and are useful when you need to verify or repair WSL, Ubuntu, or Docker Desktop by hand.
+The manual steps below describe the Docker Desktop preparation pieces and are useful when you need to verify or repair WSL, Ubuntu, or Docker Desktop by hand.
 
 ## Enable WSL 2
 
@@ -3672,6 +3691,10 @@ docker info
 `docker info` prints server information.
 If you see "Cannot connect to the Docker daemon", confirm that Docker Desktop is running and that Docker Desktop enables WSL integration.
 
+For WSL-local Ollama, a qualified rootless Podman provider is also supported.
+Set `NEMOCLAW_GATEWAY_RUNTIME=podman` before onboarding and make sure the current-user Podman service and `lsof` on `PATH` are available. NemoClaw does not install `lsof`; install it through the WSL distribution's package-management policy before retrying onboarding. NVIDIA CDI is additionally required for sandbox GPU passthrough and the N1x CUDA capacity proof.
+The Podman path does not enable the Docker-specific managed llama.cpp or Windows-host Ollama routes described below.
+
 ## Set Up Local Inference (Optional)
 
 If the installer offers Express on WSL, a qualifying N1x WSL host uses managed llama.cpp with Qwen 3.6 35B-A3B.
@@ -3708,8 +3731,10 @@ A direct request from WSL can fail because Docker Desktop defines this hostname 
 Do not set Windows `OLLAMA_HOST` to `0.0.0.0:11434`; the wildcard listener is unauthenticated and disables the loopback-only HTTP `Host` validation that NemoClaw requires.
 Do not run both the Windows and WSL Ollama instances on port `11434` at the same time.
 Use one instance, or move one of them to a different port before running `$$nemoclaw onboard`.
-If a Windows on Arm N1x system does not qualify for managed llama.cpp and uses Ollama, let NemoClaw choose the starter model automatically.
-It selects the compute-constrained `qwen3.5:9b` path instead of recommending the 30B and 35B starter models.
+A WSL host whose Windows product reports RTX Spark N1x uses capacity from the selected Docker or Podman provider's CUDA proof to rank installed Ollama models.
+Both providers run the same pinned CUDA workload and capacity query; their provider implementation owns the GPU injection arguments.
+When `qwen3.6:35b` is installed and that proof reports at least 30,000 MiB available, NemoClaw selects it before `qwen3.5:9b`.
+Other Windows on Arm GPUs remain compute-constrained and select `qwen3.5:9b` instead of the 30B and 35B starter models.
 <AgentOnly variant="openclaw">
 For the selection boundary and remaining N1X limitations, refer to [Use Ollama for Local Inference](/user-guide/openclaw/inference/local-inference/set-up-ollama).
 </AgentOnly>
@@ -4525,9 +4550,10 @@ Refer to [Quickstart with Deep Agents](/user-guide/deepagents/get-started/quicks
 To change the reasoning effort on a running OpenClaw sandbox without a recreate, pass `--reasoning-effort` to `inference set`.
 
 ```bash
-nemoclaw <sandbox-name> inference set --provider compatible-endpoint --model <model> --endpoint-url <recorded-url> --reasoning-effort high
+nemoclaw <sandbox-name> inference set --provider compatible-endpoint --model <model> --reasoning-effort high
 ```
 
+For this same-provider change, NemoClaw reuses the endpoint recorded for the sandbox.
 Pass `--reasoning-effort default` on a `compatible-endpoint` route that uses `openai-completions` to clear a recorded effort.
 An ordinary sandbox restart preserves this runtime value or endpoint-default state; startup does not reapply the image's original onboarding value.
 `--reasoning-effort` overrides `NEMOCLAW_REASONING_EFFORT`.
@@ -6246,6 +6272,20 @@ It pulls missing models through the Ollama HTTP API without requiring an Ollama 
   NemoClaw rejects a reachable Windows daemon when it accepts the untrusted `Host` probe.
 </Warning>
 
+### Recover After Unconfirmed Installer Cancellation
+
+If NemoClaw cannot confirm that the Windows installer stopped, it does not restore the previous Windows Ollama state because the installer might still change it.
+Complete these steps before you rerun onboarding:
+
+1. In Windows PowerShell, stop the installer and every Ollama process.
+2. Restore the previous User-scope `OLLAMA_HOST` value.
+   If the value was previously unset, remove it from User scope.
+3. From WSL, rerun onboarding:
+
+```bash
+$$nemoclaw onboard
+```
+
 If the endpoint is not reachable, NemoClaw also checks the Windows `ollama.exe` process through PowerShell interop.
 When the daemon does not become reachable, onboarding prints PowerShell commands for inspecting the Windows process and port state.
 Choose the WSL-local Ollama install when Docker Desktop cannot reach the protected Windows loopback route.
@@ -6378,10 +6418,13 @@ If no installed known tag fits, NemoClaw displays starter choices and warns when
 After a model fails validation, NemoClaw excludes it from the next installed-model menu.
 
 On Windows on Arm N1X systems with a Snapdragon X processor, automatic selection omits the 30B and 35B starter models and selects `qwen3.5:9b`.
+On a WSL RTX Spark N1x, NemoClaw can select an installed `qwen3.6:35b` only when the Windows product identity qualifies and the selected Docker or Podman provider's CUDA proof reports at least 30,000 MiB available.
+The proof runs one pinned CUDA workload and capacity query through the provider abstraction; Docker supplies its GPU flag and Podman supplies its NVIDIA CDI device without a separate model-selection path.
+Missing, malformed, or insufficient proof capacity retains the `qwen3.5:9b` fallback.
 This safeguard only changes automatic selection.
 
 <AgentOnly variant="openclaw">
-It does not make the larger models usable on N1X, reject an explicitly selected large model, or resolve the OpenClaw `1006` disconnect, embedded fallback, and model-timeout behavior tracked in [issue #3707](https://github.com/NVIDIA/NemoClaw/issues/3707).
+It does not make the larger models usable on Snapdragon X N1X systems, reject an explicitly selected large model, or resolve the OpenClaw `1006` disconnect, embedded fallback, and model-timeout behavior tracked in [issue #3707](https://github.com/NVIDIA/NemoClaw/issues/3707).
 </AgentOnly>
 
 <AgentOnly variant="openclaw">
@@ -6397,6 +6440,9 @@ When the runtime value cannot be verified, onboarding shows the required `OLLAMA
 
 If the initial validation times out during a cold load, NemoClaw retries once with a 300-second probe budget.
 This retry also applies to tight-VRAM hosts where model warm-up can spill from GPU to CPU.
+If the retry also times out against a local Ollama daemon on Linux, stale runners may still be holding GPU memory.
+NemoClaw recommends `sudo systemctl restart ollama` only when the host has an active Ollama systemd unit; otherwise, restart Ollama and rerun onboarding.
+Windows-host Ollama does not receive this Linux recovery guidance.
 
 ## Release GPU Memory
 
@@ -8349,9 +8395,11 @@ Use `--no-verify` only when OpenShell cannot verify the target provider at switc
 This flag does not bypass shared-gateway compatibility checks.
 When you explicitly supply a direct compatible endpoint at `http://host.openshell.internal:<port>`, NemoClaw skips OpenShell's host-side provider probe because that hostname resolves only inside the sandbox network.
 It then sends a validation request from the target sandbox before persisting the route in NemoClaw state; the request allows up to 16 output tokens.
-For sandbox-only custom endpoints, NemoClaw waits six seconds for OpenShell's route cache after changing the provider or model, then verifies the new route from inside the sandbox. When the switch also changes the API family and that request returns HTTP `400` or `404`, NemoClaw retries up to two times after delays of 2 and 4 seconds.
+For sandbox-only custom endpoints, NemoClaw waits 6 seconds for OpenShell's route cache after changing the provider or model, then verifies the new route from inside the sandbox.
+When the switch also changes the API family and that request returns HTTP `400` or `404`, NemoClaw retries up to two times after delays of 2 and 4 seconds.
+NemoClaw uses the same retry schedule when validation fails before it receives an HTTP status, such as while the gateway route is reloading.
 Each retry allows another 16 output tokens.
-Other failures are not retried.
+Other HTTP failures are not retried.
 If that request fails, NemoClaw attempts to restore the previous OpenShell selection and remove a provider that this switch created.
 If the error reports that rollback could not complete, rerun onboarding before using the route or retrying the switch.
 Endpoint-shape and shared-gateway compatibility checks still apply.
@@ -8393,7 +8441,8 @@ $$nemoclaw inference set \
 NemoClaw validates the endpoint before it changes the route.
 For an HTTPS IP-literal or DNS-pinned HTTP endpoint, NemoClaw registers and verifies an absent provider before selecting the route.
 If OpenShell still reports the provider as absent, NemoClaw retries the switch once.
-If route selection fails, NemoClaw removes a newly created provider and leaves the inference selection unchanged.
+If provider verification or route selection fails, NemoClaw leaves the inference selection unchanged and removes the provider only when it can verify the revision created by this switch.
+If removal was not attempted or could not be confirmed, rerun onboarding before using that provider route or retrying the switch.
 For a DNS-backed HTTPS endpoint, NemoClaw registers the HTTPS Pin Runtime provider before the first route attempt.
 
 Supported API-family values are `openai-completions`, `anthropic-messages`, and `openai-responses`.
@@ -8407,9 +8456,15 @@ To change a direct compatible provider's custom endpoint or credential binding, 
 A rebuild reuses the recorded endpoint and cannot change it.
 
 DNS-backed HTTPS routes use an HTTPS Pin Runtime binding.
-If that binding update fails after OpenShell selects the new route, NemoClaw attempts to restore the previously recorded provider and model.
-The command still exits nonzero because the binding might be partially updated.
-If NemoClaw cannot restore the previous selection, do not use the route until you re-run onboarding.
+Provider updates occur after OpenShell selects the new route.
+If sandbox verification fails after an existing provider update succeeds, NemoClaw restores the previous inference selection but leaves the updated provider binding in place.
+Rerun onboarding before using that provider route or retrying the switch.
+If an update fails, NemoClaw attempts to restore the previously recorded provider and model.
+If NemoClaw rejects the update before the provider command runs, the provider binding stays unchanged.
+After a provider command fails without confirming that no change occurred, provider state may be partial.
+If the error says that provider state may be partial, rerun onboarding to reconcile the provider before using the route or rerunning `inference set`.
+If NemoClaw cannot restore the previous selection, resolve the reported restore failure.
+Then rerun onboarding before you use the route.
 
 </AgentOnly>
 
@@ -9132,19 +9187,21 @@ If the status route is reachable but a tool action returns JSON as normal assist
 # SPDX-License-Identifier: Apache-2.0
 title: "View the Active Inference Route"
 sidebar-title: "View the Active Route"
-description: "Inspect the provider and model on the live NemoClaw-managed OpenShell inference route."
-description-agent: "Shows the live inference provider and model. Use when checking the active route before or after an inference change."
-keywords: ["nemoclaw inference get", "active inference provider", "active inference model"]
+description: "Inspect the provider and model on the live NemoClaw-managed OpenShell inference route and the persisted URL for a compatible custom endpoint."
+description-agent: "Shows the live inference provider and model, plus the persisted URL for a compatible custom endpoint. Use when checking or reproducing the active route."
+keywords:
+  ["nemoclaw inference get", "active inference provider", "active inference model", "compatible endpoint URL"]
 content:
   type: "how_to"
 ---
 
 Use the NemoClaw CLI to read the provider and model on the live OpenShell inference route.
+For a compatible custom provider, the command also reports its persisted endpoint URL when the registry provider and model match the live route.
 This command reports configuration state and does not authenticate a model request.
 
 ## Read the Live Route
 
-Run the direct route command when you only need the active provider and model.
+Run the direct route command when you need the active provider, model, and applicable custom endpoint URL.
 The direct form reads the gateway that `NEMOCLAW_GATEWAY_PORT` selects.
 
 ```bash
@@ -9173,6 +9230,40 @@ Expected output:
 }
 ```
 
+For `compatible-endpoint` and `compatible-anthropic-endpoint`, the text output adds `Endpoint` only when every matching published registry row records the live provider and model.
+Those rows must also agree on one API family, credential identity, and canonical, credential-free, reusable HTTP(S) URL.
+The URL must use the documented root or `/v1` API-base path; NemoClaw omits other paths because an opaque segment can carry a credential.
+The JSON output adds `endpointUrl` under the same condition.
+For example:
+
+```text
+Provider: compatible-endpoint
+Model:    custom-model
+Endpoint: https://inference.example.com/v1
+```
+
+```json
+{
+  "provider": "compatible-endpoint",
+  "model": "custom-model",
+  "endpointUrl": "https://inference.example.com/v1"
+}
+```
+
+Managed providers keep the existing provider-and-model output.
+Unpublished sandbox rows do not participate in endpoint selection.
+Equivalent stored URL forms, such as a trailing slash difference, count as the same endpoint identity.
+NemoClaw omits the endpoint when participating registry metadata is absent, conflicting, invalid, too long, uses another path shape, or contains userinfo, a query, a fragment, control characters, or recognized credential material in any URL component.
+It also omits an internal HTTPS-pin adapter route because the upstream endpoint is intentionally not retained and the adapter URL cannot be reused as an upstream endpoint.
+When a compatible endpoint is omitted, text output reports `Endpoint: unavailable (<state>)` followed by a credential-free `Action`.
+JSON output adds `endpointStatus` and `endpointRecovery` instead of `endpointUrl`.
+The state is `unavailable` when durable registry metadata cannot be found or an unclassified registry read fails, `registry-corrupt` when the sandbox registry is not valid JSON, `registry-unreadable` when NemoClaw cannot read the registry because of its ownership or permissions, `invalid` when recorded metadata or URL validation cannot prove the live route, `conflicting` when eligible same-gateway rows disagree on endpoint, API family, or credential identity, `withheld` when a syntactically valid URL has an opaque path or recognized credential material that NemoClaw does not display, and `adapter-managed` for an internal HTTPS-pin adapter route.
+For `invalid` and `conflicting`, JSON also returns up to eight output-safe names in `affectedSandboxes`; text output prints the same names after `Affected`. When more output-safe names exist, JSON sets `affectedSandboxesTruncated` to `true` and text output says that additional names are not shown.
+The recovery action tells you to restore registry access, restore a known-good registry backup or obtain recovery support, repair state-directory ownership or permissions, repair the named registrations and rerun the command for another affected batch, align conflicting routes, use a credential-free root or `/v1` API base, or omit endpoint options for an adapter-managed same-provider model change.
+These endpoint-omission fields never include a stored URL, registry path, or underlying registry error.
+If a sandbox-first lookup cannot resolve its gateway because the registry is corrupt or unreadable, the command exits non-zero and retains the safe recovery steps and affected path.
+If the requested sandbox has an invalid gateway binding, the error names that sandbox and tells you to repair or remove its registration without displaying the rejected gateway value or port.
+
 The command exits non-zero with `OpenShell inference route is not configured for gateway '<gateway-name>'.` when the selected gateway has no configured inference route.
 Run `$$nemoclaw onboard` to configure one.
 For lookup failures, the error names the gateway without rendering command output.
@@ -9190,6 +9281,7 @@ $$nemoclaw <name> inference get
 
 `NEMOCLAW_GATEWAY_PORT` first selects the sandbox registry and fallback gateway.
 When that registry contains the named sandbox, the command resolves its recorded gateway and reads that gateway-wide route.
+For a compatible custom provider, the command reports an endpoint only when every eligible published row on the resolved gateway matches the live route and records the same safe, reusable endpoint.
 The command does not search registries for other gateway ports.
 OpenShell exposes one inference route to every sandbox registered on the same gateway.
 
@@ -9789,6 +9881,12 @@ A running Hermes gateway keeps serving its pre-restore state databases until it 
 After a restore that includes Hermes state databases, the CLI prints a reminder to restart the gateway.
 Run `$$nemoclaw <name> gateway restart` to make the gateway open the restored databases.
 </AgentOnly>
+
+<Note>
+`--to` is not available for a snapshot of a sandbox that uses a NemoClaw-managed image.
+NemoClaw reports that the restore is not available and stops before it creates, deletes, or changes the destination sandbox.
+Restore that snapshot into its source sandbox without `--to`.
+</Note>
 
 To clone a snapshot into a different sandbox name, pass `--to <name>`. If the destination sandbox already exists, NemoClaw refuses to overwrite it unless you pass `--force`:
 
@@ -10459,15 +10557,13 @@ Stream logs while you reproduce a problem:
 $$nemoclaw my-assistant logs --follow
 ```
 
-<AgentOnly variant="openclaw">
-The log command reads both OpenClaw gateway output and OpenShell audit events, so policy denials appear beside gateway logs.
-</AgentOnly>
-<AgentOnly variant="hermes">
-The log command reads both Hermes gateway output and OpenShell audit events, so policy denials appear beside gateway logs.
+<AgentOnly variant="openclaw,hermes">
+The log command reads both agent gateway output and OpenShell audit events, so policy denials appear beside gateway logs.
 </AgentOnly>
 <AgentOnly variant="deepagents">
-The log command reads Deep Agents sandbox output and OpenShell audit events, so policy denials appear beside terminal-runtime logs.
+The log command reads OpenShell logs, including audit events, so policy denials appear with other OpenShell log entries.
 </AgentOnly>
+If NemoClaw cannot enable OpenShell audit logs, it prints a warning and policy-denial events can be missing.
 
 ## Collect Diagnostics
 
@@ -10562,7 +10658,8 @@ JSON output adds a per-server `toolDiscovery` object without changing the existi
     "ok": true,
     "count": 2,
     "tools": ["createJiraIssue", "getJiraIssue"],
-    "truncated": false
+    "truncated": false,
+    "commandStatus": 0
   }
 }
 ```
@@ -10571,7 +10668,15 @@ Discovery is opt-in and sends authenticated network traffic to the configured en
 
 An older sandbox image that does not contain the shared discovery client reports that a rebuild is required. Run `$$nemoclaw my-sandbox rebuild` and retry the command.
 
-A discovery failure sets `toolDiscovery.ok` to `false` and leaves the ordinary provider, policy, environment, and adapter status available. Bounded partial results set `truncated` to `true` and include a redacted `detail` value.
+A discovery failure sets `toolDiscovery.ok` to `false` and makes the command exit nonzero.
+The command still returns the ordinary provider, policy, environment, and adapter status.
+The `commandStatus` field records the sandbox discovery runtime's exit status.
+A runtime-emitted precondition reports `0` because the runtime completed and returned a failure result.
+A bridge-level precondition that skips runtime execution reports `null`.
+An unreachable sandbox also reports `null` when no runtime exit status exists.
+A failed result includes `failedStage`, `failureClass`, and a redacted `detail` value.
+Bounded partial results set `truncated` to `true`.
+Correct the reported precondition, runtime, connection, authentication, protocol, or tool-operation failure, and then rerun the same command.
 
 ## Verify Credential Resolution
 
@@ -11092,13 +11197,15 @@ If NemoClaw reports that a Docker-driver sandbox is stopped, restart the existin
 $$nemoclaw <sandbox-name> start
 ```
 
-This path preserves the sandbox workspace and repairs the agent runtime and host-side forwards after the container starts. If the container is paused, follow the printed `docker unpause` guidance instead. If Docker no longer has the container, destroy the stale NemoClaw entry and onboard a clean replacement. Restore a separately created snapshot afterward if one is available; rebuild cannot recover a workspace or live OpenShell policy that no longer exists.
+This path preserves the sandbox workspace after the container starts.
+If the container is paused, follow the printed `docker unpause` guidance instead.
+If Docker no longer has the container, destroy the stale NemoClaw entry and onboard a clean replacement.
+Restore a separately created snapshot afterward if one is available; rebuild cannot recover a workspace or live OpenShell policy that no longer exists.
 
 <AgentOnly variant="openclaw,hermes">
-  The `start` command returns success only after it authenticates the recovered agent runtime,
-  OpenShell reports the sandbox ready, and host-side port forwards pass their checks. If a check
-  fails, the command exits nonzero, identifies the failure, and prints recovery guidance before you
-  retry `start`.
+  The `start` command repairs the agent runtime and host-side port forwards.
+  It returns success only after it authenticates the recovered agent runtime, OpenShell reports the sandbox ready, and host-side port forwards pass their checks.
+  If a check fails, the command exits nonzero, identifies the failure, and prints recovery guidance before you retry `start`.
 </AgentOnly>
 
 ## Recover the Agent Runtime
@@ -11207,7 +11314,8 @@ For the controller topology, trust boundary, and fail-closed conditions, refer t
 
 </AgentOnly>
 <AgentOnly variant="deepagents">
-Deep Agents sandboxes are terminal runtimes and do not expose an OpenClaw or Hermes in-sandbox gateway.
+Deep Agents uses a terminal runtime without an in-sandbox agent gateway or host-side port forward.
+The OpenShell ownership and local endpoint reachability prerequisites for an active port forward do not apply.
 Use `nemo-deepagents <sandbox-name> status`, `logs`, `connect`, and `rebuild` for recovery.
 If the terminal runtime reports degraded health, rebuild the sandbox instead of using `recover` or `gateway restart`.
 </AgentOnly>
@@ -11301,6 +11409,8 @@ $$nemoclaw <sandbox-name> rebuild
 On WSL with Docker Desktop, a generated replacement image build uses a temporary credential-free Docker configuration when the configured Docker Desktop credential helper is unavailable. NemoClaw removes the temporary configuration after the build and does not modify your Docker configuration. An explicit custom Dockerfile continues to use your configured Docker credentials because its base image or build steps might require a private registry. If that custom rebuild cannot reach the credential helper, restore the Docker Desktop session or credential-helper access before retrying.
 
 Rebuild creates the replacement from the base image selected during preflight, even when the source sandbox records an older base-image hint.
+
+If the sandbox's container is stopped (for example, an out-of-band container kill left the sandbox in `Phase: Error`), rebuild starts the container for the duration of the pre-recreate state backup and returns it to its stopped state afterward, the same recovery `$$nemoclaw backup-all` uses for a stopped container. If no stopped container can be found for the sandbox, or the retried backup still fails, rebuild aborts without recreating the sandbox; it reports an incomplete-snapshot notice only when a partial snapshot was retained. If the backup itself succeeds but the started container cannot be returned to its stopped state, rebuild also aborts, so a sandbox that was stopped before rebuild started is never left running without a warning.
 
 <AgentOnly variant="hermes">
 
@@ -12051,6 +12161,11 @@ When other ports remain, `$$nemoclaw uninstall` removes only the selected gatewa
 
 Gateway and dashboard cleanup is scoped by sandbox name and port.
 A later onboarding run that uses a different `NEMOCLAW_GATEWAY_PORT` or `--control-ui-port` does not tear down the first sandbox's gateway or dashboard forward.
+</AgentOnly>
+
+<AgentOnly variant="openclaw">
+If re-onboarding finds the registered dashboard port already bound, NemoClaw verifies that the listener is the exact OpenShell forward for that sandbox and reuses it without restarting the sandbox.
+If ownership cannot be proved, onboarding fails closed and reports the listener conflict.
 </AgentOnly>
 
 <AgentOnly variant="deepagents">
@@ -13040,7 +13155,7 @@ title: "Transfer State Manually"
 sidebar-title: "Transfer State Manually"
 description: "Download and upload selected sandbox state files when a managed snapshot is not the right transfer path."
 description-agent: "Explains safe manual download and upload paths for OpenClaw workspace files, Hermes state, and Deep Agents state. Use when inspecting or transferring specific files."
-keywords: ["openshell sandbox download", "openshell sandbox upload", "manual sandbox backup", "workspace transfer"]
+keywords: ["nemoclaw download", "nemoclaw upload", "manual sandbox backup", "workspace transfer"]
 content:
   type: "how_to"
 skill:
@@ -13051,7 +13166,8 @@ Use [Create and Restore Snapshots](create-and-restore-snapshots) for normal back
 
 ## Download State
 
-Use `openshell sandbox download` to copy files from the sandbox to your host.
+Use `$$nemoclaw <name> download` to copy files from the sandbox to your host.
+The wrapper rejects a directory that contains a symbolic link or another special file before it invokes the OpenShell download or creates the host destination.
 
 <AgentOnly variant="openclaw">
 
@@ -13060,12 +13176,18 @@ SANDBOX=my-assistant
 BACKUP_DIR=~/.nemoclaw/backups/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$BACKUP_DIR"
 
-openshell sandbox download "$SANDBOX" /sandbox/.openclaw/workspace/SOUL.md "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.openclaw/workspace/USER.md "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.openclaw/workspace/IDENTITY.md "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.openclaw/workspace/AGENTS.md "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.openclaw/workspace/MEMORY.md "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.openclaw/workspace/memory/ "$BACKUP_DIR/memory/"
+$$nemoclaw "$SANDBOX" download /sandbox/.openclaw/workspace/SOUL.md "$BACKUP_DIR/"
+$$nemoclaw "$SANDBOX" download /sandbox/.openclaw/workspace/USER.md "$BACKUP_DIR/"
+$$nemoclaw "$SANDBOX" download /sandbox/.openclaw/workspace/IDENTITY.md "$BACKUP_DIR/"
+$$nemoclaw "$SANDBOX" download /sandbox/.openclaw/workspace/AGENTS.md "$BACKUP_DIR/"
+```
+
+OpenClaw creates `MEMORY.md` and `memory/` only after it stores memory.
+Run each applicable command only when that sandbox path exists:
+
+```bash
+$$nemoclaw "$SANDBOX" download /sandbox/.openclaw/workspace/MEMORY.md "$BACKUP_DIR/"
+$$nemoclaw "$SANDBOX" download /sandbox/.openclaw/workspace/memory/ "$BACKUP_DIR/memory/"
 ```
 
 </AgentOnly>
@@ -13079,11 +13201,11 @@ SANDBOX=my-hermes
 BACKUP_DIR=~/.nemoclaw/backups/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$BACKUP_DIR/dashboard-home"
 
-openshell sandbox download "$SANDBOX" /sandbox/SOUL.md "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.hermes/state.db "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.hermes/profiles/dashboard-home/MEMORY.md "$BACKUP_DIR/dashboard-home/MEMORY.md"
-openshell sandbox download "$SANDBOX" /sandbox/.hermes/profiles/dashboard-home/USER.md "$BACKUP_DIR/dashboard-home/USER.md"
-openshell sandbox download "$SANDBOX" /sandbox/.hermes/platforms/ "$BACKUP_DIR/platforms/"
+$$nemoclaw "$SANDBOX" download /sandbox/SOUL.md "$BACKUP_DIR/"
+$$nemoclaw "$SANDBOX" download /sandbox/.hermes/state.db "$BACKUP_DIR/"
+$$nemoclaw "$SANDBOX" download /sandbox/.hermes/profiles/dashboard-home/MEMORY.md "$BACKUP_DIR/dashboard-home/MEMORY.md"
+$$nemoclaw "$SANDBOX" download /sandbox/.hermes/profiles/dashboard-home/USER.md "$BACKUP_DIR/dashboard-home/USER.md"
+$$nemoclaw "$SANDBOX" download /sandbox/.hermes/platforms/ "$BACKUP_DIR/platforms/"
 ```
 
 Copy only the dashboard profile's `MEMORY.md` and `USER.md` files.
@@ -13095,8 +13217,8 @@ If startup refuses a legacy profile migration, download the preserved user files
 
 ```bash
 mkdir -p "$BACKUP_DIR/dashboard-home-legacy"
-openshell sandbox download "$SANDBOX" /sandbox/.hermes/dashboard-home/MEMORY.md "$BACKUP_DIR/dashboard-home-legacy/MEMORY.md"
-openshell sandbox download "$SANDBOX" /sandbox/.hermes/dashboard-home/USER.md "$BACKUP_DIR/dashboard-home-legacy/USER.md"
+$$nemoclaw "$SANDBOX" download /sandbox/.hermes/dashboard-home/MEMORY.md "$BACKUP_DIR/dashboard-home-legacy/MEMORY.md"
+$$nemoclaw "$SANDBOX" download /sandbox/.hermes/dashboard-home/USER.md "$BACKUP_DIR/dashboard-home-legacy/USER.md"
 ```
 
 Do not download the legacy `.env` or `config.yaml`.
@@ -13110,10 +13232,10 @@ SANDBOX=my-deepagents
 BACKUP_DIR=~/.nemoclaw/backups/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$BACKUP_DIR"
 
-openshell sandbox download "$SANDBOX" /sandbox/.deepagents/config.toml "$BACKUP_DIR/"
-openshell sandbox download "$SANDBOX" /sandbox/.deepagents/agent/AGENTS.md "$BACKUP_DIR/agent/"
-openshell sandbox download "$SANDBOX" /sandbox/.deepagents/agent/memories/ "$BACKUP_DIR/agent/memories/"
-openshell sandbox download "$SANDBOX" /sandbox/.deepagents/agent/skills/ "$BACKUP_DIR/agent-skills/"
+$$nemoclaw "$SANDBOX" download /sandbox/.deepagents/config.toml "$BACKUP_DIR/"
+$$nemoclaw "$SANDBOX" download /sandbox/.deepagents/agent/AGENTS.md "$BACKUP_DIR/agent/"
+$$nemoclaw "$SANDBOX" download /sandbox/.deepagents/agent/memories/ "$BACKUP_DIR/agent/memories/"
+$$nemoclaw "$SANDBOX" download /sandbox/.deepagents/agent/skills/ "$BACKUP_DIR/agent-skills/"
 ```
 
 Do not recursively download `/sandbox/.deepagents/.state/`.
@@ -13124,7 +13246,7 @@ Use `$$nemoclaw <name> snapshot create` when you need NemoClaw's built-in saniti
 
 ## Upload State
 
-Use `openshell sandbox upload` to push files back into a sandbox.
+Use `$$nemoclaw <name> upload` to copy files from the host into a sandbox.
 
 <AgentOnly variant="openclaw">
 
@@ -13132,12 +13254,17 @@ Use `openshell sandbox upload` to push files back into a sandbox.
 SANDBOX=my-assistant
 BACKUP_DIR=~/.nemoclaw/backups/20260320-120000  # pick a timestamp
 
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/SOUL.md" /sandbox/.openclaw/workspace/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/USER.md" /sandbox/.openclaw/workspace/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/IDENTITY.md" /sandbox/.openclaw/workspace/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/AGENTS.md" /sandbox/.openclaw/workspace/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/MEMORY.md" /sandbox/.openclaw/workspace/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/memory/" /sandbox/.openclaw/workspace/memory/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/SOUL.md" /sandbox/.openclaw/workspace/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/USER.md" /sandbox/.openclaw/workspace/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/IDENTITY.md" /sandbox/.openclaw/workspace/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/AGENTS.md" /sandbox/.openclaw/workspace/
+```
+
+Upload each optional memory path only when the backup contains it:
+
+```bash
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/MEMORY.md" /sandbox/.openclaw/workspace/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/memory/" /sandbox/.openclaw/workspace/memory/
 ```
 
 </AgentOnly>
@@ -13150,11 +13277,11 @@ Use manual download and upload only when you need to inspect or transfer a speci
 SANDBOX=my-hermes
 BACKUP_DIR=~/.nemoclaw/backups/20260320-120000  # pick a timestamp
 
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/SOUL.md" /sandbox/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/state.db" /sandbox/.hermes/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/dashboard-home/MEMORY.md" /sandbox/.hermes/profiles/dashboard-home/MEMORY.md
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/dashboard-home/USER.md" /sandbox/.hermes/profiles/dashboard-home/USER.md
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/platforms/" /sandbox/.hermes/platforms/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/SOUL.md" /sandbox/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/state.db" /sandbox/.hermes/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/dashboard-home/MEMORY.md" /sandbox/.hermes/profiles/dashboard-home/MEMORY.md
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/dashboard-home/USER.md" /sandbox/.hermes/profiles/dashboard-home/USER.md
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/platforms/" /sandbox/.hermes/platforms/
 ```
 
 </AgentOnly>
@@ -13164,9 +13291,9 @@ openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/platforms/" /sandbox/.hermes/pl
 SANDBOX=my-deepagents
 BACKUP_DIR=~/.nemoclaw/backups/20260320-120000  # pick a timestamp
 
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/agent/AGENTS.md" /sandbox/.deepagents/agent/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/agent/memories/" /sandbox/.deepagents/agent/memories/
-openshell sandbox upload "$SANDBOX" "$BACKUP_DIR/agent-skills/" /sandbox/.deepagents/agent/skills/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/agent/AGENTS.md" /sandbox/.deepagents/agent/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/agent/memories/" /sandbox/.deepagents/agent/memories/
+$$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/agent-skills/" /sandbox/.deepagents/agent/skills/
 ```
 
 Do not upload saved `.deepagents/.state` contents during manual restore.
@@ -13186,11 +13313,25 @@ The [`scripts/backup-workspace.sh`](https://github.com/NVIDIA/NemoClaw/blob/main
 It is not installed by the standard installer, so host installs should use `nemoclaw backup-all` or the snapshot commands.
 </Note>
 
+Run the contributor setup from the NemoClaw source repository root before you create a backup:
+
+```bash
+npm run dev:setup
+```
+
+The helper checks that the built NemoClaw CLI can start before it creates a backup.
+
 Back up a workspace:
 
 ```bash
 ./scripts/backup-workspace.sh backup my-assistant
 ```
+
+The helper requires `SOUL.md`, `USER.md`, `IDENTITY.md`, and `AGENTS.md`.
+It skips `MEMORY.md` and `memory/` when those optional paths do not exist.
+A backup contains four to six items, depending on which optional paths exist.
+
+Both optional paths exist in this example.
 
 Expected output:
 
@@ -13198,6 +13339,11 @@ Expected output:
 Backing up workspace from sandbox 'my-assistant'...
 Backup saved to /home/user/.nemoclaw/backups/20260320-120000/ (6 items)
 ```
+
+If a required file cannot download, the helper deletes the new timestamped backup and exits.
+The helper also deletes the backup when an optional path exists but cannot download.
+Check the reported sandbox path for a symbolic link, unsupported file type, or transfer failure.
+Correct the path, then run the same backup command again.
 
 Restore the most recent backup or a specific timestamp:
 
@@ -13211,6 +13357,8 @@ Verify the saved files:
 ```bash
 ls -la ~/.nemoclaw/backups/20260320-120000/
 ```
+
+Both optional paths exist in this example.
 
 Expected output:
 
@@ -13776,7 +13924,8 @@ Set `NEMOCLAW_OPENSHELL_UPGRADE_PREPARED=1` on the `bash` side of the install pi
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_GATEWAY_PORT=<selected-port> NEMOCLAW_OPENSHELL_UPGRADE_PREPARED=1 bash
 ```
 
-You can omit `NEMOCLAW_GATEWAY_PORT` when you prepared the default gateway on port `8080`.
+Set `NEMOCLAW_GATEWAY_PORT=8080` when you prepared the default gateway.
+Omitting it selects port `8080` only when no automatic alternate-port marker exists, so an explicit value prevents a previously recorded alternate environment from receiving the prepared upgrade.
 `NEMOCLAW_OPENSHELL_UPGRADE_PREPARED` asserts that you completed those steps, so the installer skips the repeated backup and gateway-retirement phase before it checks whether OpenShell is installed or whether its version is in range.
 It reuses the latest backups, forces installation of the OpenShell version pinned by the prepared source, and starts recovery only after that installation succeeds.
 If the installation fails, rerun the same install-pipeline command to preserve `NEMOCLAW_GATEWAY_PORT` and `NEMOCLAW_OPENSHELL_UPGRADE_PREPARED`.
@@ -14095,7 +14244,8 @@ Back up important state before destroying a Hermes sandbox.
 
 Prefer NemoClaw host commands for generated configuration such as model, provider, messaging, and policy settings.
 Direct edits to `/sandbox/.hermes/config.yaml` or `/sandbox/.hermes/.env` can be overwritten by rebuilds.
-Use `$$nemoclaw <name> connect` when you need to inspect runtime files interactively, or use `openshell sandbox download` and `openshell sandbox upload` for manual file transfer.
+Use `$$nemoclaw <name> connect` when you need to inspect runtime files interactively.
+Use `$$nemoclaw <name> download` for manual host downloads, or use `openshell sandbox upload` when you intentionally need the raw OpenShell upload path.
 
 ## Next Steps
 
@@ -14170,7 +14320,8 @@ Back up important Deep Agents state before destroying the sandbox.
 Prefer NemoClaw host commands for generated configuration such as model, provider, managed MCP, and policy settings.
 Direct edits to NemoClaw-owned or non-allowlisted keys in `/sandbox/.deepagents/config.toml` can be overwritten by rebuilds.
 
-Use `$$nemoclaw <name> connect` when you need to inspect runtime files interactively, or use `openshell sandbox download` and `openshell sandbox upload` for manual file transfer.
+Use `$$nemoclaw <name> connect` when you need to inspect runtime files interactively.
+Use `$$nemoclaw <name> download` for manual host downloads, or use `openshell sandbox upload` when you intentionally need the raw OpenShell upload path.
 
 Use Deep Agents Code commands for upstream-managed memories and skills.
 For example, run `dcode skills create <name>` inside the sandbox to create a user skill, or use `/remember` inside an interactive `dcode` session to update memory.
