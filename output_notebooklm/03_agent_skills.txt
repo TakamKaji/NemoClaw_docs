@@ -737,6 +737,10 @@ documentation task, use the commit range supplied by the user or current checkou
 
 Release-entry completion belongs to `nemoclaw-maintainer-evening`, not this workflow.
 
+For an existing managed draft, extend its staged changes after the workflow merges them with `main`.
+Preserve previous documentation changes unless current source and tests justify a revision or removal.
+The independent reviewer checks those revisions against the previous draft commit.
+
 ## Load current authority
 
 Follow [Discover the Current Implementation](../_shared/implementation-discovery.md).
@@ -811,7 +815,7 @@ Run one read-only standalone analyzer from a NemoClaw checkout. Both commands us
 Use retained `cli-vitest-results` artifacts to rank consistently slow tests and files. The CI workflow retains this historical input for 14 days:
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-analyze-ci-performance/scripts/analyze-recent-cli-timings.mts \
   --workdir "$PWD"
 ```
@@ -825,7 +829,7 @@ The analyzer requires at least two usable retained reports. It rejects compresse
 Compare main-push E2E runs that publish a same-commit base image with runs that reuse a prior publication:
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-analyze-ci-performance/scripts/analyze-base-image-publication-timings.mts \
   --workdir "$PWD"
 ```
@@ -867,7 +871,7 @@ Do not run a reduced or latest-revision-only analysis. The latest-revision water
 ## Run the analysis
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-analyze-pr-value-stream/scripts/analyze-pr-value-stream.mts \
   --workdir "$PWD" \
   --number <pull-request-number>
@@ -928,7 +932,7 @@ user_invocable: true
 Run the classifier from a NemoClaw checkout:
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-classify-ci-failure/scripts/classify-ci-failure.mts \
   --workdir "$PWD" --job-id <job-id>
 ```
@@ -1202,7 +1206,7 @@ Create the brief template now, before collecting evidence, so each result can be
 read:
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-day/scripts/handoff-summary.ts \
   --plan ../nemoclaw-release-vX.Y.Z/plan.json \
   --output ../nemoclaw-release-vX.Y.Z/release-brief.md
@@ -1393,8 +1397,8 @@ first.
 ## Step 1: Check Version Progress
 
 ```bash
-node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-target.ts
-node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-progress.ts <version>
+node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-target.ts
+node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-progress.ts <version>
 ```
 
 The first script selects the target version. The second lists shipped and open items.
@@ -1434,7 +1438,7 @@ Follow the selected workflow. Complete one outcome in each pass:
 Re-run the progress script and show the update:
 
 ```bash
-node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-progress.ts <version>
+node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-progress.ts <version>
 ```
 
 If all items for the release version are done, suggest `/nemoclaw-maintainer-evening`.
@@ -1442,7 +1446,7 @@ If all items for the release version are done, suggest `/nemoclaw-maintainer-eve
 Update `.nemoclaw-maintainer/state.json` via the state script:
 
 ```bash
-node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/state.ts history <action> <item> "<note>"
+node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/state.ts history <action> <item> "<note>"
 ```
 
 ## Commit Hygiene
@@ -1516,8 +1520,9 @@ results before it succeeds:
 - `NEMOCLAW_IMAGE_DISPATCH_TOKEN` is exposed as `GH_TOKEN` only to the trusted host script. It
   grants Actions read/write access to `brevdev/nemoclaw-image` for workflow dispatch, run inspection,
   and artifact download.
-- `NVIDIA_INFERENCE_API_KEY` is exported into the Brev guest for the full E2E process. Code in the
-  baked candidate checkout can read and use it.
+- `NVIDIA_API_KEY` supplies the public NVIDIA endpoint credential. The workflow exports it as
+  `NVIDIA_INFERENCE_API_KEY` into the Brev guest for full E2E. Code in the baked candidate checkout
+  can read and use it.
 
 `brev login` writes `BREV_API_KEY` and `BREV_ORG_ID` to `$HOME/.brev/credentials.json` on the
 GitHub-hosted runner. Later trusted steps and processes in that job can read the file. The workflow
@@ -1640,9 +1645,9 @@ Use the maintainer's `vX.Y.Z` when supplied. Otherwise, read the current target 
 merged and open work:
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-day/scripts/version-target.ts
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-day/scripts/version-progress.ts vX.Y.Z
 ```
 
@@ -2037,7 +2042,7 @@ See [PR-REVIEW-PRIORITIES.md](../nemoclaw-maintainer-day/PR-REVIEW-PRIORITIES.md
 ## Step 1: Determine Target Version and Stragglers
 
 ```bash
-node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-target.ts
+node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-target.ts
 ```
 
 This fetches tags, computes the next patch version, and finds open items still carrying older version labels. Surface stragglers first — they indicate post-tag housekeeping was interrupted or an item slipped across multiple cycles. Decide whether to relabel them to today's target or defer them out of the daily release flow.
@@ -2047,7 +2052,7 @@ This fetches tags, computes the next patch version, and finds open items still c
 Run the triage script to rank the full backlog:
 
 ```bash
-node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/triage.ts --approved-only
+node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/triage.ts --approved-only
 ```
 
 If too few results, run without `--approved-only`. The script fetches open PRs through `gh`, reads Project 199 Priority, enriches candidates with review, CI, file, and risky-area data, and applies the scoring model documented in [PR-REVIEW-PRIORITIES.md](../nemoclaw-maintainer-day/PR-REVIEW-PRIORITIES.md).
@@ -2069,8 +2074,8 @@ gh issue edit <number> --repo NVIDIA/NemoClaw --add-label "<version>"
 Pipe triage output into state:
 
 ```bash
-node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/triage.ts \
-  | node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/state.ts set-queue
+node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/triage.ts \
+  | node --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/state.ts set-queue
 ```
 
 Output the daily plan:
@@ -2140,7 +2145,7 @@ gh auth status
 ## Step 2: Preview Proposed Changes
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-normalize-title-tags/scripts/normalize-title-tags.ts
 ```
 
@@ -2160,7 +2165,7 @@ Ask the user which scope they want:
 Apply to all items:
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-normalize-title-tags/scripts/normalize-title-tags.ts \
   --apply
 ```
@@ -2168,7 +2173,7 @@ node --experimental-strip-types --no-warnings \
 Apply only to open items:
 
 ```bash
-node --experimental-strip-types --no-warnings \
+node --no-warnings \
   .agents/skills/nemoclaw-maintainer-normalize-title-tags/scripts/normalize-title-tags.ts \
   --state open \
   --apply
