@@ -116,6 +116,7 @@
 │       │   ├── agents
 │       │   │   └── openai.yaml
 │       │   └── references
+│       │       ├── local-runs.md
 │       │       ├── main-runs.md
 │       │       └── manual-pr.md
 │       ├── nemoclaw-maintainer-evening
@@ -511,6 +512,7 @@
 │   │   ├── 2026-09-02.mdx
 │   │   ├── 2026-09-04.mdx
 │   │   ├── 2026-09-08.mdx
+│   │   ├── 2026-09-10.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -521,6 +523,7 @@
 │   │   ├── deploy-to-headless-server.mdx
 │   │   ├── gateway-lifecycle-authority.mdx
 │   │   ├── install-openclaw-plugins.mdx
+│   │   ├── register-external-component.mdx
 │   │   ├── sandbox-hardening.mdx
 │   │   └── set-up-mcp-bridge.mdx
 │   ├── get-started
@@ -3355,4 +3358,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-290 directories, 3066 files
+290 directories, 3069 files
