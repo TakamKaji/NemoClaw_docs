@@ -1509,12 +1509,14 @@ The component owner must operate its service, sockets, credentials, resources, a
 Version 1 does not support these operations or configurations:
 
 - Resume, reuse, repair, rebuild, recreation, or migration.
-- Providerless Agent Policy Framework (APF) interceptor onboarding.
+- Providerless component onboarding with NemoClaw-supplied initial policy.
 - An externally supervised OpenShell gateway.
 - More than one registered component.
 - Generic shell commands, repository commands, vendor adapters, or a new OpenShell provider attachment API.
 
 Onboarding without the declaration uses the existing onboarding behavior.
+Registration alone does not select providerless onboarding.
+Ordinary onboarding with a registered component keeps NemoClaw's initial policy and provider setup.
 
 ## Create the Declaration
 
@@ -1607,6 +1609,32 @@ The policy must contain the NemoClaw policy requirements and have a valid hash a
 The policy version must match the live sandbox observation.
 
 NemoClaw sends identity to the component only after these checks pass.
+
+<AgentOnly variant="openclaw">
+
+### Select Interceptor-Supplied Policy
+
+To use the registered component for fresh providerless onboarding, explicitly select `--apf-interceptor`:
+
+```bash
+nemoclaw onboard --fresh --apf-interceptor --name component-sandbox
+```
+
+The component must supply sandbox policy through the existing OpenShell `CreateSandbox` interceptor contract.
+A generic component can implement this contract; no specific policy framework is required.
+The [providerless onboarding prerequisites](../reference/commands#--apf-interceptor) also apply.
+
+NemoClaw supplies no initial policy, creates no providers, and handles no component credentials in this flow.
+Any providers required by the component's policy must resolve through existing OpenShell mechanisms before activation.
+Missing, invalid, or unresolved policy or provider requirements stop onboarding before activation.
+NemoClaw does not substitute its own policy or switch to ordinary onboarding.
+
+After OpenShell creates the sandbox, NemoClaw verifies its immutable identity and effective policy before invoking the same activation endpoint described below.
+Completion requires successful bounded activation and post-response verification.
+This flow skips ordinary agent configuration, policy selection, and inference setup.
+Providerless onboarding without a registered component retains its existing behavior.
+
+</AgentOnly>
 
 ## Implement the Activation Endpoint
 
@@ -1929,8 +1957,8 @@ The integration has three parts:
 
 This integration depends on the OpenShell MCP/JSON-RPC L7 policy support from [NVIDIA/OpenShell#1865](https://github.com/NVIDIA/OpenShell/pull/1865).
 
-Current NemoClaw builds default to the pinned stable OpenShell `0.0.106` release, which exposes native `protocol: mcp` policy handling and provider-backed credential replacement.
-The optional OpenShell development channel is compatibility evidence only and is not a shipping target.
+Current NemoClaw builds require the pinned stable OpenShell `0.0.116` release, which exposes native `protocol: mcp` policy handling and endpoint-bound credential replacement.
+Development builds are rejected because they do not match the reviewed credential boundary for the supported managed runtime.
 
 NemoClaw accepts Streamable HTTP MCP endpoints only.
 It does not launch an MCP server, stdio adapter, bridge, credential proxy, data-plane relay, or listener on the host.
@@ -1963,8 +1991,8 @@ The agent stores only an OpenShell resolver placeholder for the recorded credent
 OpenShell keeps the raw credential in its provider store and combines credential replacement with generated MCP policy at egress.
 
 <AgentOnly variant="hermes">
-Hermes includes the credential revision from the readiness check in this placeholder.
-Registration, inspection, rollback, and lifecycle reconciliation preserve that revision while OpenShell still reports it.
+Hermes includes the stable credential handle from the readiness check in this placeholder.
+Registration, inspection, rollback, and lifecycle reconciliation preserve that handle while OpenShell still reports it.
 </AgentOnly>
 
 For the normal MCP client path, OpenShell evaluates the effective policy for the destination host and port, adapter binary, literal endpoint path, and MCP method before replacing placeholders in allowed HTTP request headers.
@@ -1974,30 +2002,30 @@ NemoClaw accepts canonical HTTPS MCP URLs and writes the credential placeholder 
 
 ### DNS Pinning Contract
 
-The MCP integration pins its OpenShell DNS enforcement contract to [`NVIDIA/OpenShell@c4b500a7de64d0b66e3ee8098f58d14299092162`](https://github.com/NVIDIA/OpenShell/tree/c4b500a7de64d0b66e3ee8098f58d14299092162).
+The MCP integration pins its OpenShell DNS enforcement contract to [`NVIDIA/OpenShell@d1155aa70042d3e2ee49dbfa15346b108b7c1d92`](https://github.com/NVIDIA/OpenShell/tree/d1155aa70042d3e2ee49dbfa15346b108b7c1d92).
 
 With `proxy_connect_by_hostname` disabled, OpenShell uses one socket-address list throughout resolution, validation, and connection:
 
-- [`crates/openshell-supervisor-network/src/proxy.rs:3070-3096`](https://github.com/NVIDIA/OpenShell/blob/c4b500a7de64d0b66e3ee8098f58d14299092162/crates/openshell-supervisor-network/src/proxy.rs#L3070-L3096) produces the list.
-- [`crates/openshell-supervisor-network/src/proxy.rs:3121-3160`](https://github.com/NVIDIA/OpenShell/blob/c4b500a7de64d0b66e3ee8098f58d14299092162/crates/openshell-supervisor-network/src/proxy.rs#L3121-L3160) validates every address.
-- [`crates/openshell-supervisor-network/src/proxy.rs:3193-3251`](https://github.com/NVIDIA/OpenShell/blob/c4b500a7de64d0b66e3ee8098f58d14299092162/crates/openshell-supervisor-network/src/proxy.rs#L3193-L3251) connects through the validated list.
+- [`crates/openshell-supervisor-network/src/proxy.rs:3857-3886`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy.rs#L3857-L3886) produces the list.
+- [`crates/openshell-supervisor-network/src/proxy.rs:3911-3951`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy.rs#L3911-L3951) validates every address.
+- [`crates/openshell-supervisor-network/src/proxy.rs:3983-4043`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy.rs#L3983-L4043) connects through the validated list.
 
 The CONNECT path passes that validated connector to the direct or operator-configured upstream dial path.
-By default, direct connections and corporate-proxy CONNECT requests use the validated address list at [`crates/openshell-supervisor-network/src/proxy.rs:3193-3251`](https://github.com/NVIDIA/OpenShell/blob/c4b500a7de64d0b66e3ee8098f58d14299092162/crates/openshell-supervisor-network/src/proxy.rs#L3193-L3251).
-The explicit HTTP-forward path validates the destination before it connects at [`crates/openshell-supervisor-network/src/proxy.rs:4783-4850`](https://github.com/NVIDIA/OpenShell/blob/c4b500a7de64d0b66e3ee8098f58d14299092162/crates/openshell-supervisor-network/src/proxy.rs#L4783-L4850).
+By default, direct connections and corporate-proxy CONNECT requests use the validated address list at [`crates/openshell-supervisor-network/src/proxy.rs:3983-4043`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy.rs#L3983-L4043).
+The explicit HTTP-forward path validates the destination before it connects at [`crates/openshell-supervisor-network/src/proxy.rs:5613-5655`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy.rs#L5613-L5655).
 
 The exception is OpenShell's operator-controlled `proxy_connect_by_hostname` option.
-When enabled, OpenShell sends the requested hostname to the corporate proxy instead of the validated address, which reopens proxy-side DNS resolution; the upstream source records that residual risk at [`crates/openshell-supervisor-network/src/proxy.rs:3208-3240`](https://github.com/NVIDIA/OpenShell/blob/c4b500a7de64d0b66e3ee8098f58d14299092162/crates/openshell-supervisor-network/src/proxy.rs#L3208-L3240).
+When enabled, OpenShell sends the requested hostname to the corporate proxy instead of the validated address, which reopens proxy-side DNS resolution; the upstream source records that residual risk at [`crates/openshell-supervisor-network/src/proxy.rs:3998-4031`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy.rs#L3998-L4031).
 NemoClaw does not enable or prohibit that host-level OpenShell option, so operators who require the pinned-address guarantee must leave it disabled and ensure their gateway configuration does not enable it.
 
-### Stable OpenShell 0.0.106 Limitations
+### Stable OpenShell 0.0.116 Limitations
 
-OpenShell v0.0.106 attributes network policy with `/proc/<pid>/exe` and process ancestors, so script-based adapters require Node or Python interpreter grants rather than immutable package-entrypoint identities.
+OpenShell v0.0.116 attributes network policy with `/proc/<pid>/exe` and process ancestors, so script-based adapters require Node or Python interpreter grants rather than immutable package-entrypoint identities.
 NemoClaw compensates by restricting each server to its HTTPS destination, path, MCP method profile, DNS pins, and unique least-privilege credential.
 
 Remove the interpreter grants when OpenShell exposes stable script or package entrypoint attribution.
 
-OpenShell v0.0.106 requires a static credential provider to have a complete endpoint binding before the supervisor projects its placeholder.
+OpenShell v0.0.116 requires a static credential provider to have a complete endpoint binding before the supervisor projects its stable credential handle.
 NemoClaw imports the endpointless `nemoclaw-mcp-v1` profile, creates a dedicated provider for each server, and binds that provider to one generated MCP endpoint with `credential_binding.provider`.
 OpenShell withholds the credential before the binding is active and outside the bound host, port, and path.
 
@@ -2008,7 +2036,7 @@ A managed MCP provider created by an earlier NemoClaw build can have the profile
 NemoClaw refuses to restart or rebuild that registration.
 Remove the MCP server, export its credential again, and add the server so NemoClaw recreates it with the endpointless profile.
 
-OpenShell v0.0.106 updates, attaches, detaches, and deletes providers by mutable name instead of an atomic immutable identity.
+OpenShell v0.0.116 updates, attaches, detaches, and deletes providers by mutable name instead of an atomic immutable identity.
 NemoClaw compensates with randomized provider names, the per-sandbox lifecycle lock, and immediate ownership checks against the recorded provider ID and credential-key metadata plus the expected provider type before mutations.
 
 NemoClaw fails closed and preserves retryable state when those checks do not match, but the checks do not provide compare-and-swap behavior against another OpenShell client.
@@ -2039,11 +2067,11 @@ mcp_servers:
       resources: true
       prompts: true
     headers:
-      Authorization: Bearer openshell:resolve:env:v12_GITHUB_MCP_TOKEN
+      Authorization: Bearer openshell:resolve:env:s0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_GITHUB_MCP_TOKEN
 ```
 
-The `v12_` prefix is an illustrative OpenShell credential revision.
-Hermes records the revision that the readiness check proves for the live provider.
+The `s…_` prefix is an illustrative OpenShell stable credential handle.
+Hermes records the handle that the readiness check proves for the live provider.
 
 ### Verify the Hermes Reload
 
@@ -2612,7 +2640,7 @@ Use these details when your first-run path needs more control.
     nemohermes my-hermes gateway restart
     ```
 
-    Hermes receives revision-scoped `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` placeholders.
+    Hermes receives OpenShell credential-handle `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` placeholders.
     OpenShell decodes the Langfuse Basic-auth header, replaces both placeholders only for `cloud.langfuse.com:443`, and re-encodes the header before forwarding it.
     The managed Hermes plugin rejects a Langfuse base URL that is not absolute HTTPS before it constructs the authenticated client.
     Do not put raw keys or copied `HERMES_LANGFUSE_PUBLIC_KEY` and `HERMES_LANGFUSE_SECRET_KEY` placeholders in `~/.hermes/.env`.
@@ -3131,7 +3159,7 @@ nemo-deepagents <sandbox-name> policy add tavily --yes
 # Export the key on the host (NemoClaw reads it from the current shell):
 export TAVILY_API_KEY=tvly-...
 # Register the provider with the gateway:
-nemo-deepagents credentials add tavily-search --type tavily --credential TAVILY_API_KEY
+nemo-deepagents credentials add tavily-search --type tavily --agent dcode --credential TAVILY_API_KEY
 # Remove the raw key from the host shell after the gateway stores it:
 unset TAVILY_API_KEY
 # Attach the new provider to the sandbox:
@@ -5850,18 +5878,29 @@ Run interactive onboarding on the qualified host:
 $$nemoclaw onboard
 ```
 
-NemoClaw lists compatible managed llama.cpp profiles in descending YAML `priority` order.
-During interactive onboarding without an explicit provider request, the menu ignores `NEMOCLAW_LLAMACPP_RECIPE` and marks the unique highest-priority compatible profile as `(recommended)`.
+NemoClaw lists compatible managed llama.cpp profiles with automatic selection in descending YAML `priority` order.
+During interactive onboarding without an explicit provider request, the menu ignores `NEMOCLAW_LLAMACPP_RECIPE` and `NEMOCLAW_SERVING_PRESET` and marks the unique highest-priority compatible profile as `(recommended)`.
 On DGX Spark, the recommended profile appears as **Managed llama.cpp: NVIDIA Nemotron 3 Nano 30B-A3B on one DGX Spark (recommended)**.
 On Linux x86_64, the recommended profile identifies one NVIDIA GPU instead.
 During Windows Express or non-interactive onboarding, a qualifying Windows WSL N1x host selects managed llama.cpp without a provider prompt when no provider is requested or recorded and `NEMOCLAW_MODEL` is unset.
 With `NEMOCLAW_LLAMACPP_RECIPE` unset, it selects **Managed llama.cpp: Qwen 3.6 35B-A3B on N1x WSL (recommended)**; a compatible explicit recipe selects that managed recipe.
 Ordinary interactive onboarding lists the same recommended profile but allows another provider selection.
-The Meta Muse Glimmer profile remains available on DGX Spark without the recommendation marker.
+The explicit-only Meta Muse Glimmer profile does not appear in the menu.
 Select any listed profile to install its exact repository-owned recipe.
 The selected menu entry determines the exact recipe even when `NEMOCLAW_LLAMACPP_RECIPE` names another recipe.
 
-For non-interactive onboarding, select the repository-owned recipe explicitly:
+Use `--profile` to select a profile by its stable ID, including the explicit-only Meta Muse Glimmer profile.
+Confirm that `$$nemoclaw profiles list` reports the profile as compatible first:
+
+```bash
+$$nemoclaw profiles list
+$$nemoclaw onboard --profile llama-cpp.dgx-spark-gb10.single.muse-glimmer-30b
+```
+
+The profile selects the managed llama.cpp provider and installs the recipe that the profile declares.
+Do not combine `--profile` with `NEMOCLAW_PROVIDER`, `NEMOCLAW_MODEL`, or `NEMOCLAW_LLAMACPP_RECIPE`.
+
+For non-interactive onboarding without `--profile`, select the repository-owned recipe explicitly:
 
 ```bash
 NEMOCLAW_PROVIDER=install-llama-cpp \
@@ -8708,11 +8747,12 @@ Run the rebuild before relying on the running agent.
 Use `--no-verify` only when OpenShell cannot verify the target provider at switch time and you have already confirmed its provider and credential.
 This flag does not bypass shared-gateway compatibility checks.
 When you explicitly supply a direct compatible endpoint at `http://host.openshell.internal:<port>`, NemoClaw skips OpenShell's host-side provider probe because that hostname resolves only inside the sandbox network.
-It then sends a validation request from the target sandbox before persisting the route in NemoClaw state; the request allows up to 16 output tokens.
+It then sends a validation request from the target sandbox before persisting the route in NemoClaw state.
+The output limit is 16 tokens for ordinary providers and 256 tokens for Google Gemini.
 For sandbox-only custom endpoints, NemoClaw waits 6 seconds for OpenShell's route cache after changing the provider or model, then verifies the new route from inside the sandbox.
 When the switch also changes the API family and that request returns HTTP `400` or `404`, NemoClaw retries up to two times after delays of 2 and 4 seconds.
 NemoClaw uses the same retry schedule when validation fails before it receives an HTTP status, such as while the gateway route is reloading.
-Each retry allows another 16 output tokens.
+Each retry uses the same output limit for the selected provider.
 Other HTTP failures are not retried.
 If that request fails, NemoClaw attempts to restore the previous OpenShell selection and remove a provider that this switch created.
 If the error reports that rollback could not complete, rerun onboarding before using the route or retrying the switch.
@@ -9847,8 +9887,8 @@ The early capability check identifies managed image version only; NemoClaw still
 </AgentOnly>
 <AgentOnly variant="hermes">
 Hermes performs its managed runtime probe before an active add or restart changes a live provider or policy.
-Hermes stores the credential revision from the readiness check in the OpenShell resolver placeholder.
-Registration, inspection, rollback, and lifecycle reconciliation preserve that revision while it remains observable.
+Hermes stores the stable credential handle from the readiness check in the OpenShell resolver placeholder.
+Registration, inspection, rollback, and lifecycle reconciliation preserve that handle while it remains observable.
 </AgentOnly>
 <AgentOnly variant="openclaw">
 OpenClaw verifies the pinned `mcporter` during adapter registration and rolls back an incomplete add.
@@ -9970,11 +10010,12 @@ Do not reuse OpenShell Google Cloud compatibility names such as `GCP_PROJECT_ID`
 NemoClaw rejects them because OpenShell exposes those non-secret configuration names as child-process values.
 
 It also rejects `GCE_METADATA_HOST`, `GCE_METADATA_IP`, and `METADATA_SERVER_DETECTION`, which OpenShell rewrites for its metadata emulator.
-NemoClaw pins the child-visible compatibility list to OpenShell `v0.0.106` commit `c4b500a7de64d0b66e3ee8098f58d14299092162`.
+NemoClaw pins the child-visible compatibility list to OpenShell `v0.0.116` commit `d1155aa70042d3e2ee49dbfa15346b108b7c1d92`.
 Review this list with every OpenShell version change.
 
 OpenShell reserves credential names matching `v[0-9]+_[A-Za-z0-9_]+` for revisioned placeholders.
 NemoClaw rejects names such as `v10_GITHUB_TOKEN` because OpenShell skips them instead of attaching a credential resolver.
+OpenShell `0.0.116` also reserves names matching `s<64-lowercase-hex>_[A-Za-z0-9_]+` for stable credential handles.
 
 NemoClaw rejects host subprocess controls such as `PATH`, proxy or TLS variables, and `OPENSHELL_*`, `GRPC_*`, `LC_*`, or `XDG_*` keys.
 Loader, shell, language, and agent runtime controls such as `LD_PRELOAD`, `BASH_ENV`, `NODE_OPTIONS`, `PYTHONHOME`, `NEMOCLAW_*`, and `OPENCLAW_*` are rejected as well.
@@ -10018,7 +10059,7 @@ A named tunnel can stabilize the hostname without stabilizing its address set.
 Use stable private DNS and a routed private HTTPS endpoint when you operate the MCP server locally.
 
 Authenticated MCP rejects `host.openshell.internal`, `host.docker.internal`, and `host.containers.internal`.
-OpenShell `v0.0.106` has a trusted-gateway branch for a narrow driver-provided topology, but it does not expose an attested driver gateway address that NemoClaw can pin for this flow.
+OpenShell `v0.0.116` has a trusted-gateway branch for a narrow driver-provided topology, but it does not expose an attested driver gateway address that NemoClaw can pin for this flow.
 Use a routed HTTPS endpoint on a stable private address instead.
 
 ## Understand the Generated Method Profile
@@ -10637,7 +10678,7 @@ Verify the provider and dependency after the restart:
 
 ```bash
 nemohermes <name> exec -- hermes memory status
-nemohermes <name> exec -- python -c 'import os, sys; sys.path.insert(0, os.environ["HERMES_LAZY_INSTALL_TARGET"]); import hindsight_client; print(hindsight_client.__version__)'
+nemohermes <name> exec -- python -c 'import os, sys; sys.path.insert(0, os.environ["HERMES_LAZY_INSTALL_TARGET"]); import hindsight_client; from importlib.metadata import version; print(version("hindsight-client"))'
 nemohermes <name> status
 ```
 
@@ -11132,7 +11173,7 @@ If cleanup leaves a residual, the command exits nonzero and preserves the regist
 
 If rebuild instead reports a retained credential-bearing policy handoff, do not edit that handoff or retry rebuild. Follow the [unsafe retained policy handoff recovery](../operate-sandboxes/recover-and-rebuild-sandboxes#continue-an-interrupted-replacement).
 
-After this check, rebuild removes adapter entries and exact owned policies, then detaches providers before replacing the sandbox. Before changing each managed adapter, a fresh sandbox process must expose a revision-scoped OpenShell credential placeholder for that adapter. If an observation is absent, unscoped, or unavailable, NemoClaw leaves the affected adapter and every provider unchanged. It attempts to restore adapter entries prepared earlier in the operation and reports rollback failures. It does not substitute the provider resource version for the credential revision. Follow the reported [credential-revision recovery](../../reference/troubleshoot-mcp-servers#rebuild-or-destroy-cannot-prove-a-credential-revision), then retry rebuild. Restoration applies the credential-free policy, reattaches each provider, applies the endpoint-bound policy, waits for credential readiness, and restores adapters. For a trusted-private entry, the restored policy uses the recorded exact address pins and does not widen them from current DNS answers. Public entries continue to resolve and validate their endpoint addresses during restoration. A forced host-side rebuild refuses an interrupted denied-tool update or a legacy public registration without recorded pins; repair sandbox transport and run the reported `mcp restart <server>` before retrying.
+After this check, rebuild removes adapter entries and exact owned policies, then detaches providers before replacing the sandbox. Before changing each managed adapter, a fresh sandbox process must expose an OpenShell credential-handle placeholder for that adapter. If an observation is absent, unscoped, or unavailable, NemoClaw leaves the affected adapter and every provider unchanged. It attempts to restore adapter entries prepared earlier in the operation and reports rollback failures. It does not substitute the provider resource version for the observed credential handle. Follow the reported [credential-handle recovery](../../reference/troubleshoot-mcp-servers#rebuild-or-destroy-cannot-prove-a-credential-handle), then retry rebuild. Restoration applies the credential-free policy, reattaches each provider, applies the endpoint-bound policy, waits for credential readiness, and restores adapters. For a trusted-private entry, the restored policy uses the recorded exact address pins and does not widen them from current DNS answers. Public entries continue to resolve and validate their endpoint addresses during restoration. A forced host-side rebuild refuses an interrupted denied-tool update or a legacy public registration without recorded pins; repair sandbox transport and run the reported `mcp restart <server>` before retrying.
 
 <AgentOnly variant="deepagents">
 NemoClaw revalidates the prepared Deep Agents replacement after MCP preparation and before stopping inference or deleting the old sandbox.
@@ -11148,7 +11189,7 @@ If sandbox replacement fails, NemoClaw attempts to restore the previous attachme
 
 ## Destroy a Sandbox with MCP State
 
-Destroy removes adapter entries and exact owned policies, then detaches providers that match recorded metadata before asking OpenShell to delete the sandbox. Before changing each managed adapter, a fresh sandbox process must expose a revision-scoped OpenShell credential placeholder for that adapter. If an observation is absent, unscoped, or unavailable, NemoClaw leaves the affected adapter and every provider unchanged. It attempts to restore adapter entries prepared earlier in the operation and reports rollback failures. Follow the reported [credential-revision recovery](../../reference/troubleshoot-mcp-servers#rebuild-or-destroy-cannot-prove-a-credential-revision), then retry destroy. If deletion is refused, NemoClaw attempts to restore previous MCP state, reports rollback failures, and preserves recovery state. Provider deletion and registry cleanup happen only after OpenShell confirms the sandbox is gone.
+Destroy removes adapter entries and exact owned policies, then detaches providers that match recorded metadata before asking OpenShell to delete the sandbox. Before changing each managed adapter, a fresh sandbox process must expose an OpenShell credential-handle placeholder for that adapter. If an observation is absent, unscoped, or unavailable, NemoClaw leaves the affected adapter and every provider unchanged. It attempts to restore adapter entries prepared earlier in the operation and reports rollback failures. Follow the reported [credential-handle recovery](../../reference/troubleshoot-mcp-servers#rebuild-or-destroy-cannot-prove-a-credential-handle), then retry destroy. If deletion is refused, NemoClaw attempts to restore previous MCP state, reports rollback failures, and preserves recovery state. Provider deletion and registry cleanup happen only after OpenShell confirms the sandbox is gone.
 
 An interrupted destroy can leave a durable transaction marker. A prepared-only marker means deletion is not durably confirmed. If the sandbox is still live, remove each affected server with force until the managed manifest is empty:
 
@@ -11566,7 +11607,7 @@ If status reports `sandbox_container_stopped`, a missing sandbox, or an unhealth
 $$nemoclaw <sandbox-name> recover
 ```
 
-The command repairs a stopped in-sandbox gateway and re-establishes the dashboard port-forward in one step. It is idempotent and safe to script. If the gateway is already healthy, `recover` exits after the probe and does not restart it. If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable.
+The command repairs a stopped in-sandbox gateway and re-establishes the dashboard port-forward in one step. It is idempotent and safe to script. If the gateway is already healthy, `recover` exits after the probe and does not restart it. If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable. If a listener that NemoClaw cannot attribute to the sandbox's own OpenShell forward holds the port, `recover` reports it and leaves it running. It then exits non-zero and does not restore the forward. Legacy SSH forward records do not establish ownership. Stop the owning OpenShell gateway or service to release the listener before retrying recovery.
 
 Use `gateway restart` when you intentionally need a supported OpenClaw gateway to reload runtime configuration or plugins.
 
@@ -11586,7 +11627,7 @@ If status reports `sandbox_container_stopped`, a missing sandbox, or an unhealth
 $$nemoclaw <sandbox-name> recover
 ```
 
-The command repairs a stopped in-sandbox gateway and re-establishes the dashboard port-forward in one step. It is idempotent and safe to script. If the gateway is already healthy, `recover` does not restart it. If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable.
+The command repairs a stopped in-sandbox gateway and re-establishes the dashboard port-forward in one step. It is idempotent and safe to script. If the gateway is already healthy, `recover` does not restart it. If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable. If a listener that NemoClaw cannot attribute to the sandbox's own OpenShell forward holds the port, `recover` reports it and leaves it running. It then exits non-zero and does not restore the forward. Legacy SSH forward records do not establish ownership. Stop the owning OpenShell gateway or service to release the listener before retrying recovery.
 
 Before it repairs the gateway, `recover` checks for a NemoClaw cron restore gate or release recovery record left by an interrupted rebuild. The gate continues to block new Hermes turns and cron dispatch across gateway and container restarts in the same sandbox. If release rollback could not restore the gate, `recover` uses the root-owned recovery record to reacquire it before gateway repair can start dispatch. After gateway repair, `recover` waits for active agent work to finish and validates the restored cron jobs and scripts. It clears NemoClaw-owned gate and release recovery state only after validation succeeds. If no independent operator drain exists, successful recovery prints `Hermes cron dispatch resumed after restored jobs and scripts were validated.` If an operator drain exists, recovery prints `Hermes cron restore gate cleared; the independent operator drain remains active.` The command does not own or clear the Hermes operator drain, so new Hermes turns and cron dispatch remain blocked while that drain is active. If gate reacquisition or cron validation fails, `recover` exits nonzero and retains the recovery state for another attempt.
 
@@ -12499,7 +12540,7 @@ When the default port is already held by another sandbox, `$$nemoclaw onboard` s
 
 <AgentOnly variant="hermes">
 Each Hermes sandbox also needs its own OpenAI-compatible API port.
-When another sandbox or a host listener already holds the default API port `8642`, `$$nemoclaw onboard` scans ports `8642` through `8652`, uses the next free port, and records it for the sandbox.
+When creating a Hermes sandbox, if another sandbox or a host listener already holds the default API port `8642`, `$$nemoclaw onboard` scans ports `8642` through `8652`, uses the next free port, and records it for the sandbox.
 </AgentOnly>
 
 <AgentOnly variant="openclaw,hermes">
@@ -12515,9 +12556,14 @@ Gateway and dashboard cleanup is scoped by sandbox name and port.
 A later onboarding run that uses a different `NEMOCLAW_GATEWAY_PORT` or `--control-ui-port` does not tear down the first sandbox's gateway or dashboard forward.
 </AgentOnly>
 
-<AgentOnly variant="openclaw">
-If re-onboarding finds the registered dashboard port already bound, NemoClaw verifies that the listener is the exact OpenShell forward for that sandbox and reuses it without restarting the sandbox.
-If ownership cannot be proved, onboarding fails closed and reports the listener conflict.
+<AgentOnly variant="openclaw,hermes">
+Repeated onboarding and resume keep the sandbox's registered dashboard port and restore a missing forward on that port.
+If the port is already bound, NemoClaw verifies that the listener is the exact OpenShell forward for that sandbox and reuses it without restarting the sandbox.
+Ports registered to another sandbox, foreign listeners, or unverified ownership stop onboarding with a port conflict error.
+</AgentOnly>
+
+<AgentOnly variant="hermes">
+Hermes also retains or restores its registered OpenAI-compatible API forward using the same ownership checks.
 </AgentOnly>
 
 <AgentOnly variant="deepagents">
@@ -13323,7 +13369,7 @@ NemoClaw rejects HTTP, ports, paths, credentials, and unrecognized redirect host
 If pairing reports an invalid IDC redirect host, restart the QR flow.
 If the error repeats, preserve the error text without sharing tokens or verbose diagnostics and file an issue.
 
-NemoClaw registers the token as the `<sandbox>-wechat-bridge` OpenShell provider and supplies a revision-scoped OpenShell credential placeholder inside the sandbox.
+NemoClaw registers the token as the `<sandbox>-wechat-bridge` OpenShell provider and supplies an OpenShell stable credential-handle placeholder inside the sandbox.
 The token does not land in the image or on disk inside the running container.
 
 NemoClaw writes the non-secret `WECHAT_ACCOUNT_ID`, `WECHAT_BASE_URL`, and `WECHAT_USER_ID` metadata into the image's channel configuration.
@@ -14228,7 +14274,7 @@ The `langchain-deepagents-code` agent manifest declares the expected Deep Agents
 Run the maintained installer to update the host CLI and reconcile registered sandboxes.
 
 <Warning>
-The maintained OpenShell 0.0.106 pin limits a routed sandbox name to 19 characters and rejects consecutive hyphens.
+The maintained OpenShell 0.0.116 pin limits a routed sandbox name to 19 characters and rejects consecutive hyphens.
 A NemoClaw sandbox name must contain 1 to 19 characters.
 It must start with a lowercase letter, use lowercase letters, numbers, and single internal hyphens, and end with a letter or number.
 Before the OpenShell upgrade, the installer checks registered sandboxes for the selected gateway.
@@ -14237,7 +14283,7 @@ If the installer finds incompatible names, it lists each name and exits before i
 - Prepare the NemoClaw CLI for the upgrade.
 - Start a backup of the registered sandboxes.
 - Retire the selected OpenShell gateway.
-- Install OpenShell 0.0.106.
+- Install OpenShell 0.0.116.
 - Recreate a sandbox.
 
 NemoClaw does not automatically truncate or change the sandbox name.
