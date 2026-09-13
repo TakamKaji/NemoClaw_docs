@@ -1,5 +1,8 @@
 .
 ├── .agents
+│   ├── references
+│   │   ├── development.md
+│   │   └── e2e-authoring.md
 │   └── skills
 │       ├── _shared
 │       │   ├── code-change-considerations.md
@@ -14,8 +17,11 @@
 │       │   ├── SKILL.md
 │       │   ├── agents
 │       │   │   └── openai.yaml
-│       │   └── evals
-│       │       └── evals.json
+│       │   ├── evals
+│       │   │   └── evals.json
+│       │   └── references
+│       │       ├── publication.md
+│       │       └── validation.md
 │       ├── nemoclaw-contributor-implement-issue
 │       │   ├── SKILL.md
 │       │   ├── agents
@@ -87,7 +93,10 @@
 │       ├── nemoclaw-maintainer-cut-release-tag
 │       │   ├── SKILL.md
 │       │   └── references
-│       │       └── candidate-evidence.md
+│       │       ├── candidate-evidence.md
+│       │       ├── cut-and-follow-through.md
+│       │       ├── prepare-release.md
+│       │       └── recovery.md
 │       ├── nemoclaw-maintainer-day
 │       │   ├── HOTSPOTS.md
 │       │   ├── MERGE-GATE.md
@@ -118,7 +127,9 @@
 │       │   └── references
 │       │       ├── local-runs.md
 │       │       ├── main-runs.md
-│       │       └── manual-pr.md
+│       │       ├── manual-pr.md
+│       │       ├── release-context.md
+│       │       └── staging-launchable.md
 │       ├── nemoclaw-maintainer-evening
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-find-review-pr
@@ -173,8 +184,12 @@
 │       │       └── backtest.md
 │       ├── nemoclaw-maintainer-refactor-docs
 │       │   ├── SKILL.md
-│       │   └── agents
-│       │       └── openai.yaml
+│       │   ├── agents
+│       │   │   └── openai.yaml
+│       │   └── references
+│       │       ├── migration.md
+│       │       ├── structure.md
+│       │       └── validation.md
 │       ├── nemoclaw-maintainer-release-notes
 │       │   └── SKILL.md
 │       ├── nemoclaw-maintainer-runtime-provider
@@ -210,8 +225,10 @@
 │       │       └── evals.json
 │       └── nemoclaw-user-guide
 │           ├── SKILL.md
-│           └── evals
-│               └── evals.json
+│           ├── evals
+│           │   └── evals.json
+│           └── references
+│               └── docs-access.md
 ├── .claude
 │   └── skills -> ../.agents/skills
 ├── .coderabbit.yaml
@@ -3358,4 +3375,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-290 directories, 3069 files
+294 directories, 3082 files
