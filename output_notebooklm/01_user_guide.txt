@@ -1495,6 +1495,20 @@ skill:
 NemoClaw can register one external host component during fresh sandbox onboarding.
 The experimental version 1 contract lets the component intercept selected OpenShell operations and activate resources for one verified sandbox.
 
+## Version 2 Is Not Yet a Supported Integration
+
+NemoClaw recognizes a version 2 declaration for authenticated interceptor and middleware connections during fresh Linux Docker-driver onboarding.
+NemoClaw has not qualified the complete version 2 onboarding lifecycle against a released OpenShell runtime.
+Do not rely on version 2 in an installed release.
+
+Version 2 uses HTTPS endpoints, CA certificates, gateway preparation, and optional interceptor-backed provider profiles.
+During preparation, it can create one missing attachable Docker bridge through the selected local Unix-socket connection.
+It preserves that bridge after a preparation or startup failure.
+It does not support TCP or SSH Docker connections.
+It does not change the version 1 declaration or `/v1/activate` protocol.
+NemoClaw continues to own generated gateway configuration and gateway lifecycle.
+The component supplies policy, and OpenShell validates and enforces the effective sandbox policy.
+
 ## Check the Version 1 Limits
 
 Use this contract only when all these conditions apply:
@@ -1611,14 +1625,14 @@ The policy version must match the live sandbox observation.
 
 NemoClaw sends identity to the component only after these checks pass.
 
-<AgentOnly variant="openclaw">
+<AgentOnly variant="openclaw,hermes">
 
 ### Select Interceptor-Supplied Policy
 
 To use the registered component for fresh providerless onboarding, explicitly select `--apf-interceptor`:
 
 ```bash
-nemoclaw onboard --fresh --apf-interceptor --name component-sandbox
+$$nemoclaw onboard --fresh --apf-interceptor --name component-sandbox
 ```
 
 The component must supply sandbox policy through the existing OpenShell `CreateSandbox` interceptor contract.
@@ -1632,7 +1646,11 @@ NemoClaw does not substitute its own policy or switch to ordinary onboarding.
 
 After OpenShell creates the sandbox, NemoClaw verifies its immutable identity and effective policy before invoking the same activation endpoint described below.
 Completion requires successful bounded activation and post-response verification.
-This flow skips ordinary agent configuration, policy selection, and inference setup.
+OpenClaw and Hermes start without a configured inference route or model.
+They cannot make an inference request until you configure a managed route.
+After a managed inference provider is available, use `$$nemoclaw inference set --provider <provider> --model <model> --sandbox component-sandbox`.
+Refer to [Switch Inference Providers](../inference/switch-providers) for the route requirements and verification behavior.
+
 Providerless onboarding without a registered component retains its existing behavior.
 
 </AgentOnly>
@@ -2444,7 +2462,7 @@ The following table lists platforms with a documented installation path.
 A Tested with limitations row applies only to the configuration in its notes.
 The table comes from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoClaw/blob/main/ci/platform-matrix.json), the single source of truth kept in sync by CI and QA.
 
-<!-- markdownlint-disable MD037 MD058 -->
+{/* markdownlint-disable MD037 MD058 */}
 {/* platform-matrix:begin */}
 | OS | Container runtime | Status | Notes |
 |----|-------------------|--------|-------|
@@ -2457,7 +2475,7 @@ The table comes from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoC
 
 For the complete platform support matrix, including all deferred platforms and CI coverage, refer to [Platform Support](../reference/platform-support).
 {/* platform-matrix:end */}
-<!-- markdownlint-enable MD037 MD058 -->
+{/* markdownlint-enable MD037 MD058 */}
 
 ## Additional Setup
 
@@ -6004,6 +6022,7 @@ Refer to [CLI Commands](../../reference/commands) for complete command behavior.
 During managed installation, NemoClaw first checks internal runtime readiness and host-loopback health.
 It repeats these checks when onboarding resumes.
 It then runs the authoritative OpenShell Docker bridge probe on fixed port `8081`.
+On Docker Desktop in WSL, NemoClaw runs the loopback health probe from the WSL CLI process because a host-network container cannot reach the WSL loopback listener.
 If that bridge probe cannot connect or times out after the earlier checks pass, onboarding stops without changing UFW.
 When the bridge reports a valid narrow subnet and a gateway IP address inside that subnet, the error reports these values:
 
@@ -6620,6 +6639,7 @@ When NemoClaw runs in WSL, the provider menu can offer these Windows-host action
 
 The install and restart paths set `OLLAMA_HOST=127.0.0.1:11434` on Windows.
 NemoClaw relaunches Ollama from the detected Windows tray application or verified `ollama.exe` path and checks the endpoint from Docker Desktop's network context.
+If initial host discovery misses a protected Windows route, NemoClaw can reuse it without an executable path.
 It first requires a valid `/api/tags` response and then requires `403` from the same endpoint with an untrusted `Host` header.
 A direct request from WSL can fail because Docker Desktop defines this hostname for its containers.
 It pulls missing models through the Ollama HTTP API without requiring an Ollama CLI inside WSL.
@@ -6806,7 +6826,10 @@ Windows-host Ollama does not receive this Linux recovery guidance.
 ## Release GPU Memory
 
 When you destroy an Ollama-backed sandbox or stop host services, NemoClaw asks Ollama to unload each currently loaded model by sending `keep_alive: 0`.
-When you stop a single Ollama-backed sandbox, NemoClaw unloads only that sandbox's own model, and leaves it loaded when another Ollama-backed sandbox uses the same model.
+When you stop a single Ollama-backed sandbox, NemoClaw unloads only that sandbox's own model.
+It leaves the model loaded only when OpenShell reports that another matching Ollama-backed sandbox is active.
+Stopped or incomplete sibling registry rows do not retain the model.
+If NemoClaw cannot verify sibling state, it does not unload the model and `stop` exits nonzero.
 When you re-onboard an existing Ollama-backed sandbox onto a different model, NemoClaw unloads the model it replaced, with the same sibling protection.
 A re-onboard that keeps the same model leaves it loaded, because the new route can still be served by the same Ollama daemon.
 This cleanup runs on a best-effort basis and does not delete downloaded model files.
@@ -7363,20 +7386,18 @@ Refer to [Customize the Network Policy](../network-policy/customize-network-poli
 
 ## Sub-Agent Gateway Connectivity
 
-Spawned sub-agents connect back to the OpenClaw gateway over WebSocket at `OPENCLAW_GATEWAY_URL`.
-Inside the sandbox, this connection runs through the enforced process tree.
-The OpenShell proxy always blocks loopback destinations in that process tree.
-NemoClaw points `OPENCLAW_GATEWAY_URL` at the sandbox's own interface address, such as `ws://10.200.0.2:18790`.
-The base sandbox policy allowlists that endpoint through `openclaw_gateway_dialback`.
+Spawned agents connect to the selected sandbox's gateway through OpenClaw's native loopback endpoint.
+NemoClaw leaves `OPENCLAW_GATEWAY_URL` unset by default, so the gateway, CLI, daemon RPC, and spawned agents share OpenClaw's configured local port without routing sandbox-local traffic through the external proxy.
+An explicit operator endpoint remains authoritative.
 
-### Troubleshoot Dial-Back Failures
+### Troubleshoot Gateway Connectivity
 
-The dial-back path is blocked if `sessions_spawn` returns `gateway closed (1006 abnormal closure (no close frame))` and the gateway log shows no connection attempt.
+The local path is unhealthy if `sessions_spawn` returns `gateway closed (1006 abnormal closure (no close frame))` and the gateway log shows no connection attempt.
 Check the following:
 
-1. `OPENCLAW_GATEWAY_URL` in the gateway process environment targets the sandbox interface address, not `127.0.0.1`.
-2. The active policy allows that address and port. Custom `NEMOCLAW_DASHBOARD_PORT` or proxy subnet values need a matching `openshell policy update`.
-3. Do not point the dial-back at `127.0.0.1`; the proxy denies loopback regardless of policy.
+1. The gateway and client resolve the same `NEMOCLAW_DASHBOARD_PORT`.
+2. No unexpected `OPENCLAW_GATEWAY_URL` override is present.
+3. Gateway authentication and device pairing are healthy for the selected sandbox.
 
 ## Add Delegation Instructions
 
@@ -8066,8 +8087,10 @@ NemoClaw also records an owner-only, credential-free runtime receipt that binds 
 If an existing `nemoclaw-vllm` container does not carry that label, NemoClaw preserves it and asks you to remove or rename it before installing managed vLLM.
 On hosts other than N1x, if another vLLM server already occupies the configured vLLM port and no managed GPU selection accompanies explicit managed-install intent, NemoClaw selects the existing-server path and applies the model-identity checks described above.
 On N1x, NemoClaw stops managed onboarding and requires you to stop that server before trying the Deferred preview again.
-If another process holds the configured single-host port, NemoClaw stops the managed install before it persists a bearer key or records the selected model.
-NemoClaw also stops before storage prompts, cache creation, image pull, or container start.
+Except for the interrupted managed install described below, an occupied single-host port stops installation before NemoClaw persists a bearer key or records the selected model.
+For an interrupted install, it can remove and replace only a running `nemoclaw-vllm` container that has the NemoClaw ownership label and publishes container port `8000` to the requested host port on `127.0.0.1` or `0.0.0.0` through the selected local Docker connection.
+It refuses an unlabeled, stopped, distributed, ambiguous, differently mapped, or differently addressed container.
+For every other port holder, NemoClaw also stops before storage prompts, cache creation, image pull, or container start.
 Stop the process, then run onboarding again.
 Docker reports a bind failure if another process claims the port after this preflight.
 Managed profiles and model-specific recipes use immutable image digests:
@@ -8371,7 +8394,8 @@ On a host that still meets the N1x identity checks, `rebuild` reuses the recorde
 - The registry records model `nvidia/Qwen3.6-35B-A3B-NVFP4`.
 - If the registry records `endpointUrl` as `null`, NemoClaw derives `http://host.openshell.internal:${NEMOCLAW_VLLM_PORT:-8000}/v1`; otherwise, `endpointUrl` must equal that URL.
 - The registry records `openshellDriver` as `docker`.
-- The registry records `endpointSource` as `onboard`, or records both route fields as `null` and either `deferredN1xManagedVllmAccepted: true` or the current process supplies the one-time `NEMOCLAW_PROVIDER=install-vllm` recovery decision below.
+- The registry records `endpointSource` as `onboard`, or records `deferredN1xManagedVllmAccepted: true`. The latter accepts either a `null` endpoint or the canonical local endpoint.
+- A legacy record with both `endpointUrl` and `endpointSource` set to `null` can instead use the one-time `NEMOCLAW_PROVIDER=install-vllm` recovery decision below.
 - The replacement keeps the recorded provider and model, then re-derives the canonical local endpoint.
 - `hostLocalInferenceReceipt` is absent or `null`, or contains a canonical vLLM receipt for `host.openshell.internal:${NEMOCLAW_VLLM_PORT:-8000}` and the same model.
 
@@ -8706,6 +8730,9 @@ $$nemoclaw credentials list
 
 `inference set` also accepts installer-facing provider names such as `anthropicCompatible`, `build`, `custom`, and `llama-cpp`.
 NemoClaw normalizes an accepted alias to its canonical OpenShell provider ID and records the canonical name in the sandbox registry.
+
+If the requested provider is unsupported, NemoClaw lists selectable supported provider IDs registered on the selected gateway.
+If it cannot read the gateway list, it lists every supported provider ID instead.
 
 If OpenShell cannot find a requested provider other than `compatible-endpoint` or `compatible-anthropic-endpoint`, NemoClaw leaves the route and sandbox state unchanged.
 Run `$$nemoclaw onboard` to register the provider, then retry the switch.
@@ -9811,6 +9838,9 @@ DISCORD_BOT_TOKEN="<your-discord-bot-token>" \
   $$nemoclaw my-assistant channels add discord
 ```
 
+Replace `<your-discord-bot-token>` with the real token before you add the channel.
+NemoClaw rejects the literal placeholder and does not configure Discord.
+
 For Microsoft Teams, create the Teams app and public endpoint first:
 
 ```bash
@@ -10448,6 +10478,8 @@ export MSTEAMS_PORT=3978
 
 The placeholder values are quoted because angle brackets are shell metacharacters.
 The quotes keep the export from triggering a redirection or syntax error when you replace the placeholder with a real value.
+Replace `<your-discord-bot-token>` with the real token before onboarding.
+NemoClaw rejects the literal placeholder and does not configure Discord.
 
 This release does not support non-interactive WeChat configuration because the iLink QR handshake requires a human to scan the QR on a paired phone.
 Run `$$nemoclaw onboard` interactively when you want to enable WeChat.
@@ -11648,6 +11680,12 @@ Portable Hermes recovery follows the exact receipt-bound start, authenticated-he
 After Portable `start` completes lifecycle recovery, it checks and repairs the recorded host forwards before reporting success.
 Portable Hermes records the selected OpenShell gateway during onboarding.
 Recovery and uninstall use that recorded gateway, including a non-default gateway selected through `NEMOCLAW_GATEWAY_PORT`.
+If one required forward fails after recovery starts another, NemoClaw terminates only forwards started by that recovery attempt.
+It preserves existing forwards and exits nonzero when it cannot prove cleanup.
+
+When the saved OpenShell phase is `Stopped`, `recover` reconciles it through OpenShell even if the receipt-owned container is already running.
+It does not mutate a saved `Error` state or a `Ready` state with a non-running container.
+Preserve the startup diagnostics and resolve the reported OpenShell state before you retry.
 
 ### Recover Portable Published Ollama
 
@@ -11665,7 +11703,7 @@ Missing authority, a same-name replacement, or other drift stops recovery before
 Success requires a final route proof from inside the sandbox.
 
 Ordinary `connect` and direct `launch` do not resume the runner.
-For another configured provider, `recover` and `connect --probe-only` verify the recorded inference route and required forwards without requiring or starting an Ollama runner.
+For another configured provider, `recover` and `connect --probe-only` verify the recorded inference route and check and repair required forwards without requiring or starting an Ollama runner.
 If a check fails after recovery starts a stopped runner, NemoClaw restores the runner and registry to their prior states or reports that restoration could not be proved.
 
 <Warning title="Unproved Rollback">
@@ -11851,6 +11889,11 @@ Use the recovery guidance that matches the reported check:
 - Back up the sandbox state and recreate it with `$$nemoclaw onboard` when the record contains multiple agents. Transactional multi-agent rebuild is not supported.
 - Wait for another onboarding or rebuild operation to finish before retrying. If verified stale-lock cleanup is still in progress, wait briefly and rerun the command. Do not delete the lock manually.
 - Set the live OpenShell inference route to the sandbox's recorded provider and model when rebuild reports route drift.
+
+<AgentOnly variant="openclaw,hermes">
+  Prepared backup recovery reuses its digest-verified pre-upgrade policy handoff at the deletion boundary.
+  It does not recapture the live policy, and it stops before deletion if the handoff is missing or changed.
+</AgentOnly>
 
 A gateway that reports no live inference route does not stop the rebuild. Replacement onboarding configures and verifies the recorded route before it recreates the sandbox.
 
@@ -12867,6 +12910,9 @@ export DISCORD_BOT_TOKEN="<your-discord-bot-token>"
 export DISCORD_SERVER_ID="<your-discord-server-id>"
 export DISCORD_REQUIRE_MENTION=1
 ```
+
+Replace `<your-discord-bot-token>` with the real token before you run onboarding or add the channel.
+NemoClaw rejects the literal placeholder and does not save it or configure Discord.
 
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 If the bot logs in but delivery fails, refer to [Discord bot logs in, but the channel still does not work](../../reference/troubleshooting#discord-bot-logs-in-but-the-channel-still-does-not-work).
@@ -14225,6 +14271,12 @@ Uninstall warns that those records cannot be recovered automatically on reinstal
 
 The CLI command runs the version-pinned `uninstall.sh` that shipped with the installed CLI, so it does not fetch anything over the network at uninstall time.
 
+If gateway-registration removal fails and Docker is unavailable, restore Docker access before you retry the same uninstall command.
+On Docker Desktop for Windows, enable WSL integration for the distribution.
+Save work in all WSL sessions, run `wsl --shutdown` from PowerShell, and reopen the distribution.
+Run `docker info` to confirm access before you retry.
+The failed uninstall preserves its gateway service and state for recovery.
+
 If the CLI is missing or broken, use the hosted script:
 
 ```bash
@@ -14333,6 +14385,8 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_INSTALL_REF= NEMOCLAW_I
 
 During the automatic upgrade path, the installer prepares the current NemoClaw CLI without replacing OpenShell and requires a fresh backup of every registered sandbox.
 If any sandbox is skipped or fails, the installer exits before it changes the gateway.
+For a failed required pre-upgrade backup, NemoClaw removes the incomplete timestamped backup directory so it cannot appear as a recovery point.
+If that removal fails, the installer reports the retained path; preserve it and do not use it for recovery.
 After backup, the installer requires any existing OpenShell executable it will use to report a version, then compares that version with the supported range declared by the prepared current source.
 It retires the running gateway before replacing an out-of-range OpenShell installation, keeps the gateway when the installed version is supported, and stops without retiring it when the installed version or supported range cannot be validated.
 If OpenShell lifecycle commands cannot retire the gateway, the installer can use verified service or PID-file evidence on Linux and macOS.
@@ -14344,6 +14398,8 @@ If registration removal fails, the installer warns that onboarding will replace 
 If neither fallback can verify and stop the process, the installer stops after backup, preserves every sandbox backup, and reports the failed operation.
 After the automatic path retires an out-of-range gateway, it forces installation of the OpenShell version pinned by the prepared source before sandbox recovery.
 This mandatory installation applies to source and managed install modes and cannot remain deferred after gateway retirement.
+After the installer replaces the packaged gateway, it waits up to 30 seconds for the gateway port to bind before sandbox recovery begins.
+If the gateway does not bind, the installer stops and preserves the backups.
 If the forced installation fails, the installer does not stage a gateway service or start sandbox recovery, preserves the backups, and reports how to retry.
 
 ## Resume a Manually Prepared Upgrade
