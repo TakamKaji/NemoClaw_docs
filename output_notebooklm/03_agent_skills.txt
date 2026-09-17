@@ -43,6 +43,11 @@ response alone or weaken the reference's concurrency and recovery rules.
 
 Open code-changing or sensitive-path PRs as drafts. Record available review context without claiming
 unobserved approval. Do not select labels or request maintainer reviews in this workflow.
+When the diff adds, expands, or repairs live E2E evidence, require the implementation handoff to apply
+[Define the Live Contract](../../references/e2e-authoring.md#define-the-live-contract). When it
+prunes or relocates live assertions, require the handoff to apply
+[Move or Remove Evidence](../../references/e2e-authoring.md#move-or-remove-evidence). Route a handoff
+that omits any required field back to implementation before publication.
 Follow [GitHub access](../_shared/git-github-hard-stop.md) for access errors and
 [Writing and review](../_shared/documentation-writing-review.md) for PR text.
 
@@ -97,6 +102,7 @@ Use these references when the change needs their detail:
 
 - [Implementation discovery](../_shared/implementation-discovery.md) for locating current behavior and authoritative evidence.
 - [Code change considerations](../_shared/code-change-considerations.md) for design choices and nontrivial code changes.
+- [E2E selection and authoring](../../references/e2e-authoring.md) before adding, removing, moving, or repairing test coverage.
 - [Root-cause and state checks](../_shared/root-cause-and-state-checks.md) for defects shared by sibling paths or sensitive operations.
 - [Security rubric](../_shared/security-rubric.md) when changing a trust boundary or security control.
 - [Writing and review](../_shared/documentation-writing-review.md) when changing explanatory text.
@@ -107,6 +113,12 @@ Use these references when the change needs their detail:
 Implement the smallest complete requested outcome in its existing owner. Split a larger request
 into useful increments without treating the first increment as completion of the whole request.
 Add mechanisms only for a current requirement. Preserve meaningful regression coverage.
+
+For each added, expanded, or repaired live E2E assertion, apply
+[Define the Live Contract](../../references/e2e-authoring.md#define-the-live-contract). For each
+pruned or relocated live assertion, apply
+[Move or Remove Evidence](../../references/e2e-authoring.md#move-or-remove-evidence). Do not replace
+one live assertion with equivalent evidence in another helper, snapshot, receipt, or shell condition.
 
 Run the narrowest checks that prove the changed behavior, including relevant denial, failure,
 recovery, and cleanup cases. Fix failures caused by the change and rerun affected checks. Broaden
@@ -263,6 +275,7 @@ NemoClaw ownership from the location of the issue.
 
 - [Implementation discovery](../_shared/implementation-discovery.md) for locating current owners and behavior evidence.
 - [Code change considerations](../_shared/code-change-considerations.md) for ownership and nontrivial design choices.
+- [E2E selection and authoring](../../references/e2e-authoring.md) when acceptance needs new, changed, or removed test coverage.
 - [Root-cause and state checks](../_shared/root-cause-and-state-checks.md) for related defect paths or sensitive operations.
 - [Security rubric](../_shared/security-rubric.md) for affected trust boundaries and required security evidence.
 - [GitHub access](../_shared/git-github-hard-stop.md) for GitHub reads or authorized writes.
@@ -274,7 +287,11 @@ accepted boundary and the condition that requires re-planning.
 
 Describe observable acceptance and the shortest stable validation for each applicable behavior.
 Include denied, ambiguous, failure, recovery, or cleanup cases when the changed contract needs them.
-Use live E2E only when a real external boundary owns the behavior.
+For each test change, record the planned evidence owner and applicable deterministic validation.
+When the plan adds, expands, or repairs live E2E evidence, also apply
+[Define the Live Contract](../../references/e2e-authoring.md#define-the-live-contract). When it
+prunes or relocates live assertions, apply
+[Move or Remove Evidence](../../references/e2e-authoring.md#move-or-remove-evidence).
 
 For a larger change, propose independently useful slices with their dependencies, acceptance
 criteria, tests, and deferred scope. Keep implementation, tests, and owning guidance for each
@@ -1332,12 +1349,13 @@ Repeat these steps continuously while the loop remains authorized:
 1. Refresh `origin/main`. List automatic E2E runs for that commit SHA and later `main` commit SHAs.
 2. Inspect only new or changed runs. Load `nemoclaw-maintainer-classify-ci-failure` to read one failed job's bounded logs and optional retained artifact before identifying the earliest actionable product, test, workflow, runner, or cleanup failure.
 3. Group failures that share the same causal signature. Do not equate a job name with a root cause.
-4. Reconcile each group with open PRs before editing. If another maintainer owns it, record that PR and take the next unowned group.
-5. Prefer a peer E2E maintenance PR that needs review or a final merge decision before starting another fix.
-6. Select one unowned root cause. Claim it before the product fix with a draft PR whose initial diff contains evidence for only that root cause.
-7. Work on only that root cause. Add the diagnostic or regression evidence that should have caught an escaped defect.
-8. When the PR waits for CI or peer review, stop editing it. Review a peer PR or take the next unowned root cause. Edit only one fix at a time.
-9. Revisit waiting and blocked groups during each scan. Rescan after a run, check, review, PR, or merge state changes. Rescan for each new automatic `main` result.
+4. Apply [E2E selection and authoring](../../references/e2e-authoring.md) before repairing a test failure. Keep live evidence only for a distinct live contract.
+5. Reconcile each group with open PRs before editing. If another maintainer owns it, record that PR and take the next unowned group.
+6. Prefer a peer E2E maintenance PR that needs review or a final merge decision before starting another fix.
+7. Select one unowned root cause. Claim it before the product fix with a draft PR whose initial diff contains evidence for only that root cause.
+8. Work on only that root cause. Add the diagnostic or regression evidence that should have caught an escaped defect.
+9. When the PR waits for CI or peer review, stop editing it. Review a peer PR or take the next unowned root cause. Edit only one fix at a time.
+10. Revisit waiting and blocked groups during each scan. Rescan after a run, check, review, PR, or merge state changes. Rescan for each new automatic `main` result.
 
 If nothing is actionable, use the available wait or monitoring mechanism. Resume when a relevant result changes.
 
@@ -1382,7 +1400,10 @@ Observe automatic push runs and replacement attempts that the workflow starts. N
 
 Approving a first-time contributor's ordinary `pull_request` workflow after trust review is not a manual E2E dispatch. Environment approval for a secret-bearing or hardware E2E job is different: follow [Run Maintainer E2E](../nemoclaw-maintainer-e2e/SKILL.md) only when the maintainer explicitly requests that run.
 
-Never weaken, skip, delete, relabel, or narrow coverage to make a failure disappear. Do not freeze `main`, block unrelated merges, or ask other maintainers to wait.
+Never weaken, skip, delete, relabel, or narrow semantic coverage to make a failure disappear. A
+classified repair may move deterministic evidence or remove duplicate or incidental evidence only
+under the E2E selection and authoring contract. Do not freeze `main`, block unrelated merges, or ask other
+maintainers to wait.
 
 ## Close Obsolete Work
 
