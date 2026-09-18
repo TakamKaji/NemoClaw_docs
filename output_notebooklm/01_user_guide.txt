@@ -392,7 +392,8 @@ The safeguard bounds each compaction attempt while leaving summarization behavio
 
 ## Compaction Attempt Limit
 
-Each automatic or explicitly requested compaction attempt is limited to 120 seconds.
+Each automatic or explicitly requested compaction attempt is limited to 120 seconds by default.
+The N1x managed vLLM profile allows 300 seconds because compaction with its 32,768-token context window can take longer than 120 seconds.
 OpenClaw reports progress while the attempt runs.
 
 After a successful attempt, OpenClaw rotates the active transcript while preserving the most recent turn.
@@ -2468,7 +2469,7 @@ Use these details when your first-run path needs more control.
   </Accordion>
 
   <Accordion title="Use Portable Ollama">
-    On Linux x86_64, fresh Hermes Portable onboarding can run the selected Ollama model in a current-user rootless Podman container.
+    Hermes Portable uses a current-user rootless Podman container for the selected Ollama model.
     Before onboarding, complete the [Portable Ollama prerequisites](../inference/set-up-ollama#use-portable-ollama-with-hermes), including the required Podman version check.
     This path also requires the Portable preflight to accept the current user's Podman and NVIDIA GPU authority.
     Start fresh onboarding with an explicit Ollama model:
@@ -3045,7 +3046,7 @@ agent-variants: ["pi"]
 Run the pinned Pi coding agent inside a NemoClaw-managed OpenShell sandbox.
 
 <Warning>
-Pi remains a qualified release candidate until the final activation change adds it to the supported agent inventory and managed-image release cohort. Normal installations reject `--agent pi` before that activation. The qualification controls are not a user setup path.
+Pi remains a release candidate until the final activation change adds it to the supported agent inventory and managed-image release cohort. Normal installations reject `--agent pi` before that activation. The qualification controls are not a user setup path.
 </Warning>
 
 ## Requirements
@@ -3079,6 +3080,19 @@ nemoclaw onboard --agent pi --name my-pi
 Choose a provider and model that use the OpenAI Chat Completions API. NemoClaw keeps the upstream provider credential in OpenShell and gives Pi only the managed `https://inference.local/v1` route. The credential remains in the gateway across rebuild and sandbox destruction. When no sandbox needs that provider, remove it explicitly with `nemoclaw credentials reset <provider> --yes`.
 
 Stock onboarding selects a Pi managed-image digest. It does not build the Pi Dockerfile on the host. The reviewed Dockerfile is a trusted CI image-build source, not a user onboarding mechanism. A missing, incomplete, mutable, or inconsistent image contract fails before sandbox creation.
+
+Set optional Pi model metadata before onboarding when the selected model needs an explicit context window, output limit, or reasoning declaration. Refer to [Configure Model Limits](../inference/configure-model-limits).
+
+## Resume Interrupted Onboarding
+
+Correct the reported condition, then continue the recorded Pi onboarding session.
+
+```bash
+nemoclaw onboard --resume
+```
+
+Resume reuses the recorded agent, provider, model, and sandbox name. Pi model-tuning environment values are not stored in an incomplete onboarding checkpoint, so re-export `NEMOCLAW_CONTEXT_WINDOW`, `NEMOCLAW_MAX_TOKENS`, and `NEMOCLAW_REASONING` before resuming when the original run supplied them. Resume does not change a completed sandbox.
+Use `nemoclaw onboard --agent pi --name my-pi --fresh` to discard an incomplete Pi session and start again. Add `--recreate-sandbox` when replacing an existing completed sandbox.
 
 ## Check the Sandbox
 
@@ -3121,15 +3135,19 @@ Use JSON mode when automation needs structured event evidence.
 
 ```bash
 nemoclaw my-pi exec --workdir /sandbox --no-tty -- \
-  pi --no-approve --mode json --print --tools read \
+  pi --no-approve --no-context-files --mode json --print --tools read \
     "Use the read tool to inspect README.md and report its title"
 ```
 
-`--no-approve` ignores project-local executable resources but does not disable context files; add `--no-context-files` when required. `--tools read` limits that invocation to Pi's read tool. JSON mode writes newline-delimited session events, including structured tool execution events and the final assistant message.
+`--no-approve` ignores project-local executable resources but does not disable context files.
+`--no-context-files` excludes `AGENTS.md` and `CLAUDE.md` from the prompt; omit it only when automation must accept project instructions.
+`--tools read` limits that invocation to Pi's read tool.
+JSON mode writes newline-delimited session events, including structured tool execution events and the final assistant message.
 
 ## Continue
 
 - [Run and Manage Pi](../manage-sandboxes/run-pi) covers lifecycle, state, backup, rebuild, recovery, and troubleshooting.
+- [Configure Model Limits](../inference/configure-model-limits) covers Pi context-window, output-token, and reasoning metadata.
 - [NemoClaw for Pi CLI Commands Reference](../reference/commands) lists host and in-sandbox command forms.
 - [Pi Support and Security](../reference/pi-support) records the initial compatibility matrix, policy, credential, and qualification boundaries.
 
@@ -4436,7 +4454,7 @@ Use the error location to select the correct setting.
 | `NEMOCLAW_ONBOARD_VALIDATION_TIMEOUT_SECONDS` | Applicable OpenAI-compatible provider validation during onboarding, including DeepSeek V4 Pro streaming validation | Probe-specific; the standard WSL2 profile uses a `20`-second connection and `30`-second total floor, while extended NVIDIA validation uses `30` and `300` seconds on WSL2 or `10` and `300` seconds elsewhere |
 | `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` | Ollama, vLLM, NIM, and compatible-endpoint onboarding validation paths that read this setting | `180` seconds |
 | `NEMOCLAW_SANDBOX_READY_TIMEOUT` | Image build, gateway upload, and in-sandbox boot after creation | `180` seconds |
-| `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` | OpenShell command re-registration after policy application, plus gateway health and OpenShell readiness during managed or provider recovery | `30`, `90`, or `120` seconds, depending on the recovery phase |
+| `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` | OpenShell command re-registration after policy application, gateway startup after an intentional OpenClaw stop, and gateway health and OpenShell readiness during managed or provider recovery | `30`, `90`, or `120` seconds, depending on the recovery phase |
 
 The readiness timeout does not govern inference requests or provider validation.
 
@@ -4528,6 +4546,10 @@ Set `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` when OpenShell needs more than 120 
 <AgentOnly variant="openclaw">
 
 Managed OpenClaw gateway health uses 30 seconds by default.
+After an intentional stop, `$$nemoclaw <sandbox-name> start` uses the same default to wait for the native gateway before checking health and restoring host forwards.
+The startup budget includes probe execution and delays.
+If it expires, `start` exits nonzero without proceeding to those checks.
+Set `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` before `start` to override this budget.
 
 </AgentOnly>
 
@@ -4700,11 +4722,39 @@ description-agent: "Explains which agent runtimes accept NemoClaw model-limit ov
 keywords: ["nemoclaw context window", "nemoclaw max tokens", "model limits"]
 content:
   type: "how_to"
+agent-variants: ["openclaw", "hermes", "deepagents", "pi"]
 ---
 <AgentOnly variant="openclaw,hermes">
 
 Configure explicit model limits before onboarding so NemoClaw can bake them into the sandbox image.
 Changing an explicit build-time model limit on an existing sandbox requires fresh recreation.
+
+</AgentOnly>
+
+<AgentOnly variant="pi">
+
+## Set Pi Model Metadata
+
+Pi accepts an explicit context window, maximum output-token count, and reasoning flag.
+
+| Variable | Values | Default |
+|---|---|---|
+| `NEMOCLAW_CONTEXT_WINDOW` | Positive integer up to `4194304` tokens | Unset; Pi uses the model default |
+| `NEMOCLAW_MAX_TOKENS` | Integer from `1` to `1000000000` tokens | Unset; Pi uses the model default |
+| `NEMOCLAW_REASONING` | `true` or `false` | Unset; Pi uses the model default |
+
+Export the values before onboarding.
+
+```bash
+export NEMOCLAW_CONTEXT_WINDOW=65536
+export NEMOCLAW_MAX_TOKENS=8192
+export NEMOCLAW_REASONING=true
+nemoclaw onboard --agent pi --name <sandbox-name>
+```
+
+NemoClaw validates each supplied value and writes it to `/sandbox/.pi/agent/models.json` through the managed startup profile.
+An invalid value fails before Pi starts.
+Pi does not support `NEMOCLAW_REASONING_EFFORT`.
 
 </AgentOnly>
 
@@ -4808,10 +4858,39 @@ $$nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 
 </AgentOnly>
 
+<AgentOnly variant="pi">
+
+## Recreate a Pi Sandbox
+
+A normal Pi rebuild replays the recorded context window, maximum output-token count, and reasoning flag.
+Changing those values requires a fresh replacement.
+Create a snapshot first when declared user state must survive, then export the new values and recreate the sandbox.
+
+```bash
+nemoclaw <sandbox-name> snapshot create --name before-model-change
+nemoclaw onboard --agent pi --name <sandbox-name> --fresh --recreate-sandbox
+```
+
+Pi has no runtime `inference set` configuration path.
+Use the same fresh replacement flow to change its provider or model.
+
+</AgentOnly>
+
 ## Related Topics
+
+<AgentOnly variant="openclaw,hermes,deepagents">
 
 - [Configure Inference Timeouts](configure-inference-timeouts) for request, validation, and readiness budgets.
 - [Switch Models](switch-models) to change the selected model.
+
+</AgentOnly>
+
+<AgentOnly variant="pi">
+
+- [Run and Manage Pi](../manage-sandboxes/run-pi) for rebuild and snapshot behaviour.
+- [Pi Support and Security](../reference/pi-support) for supported inference and credential boundaries.
+
+</AgentOnly>
 
 
 ========================================
@@ -11457,7 +11536,9 @@ A registry row or a live sandbox on any other gateway leaves the journal in plac
 The rerun atomically replaces the void journal with a fresh journal against that live source, without leaving an unjournaled interval. It then reports `Replaced the void replacement journal for '<name>'; its source sandbox is registered and live.`
 A journal whose replacement never took therefore stops blocking `rebuild` for the rest of the session.
 
-The journal binds the durable source registry row, so it does not resume after a command that rewrites that row.
+The journal binds the durable source registry row and normally does not resume after a command rewrites that row.
+For an older N1x Docker managed-vLLM journal, recovery can continue only while the row contains the matching active route reservation.
+Other changes to the fingerprinted source row remain fail-closed.
 Messaging channel state is exempt: `channels add`, `channels stop`, `channels start`, and `channels remove` rewrite the recorded messaging plan, and the journal ignores that field.
 
 <Warning title="Recover an Unsafe Retained Policy Handoff">
@@ -11872,7 +11953,8 @@ agent-variants: ["pi"]
 Use NemoClaw for host-side lifecycle operations and Pi for work inside the sandbox.
 
 <Note>
-Pi remains unavailable to normal installations until final release activation. These commands describe the accepted runtime once the installed release lists `pi` as a supported agent.
+Pi remains unavailable to normal installations until final release activation.
+Candidate qualification uses these lifecycle commands; internal qualification settings are not a user setup path.
 </Note>
 
 ## Connect and Run Pi
@@ -11898,10 +11980,11 @@ nemoclaw <sandbox-name> exec --workdir /sandbox --no-tty -- \
 ```
 
 For automation, select JSON mode and an explicit tool set.
+Use `--no-context-files` when project instructions must not enter the prompt.
 
 ```bash
 nemoclaw <sandbox-name> exec --workdir /sandbox --no-tty -- \
-  pi --no-approve --mode json --print --tools read,grep,find,ls \
+  pi --no-approve --no-context-files --mode json --print --tools read,grep,find,ls \
     "Find the configuration entry that selects the default model"
 ```
 
@@ -11949,7 +12032,8 @@ nemoclaw <sandbox-name> snapshot restore <version-or-name-or-timestamp>
 
 ## Rebuild and Recover
 
-Rebuild validates the recorded workload authority, resolves the current release's Pi image, and preserves declared Pi state.
+Rebuild validates the recorded workload authority and selects the immutable Pi image authorised by the protected qualification receipt.
+It preserves declared Pi state and replays the recorded context window, maximum output-token count, and reasoning flag.
 
 ```bash
 nemoclaw <sandbox-name> rebuild --yes
@@ -11962,7 +12046,31 @@ nemoclaw <sandbox-name> recover
 nemoclaw <sandbox-name> status
 ```
 
-After a NemoClaw update, rebuild the sandbox to consume a newer reviewed Pi package and image. Each Pi update requires a new package integrity, dependency review, image digest, and qualification result.
+Pi has no long-running agent gateway or host forward. `recover` re-enters the shared sandbox readiness path; it does not restart a Pi process. Rebuild when the Pi entrypoint, managed configuration, or image is inconsistent.
+
+Pi has no runtime `inference set` path. To change the provider, model, context window, output limit, or reasoning flag, create a snapshot, set the new selection, and run a fresh replacement.
+
+```bash
+nemoclaw <sandbox-name> snapshot create --name before-model-change
+nemoclaw onboard --agent pi --name <sandbox-name> --fresh --recreate-sandbox
+```
+
+Refer to [Configure Model Limits](../inference/configure-model-limits) for the supported environment variables.
+
+## Update NemoClaw and Pi
+
+After a NemoClaw update, inspect registered sandboxes before rebuilding Pi.
+
+```bash
+nemoclaw update --yes
+nemoclaw upgrade-sandboxes --check
+nemoclaw <sandbox-name> rebuild --yes
+```
+
+A host update alone does not select a newer Pi image.
+While Pi remains a candidate, rebuild uses the protected qualification receipt rather than the installed release catalogue.
+Each Pi update requires a reviewed package version and integrity value, an immutable image digest, and a qualification result.
+Pi runtime self-update and package auto-update remain unsupported.
 
 ## Stop, Start, and Destroy
 
@@ -11989,6 +12097,10 @@ The selected build cannot prove an accepted immutable Pi image. Do not replace t
 ### Fix an Unsupported API
 
 Pi v1 accepts `openai-completions`. Select a Chat Completions-compatible provider or re-onboard with a supported provider and model.
+
+### Fix a Runtime Startup Security Refusal
+
+Pi requires exact soft and hard limits of `nproc=512` and `nofile=65536`. It refuses to start when its protected shell initialization, privilege drop, or either limit cannot be applied. Correct the reported container-runtime constraint before rebuilding from the accepted image, then check status. Do not bypass the failed control or replace the managed entrypoint.
 
 ### Diagnose an Inference Failure
 
