@@ -2985,7 +2985,8 @@ The following environment variables configure optional services and local access
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack member IDs for DM and channel `@mention` user allowlisting. |
 | `SLACK_ALLOWED_CHANNELS` | Comma-separated Slack channel IDs where channel `@mention` events are enabled (e.g. `C012AB3CD,C987ZY6XW`). Included in the generated sandbox configuration during onboarding. Combine with `SLACK_ALLOWED_USERS` to restrict both channel and member. |
 | `CHAT_UI_URL` | URL for the optional chat UI endpoint. |
-| `NEMOCLAW_DISABLE_DEVICE_AUTH` | Onboarding-time toggle that disables gateway device pairing when set to `1` before the sandbox is created. Stock managed-image onboarding carries it in the identity-bound startup profile; explicit custom Dockerfile onboarding carries it into the custom image. |
+| `NEMOCLAW_DISABLE_DEVICE_AUTH` | Legacy compatibility input retained while managed Dockerfile callers transition. OpenClaw 2026.9.1 retired the bypass, so NemoClaw accepts but does not read, validate, or emit this toggle into generated OpenClaw configuration; pairing remains required. |
+| `NEMOCLAW_DEVICE_AUTH_OPT_OUT_SOURCE` | Legacy provenance input retained for the same transition. NemoClaw validates an explicit value as `operator` or `managed-onboard`, but no longer reads it as an authorization decision or emits it into generated OpenClaw configuration. |
 </AgentOnly>
 <AgentOnly variant="hermes">
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token you provide before `$$nemoclaw onboard`. OpenShell stores it in a provider; the sandbox receives placeholders, not the raw secret. |
@@ -3002,7 +3003,7 @@ The following environment variables configure optional services and local access
 
 For normal setup and reconfiguration, prefer `$$nemoclaw onboard` over editing these files by hand.
 <AgentOnly variant="openclaw">
-Do not treat `NEMOCLAW_DISABLE_DEVICE_AUTH` as a runtime setting for an already-created sandbox.
+Do not rely on `NEMOCLAW_DISABLE_DEVICE_AUTH` to bypass pairing; it is a retired compatibility input and has no effect on generated OpenClaw configuration.
 </AgentOnly>
 
 
@@ -3416,6 +3417,19 @@ The global `$$nemoclaw doctor` command remains available without a sandbox name.
 
 The hosted installer accepts options after `bash -s --`. These options control installation and the onboarding run that follows it.
 
+### `--force-fresh-install`
+
+On Apple silicon macOS, remove every NemoClaw- and OpenShell-managed sandbox, gateway, credential, configuration file, and recovery record before reinstalling and starting fresh onboarding. This destructive reset keeps downloaded model caches, but the removed state cannot be recovered without an external backup. Unlike `--fresh`, it removes the existing managed installation instead of only requesting fresh onboarding state.
+
+Use the hosted installer so the selected candidate is staged outside the state it removes:
+
+```bash
+curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
+  bash -s -- --force-fresh-install
+```
+
+The equivalent environment variable is `NEMOCLAW_FORCE_FRESH_INSTALL=1`. The installer rejects this option outside Apple silicon macOS and stops without deleting remaining state if the authoritative whole-host uninstall cannot complete.
+
 ### `--local-model-runtime=vllm`
 
 Enable the fixed vLLM local model profile. The flag accepts only `vllm`. It makes the remaining onboarding non-interactive and disables Express profile selection.
@@ -3535,7 +3549,10 @@ Start a new shell session to refresh the cached sandbox names after creating or 
 
 ### `$$nemoclaw config export <sandbox>`
 
-Export a supported registered OpenClaw or Hermes sandbox as a credential-value-free `nemoclaw.nvidia.com/v1alpha1` `NemoClawConfig` document. The command reads the registry and current OpenShell state without changing the sandbox. It stops without writing output when required identity, policy, inference, or workload evidence is missing or inconsistent. If the source changes during observation, the command retries the complete observation once and stops without output if the retry also changes.
+Export a supported registered OpenClaw, Hermes, or LangChain Deep Agents Code sandbox as a credential-value-free `nemoclaw.nvidia.com/v1alpha1` `NemoClawConfig` document.
+The command reads the registry and current OpenShell state without changing the sandbox.
+It stops without writing output when required identity, policy, inference, or workload evidence is missing or inconsistent.
+If the source changes during observation, the command retries the complete observation once and stops without output if the retry also changes.
 
 The command reads the provider endpoint from the sandbox's OpenShell gateway and compares it with the registered endpoint.
 For NVIDIA Endpoints, it verifies the gateway's built-in NVIDIA provider profile and default endpoint.
@@ -3567,7 +3584,8 @@ With `--json` and file output, the version 1 result includes `sourceSandbox`, `o
 Export validates retained corporate certificate authority (CA) state but omits the CA bundle and digest from YAML.
 Configure destination CA trust separately during onboarding; export does not change the source sandbox's trust.
 
-The v0 command projects verified source state into the v1 YAML shape. The v1 Rust parser remains authoritative for accepting that document; the v0 command does not carry a copy of the v1 schema or semantic validator.
+The v0 command projects verified source state into the v1alpha1 YAML shape.
+The v1 Rust parser remains authoritative for accepting that document; the v0 command does not carry a copy of the v1 schema or semantic validator.
 
 If staging cleanup fails, the diagnostic identifies the temporary file and its original directory by device and inode when that evidence is available.
 The directory can have moved from the requested output location.
@@ -3575,15 +3593,18 @@ Before manual removal, use `stat` to verify both identities and confirm that the
 If either identity cannot be verified, do not remove files by name alone.
 Do not remove the requested output file to clean up a temporary link.
 
-Version 1 exports Docker-managed OpenClaw sandboxes and canonical managed Hermes sandboxes in the default workspace.
+Version 1 exports Docker-managed OpenClaw sandboxes and canonical managed Hermes or LangChain Deep Agents Code sandboxes in the default workspace.
 Supported sandboxes use hosted external inference or the native NVIDIA hosted provider with its default endpoint, an immutable managed image, a NemoClaw-owned gateway, and an explicit representable policy.
 Managed vLLM, local Ollama, and Podman exports are deferred. The command reports these sources as unsupported instead of producing a partial document.
+Deep Agents export requires hosted OpenAI Completions inference and explicitly disabled automatic approval, observability, and web search.
+It emits the immutable image as `image.ref`, the `deepagents` harness, and one `agent`.
+The command rejects other Deep Agents settings instead of omitting them.
 When a managed OpenClaw sandbox uses Brave Search, the export includes its `webSearch` integration and the `BRAVE_API_KEY` environment-variable reference, never the key.
 When retained managed proxy settings differ from the default, the export includes the validated host and port under `network.proxy`.
 For hosted OpenClaw inference, the export preserves nondefault managed context-window, maximum-token, reasoning, and reasoning-effort settings as route overrides.
 It preserves nondefault agent timeout and heartbeat settings under `execution`.
-For a Docker-managed OpenClaw sandbox with hosted inference, the export can include one or more secondary agents in runtime order.
-Each secondary agent has a unique name, shares the primary hosted route, and uses only `tools.allow: [read]`.
+For a Docker-managed OpenClaw sandbox with hosted inference, the export can include one or more read-only secondary agents in runtime order.
+Each secondary agent has a unique name, uses only `tools.allow: [read]`, and shares the primary hosted route, selected model, and retained route tuning.
 The export rejects the complete document when any secondary agent has a model that differs from the primary model, unsupported tools, execution, interfaces, observability, a primary-agent override, or a default subagent setting.
 For OpenClaw, it preserves a nondefault managed dashboard port or bind address under `interfaces.dashboard`.
 When managed OpenClaw uses direct tool disclosure, the export includes `tools.disclosure: direct`.
@@ -3777,7 +3798,10 @@ Use the result from `destroy` to choose the next action:
 
 - If OpenShell reports the sandbox present, `destroy` preserves the record and removes no resources. OpenShell exposes no atomic delete-by-identity primitive. Neither NemoClaw nor manual inspection can bind a later mutable-name delete to the durable identity fingerprint. You can inspect the owning gateway for diagnosis, but do not delete the sandbox by mutable name. Live retained-sandbox removal is not supported yet. Use a different explicit sandbox name while this record remains blocked.
 - If OpenShell cannot determine whether the sandbox is present, `destroy` reports unknown presence, removes no resources, and preserves the recovery record. Correct the OpenShell gateway or list failure, then rerun `destroy`.
-- If OpenShell confirms the sandbox is absent, `destroy` selects one retained record from its registry generation, gateway, create-attempt evidence, and available identity fingerprint. Provider and Docker cleanup then apply their own immutable identity checks. `destroy` removes only qualified residual resources and clears the matching recovery record only after verified cleanup.
+- If OpenShell confirms the sandbox is absent, `destroy` selects one retained record from its registry generation, gateway, create-attempt evidence, and available identity fingerprint.
+  Before pending identity publication, it can instead select one record with a durable identity fingerprint when the pending reservation belongs to the recorded onboarding session, the saved session recovery evidence matches the record, and the registry has no lifecycle identity evidence.
+  Provider and Docker cleanup then apply their own immutable identity checks.
+  `destroy` removes only qualified residual resources and clears the matching recovery record only after verified cleanup.
 - If the recovery record is ambiguous or immutable runtime-identity verification fails, cleanup stops and the record remains. For Docker-backed sandboxes, a foreign container, changed Docker identity, or failed Docker probe has the same fail-closed result.
 
 If OpenShell did not return a durable identity fingerprint, `destroy` cannot authorize deletion of a live sandbox. It can still select one recovery record that matches the immutable registry generation, gateway, and create-attempt evidence. It clears that record only after the owning gateway reports absence and verified residual cleanup succeeds. If the sandbox is present or presence is unknown, preserve the record and do not delete by mutable name. If NemoClaw could not save recovery evidence, preserve the registry entry and terminal output.
@@ -5741,6 +5765,8 @@ $$nemoclaw my-assistant mcp list [--json]
 
 Add an MCP Streamable HTTP server to a sandbox. Pass `--url` for the MCP endpoint and the required single `--env KEY` bearer credential for the sandbox-side MCP client. Pass repeatable `--deny-tool <name-or-glob>` options to block matching `tools/call` requests at the OpenShell proxy. The generated deny rules match tool names only and do not inspect arguments. Pass a repeatable `--trusted-private-host <exact-host-or-ip>` option to admit an exact RFC1918, CGNAT, or IPv6 unique local destination for the current command. The declaration must equal the normalized host from `--url`. For managed MCP, use a DNS hostname for an IPv6 unique local address because NemoClaw has not qualified direct IPv6-literal MCP URLs. You can supply exact hosts through `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` instead, and NemoClaw combines the variable with command options. NemoClaw records the resulting exact trust intent and address pins, so restart, rebuild, and restore do not depend on the ambient environment. NemoClaw registers that credential in an OpenShell provider, installs a generated OpenShell `protocol: mcp` policy for the target endpoint, attaches the provider to the running sandbox, and writes only an OpenShell resolver placeholder for the recorded key into the agent configuration. Inline `--env KEY=VALUE` is rejected because it would expose the value in NemoClaw process arguments. Load the variable from a secret manager or masked prompt, export it without recording the value in shell history, and pass only `--env KEY`. All endpoints must use HTTPS. The full URL and path are persisted and displayed, so URLs cannot contain userinfo, query strings, fragments, known secret-shaped path material, percent-escaped or glob-style paths, or port zero. Server names must start with a letter and contain at most 64 letters, digits, hyphens, or underscores, and endpoint hostnames must use canonical lowercase DNS labels. NemoClaw rejects invalid names and endpoints before it writes lifecycle state or changes OpenShell resources. NemoClaw generates a narrow `protocol: mcp` policy for the destination, literal path, adapter binaries, pinned addresses, explicit MCP methods, and a 131,072-byte request-body limit. OpenShell `0.0.116` evaluates that policy before replacing the attached provider placeholder in the allowed request header. NemoClaw imports the endpointless `nemoclaw-mcp-v1` profile and binds the dedicated provider to that endpoint with `credential_binding.provider`. OpenShell withholds the credential before the binding is active and outside the bound host, port, and path. The sandbox client connects directly through OpenShell's existing egress path, and NemoClaw does not run a host-side MCP data-plane bridge, proxy, relay, or listener. After the add commits, NemoClaw freshly verifies the exact generated policy, expected provider attachment, recorded provider ID, `nemoclaw-mcp-v1` type, valid resource version, and exactly one credential key matching the recorded key. If those readiness checks pass, it sends a differential pair of wire-level MCP `initialize` requests from inside the sandbox — one with the placeholder header and one with an unresolvable control bearer — to verify that OpenShell resolves the credential on egress; otherwise it reports an inconclusive `probe skipped` result and sends no request. Neither outcome fails the committed add, and `--no-probe` skips this check. For full setup details, see [Add an MCP Server](../manage-sandboxes/mcp-servers/add-an-mcp-server).
 
+Credential-bound managed definitions may share a normalized endpoint only when they intentionally share one credential binding. NemoClaw rejects the same endpoint with different credential bindings; use a distinct endpoint URL when different credentials are required.
+
 The generated policy is also binary-scoped: the selected agent's adapter binaries are allowed, while an interactive `/usr/bin/curl` request to the same endpoint is denied.
 Use `mcp status <server>` to inspect policy readiness and run the supported bounded in-sandbox reachability check.
 The command verifies credential resolution only when it reports a verified verdict; other probe outcomes are inconclusive.
@@ -5870,7 +5896,11 @@ Remove an MCP server from a sandbox.
 
 NemoClaw first removes the named agent-native entry so the agent can no longer use it, then removes the deterministic policy key and detaches the exact live provider when the policy binding, provider identity, type, and credential key agree. The workspace provider and its stored credential are deliberately preserved because current OpenShell provider deletion is name-based. The command reports the retained provider name so an operator can inspect or remove it separately after confirming it is unused.
 
-The command fails closed when it cannot safely identify the source entry. `--force` permits removal of a modified same-name agent entry, but it does not widen policy or provider authority and never deletes a provider. Legacy Mcporter or `.nemoclaw-mcp.json` entries must be converted with `mcp migrate --apply` before ordinary removal.
+The command fails closed when it cannot safely identify the source entry. `--force` permits removal of a modified same-name agent entry, but it does not widen policy or provider authority and never deletes a provider. A named legacy Mcporter or `.nemoclaw-mcp.json` entry can be removed directly only when its committed NemoClaw registry row proves ownership. An unproven legacy entry is preserved; use `mcp migrate --apply` when you intend to convert it to native state.
+
+Legacy removal also requires every other committed legacy row to have an observed legacy entry with the same server name.
+If a registry-only row remains, NemoClaw preserves all sources and refuses removal.
+Run `$$nemoclaw my-assistant mcp migrate --apply` when you intend to convert those registrations to native configuration, or explicitly resolve the registry-only rows first.
 
 ```bash
 $$nemoclaw my-assistant mcp remove github [--force]
@@ -6696,7 +6726,7 @@ $$nemoclaw my-assistant inference get
 
 <AgentOnly variant="openclaw">
 
-Switch the active inference provider or model for a NemoClaw-managed OpenClaw sandbox. The command updates the OpenShell gateway route, patches the selected running agent config so it matches the route, recomputes the config hash, and updates the NemoClaw registry. It is also available in sandbox-first form as `$$nemoclaw <name> inference set --provider <provider> --model <model>`. For OpenClaw, the patch updates the OpenClaw config provider namespace and selected model. Same-API-family changes hot-reload without replacing the gateway process. When the API family changes, NemoClaw commits the config and integrity hash, then uses the managed supervisor to restart only the OpenClaw gateway and verify its health and forwards. The sandbox remains running, but agent requests are briefly interrupted. If the restart fails, the route and config remain committed; run `$$nemoclaw <name> gateway restart` to finish applying the switch. After every changed synchronized route, NemoClaw also verifies that the local CLI device has the managed gateway's required pairing scopes before it reports success. If pairing does not converge, the route and config remain committed. Run `$$nemoclaw <name> doctor --fix`, then retry the agent turn.
+Switch the active inference provider or model for a NemoClaw-managed OpenClaw sandbox. The command updates the OpenShell gateway route, patches the selected running agent config so it matches the route, recomputes the config hash, and updates the NemoClaw registry. It is also available in sandbox-first form as `$$nemoclaw <name> inference set --provider <provider> --model <model>`. For OpenClaw, the patch updates the OpenClaw config provider namespace and selected model. After any changed config sync, NemoClaw uses the managed supervisor to restart only the OpenClaw gateway and verify its health and forwards. The sandbox remains running, but agent requests are briefly interrupted. If the restart fails, the route and config remain committed; run `$$nemoclaw <name> gateway restart` to finish applying the switch. After every changed synchronized route, NemoClaw also verifies that the local CLI device has the managed gateway's required pairing scopes before it reports success. If pairing does not converge, the route and config remain committed. Run `$$nemoclaw <name> doctor --fix`, then retry the agent turn.
 
 </AgentOnly>
 <AgentOnly variant="hermes">
@@ -7228,7 +7258,7 @@ The experimental voice gateway has no Hermes or Deep Agents Code equivalent.
 
 ## Environment Variables
 
-NemoClaw reads the following environment variables to configure service ports, onboarding behavior, and lifecycle defaults. Set them before running `$$nemoclaw onboard` or any command that starts services. All ports must be non-privileged integers between 1024 and 65535, unless a variable's own description gives a narrower range.
+NemoClaw reads the following environment variables to configure service ports, onboarding behavior, and lifecycle defaults. Set them before running `$$nemoclaw onboard` or any command that starts services. For `NEMOCLAW_GATEWAY_PORT`, `NEMOCLAW_DASHBOARD_PORT`, `NEMOCLAW_HERMES_API_PORT`, `NEMOCLAW_HERMES_DASHBOARD_PORT`, `NEMOCLAW_HERMES_DASHBOARD_INTERNAL_PORT`, `NEMOCLAW_VLLM_PORT`, `NEMOCLAW_OLLAMA_PORT`, `NEMOCLAW_OLLAMA_PROXY_PORT`, and the three runtime-adapter port overrides, the value after whitespace trimming must use canonical decimal notation with no leading zero. Service ports must be from 1024 through 65535; `NEMOCLAW_HERMES_API_PORT` must be from 8642 through 8652.
 
 ### CLI Logging
 
@@ -7298,12 +7328,15 @@ For OpenClaw, `NEMOCLAW_DASHBOARD_PORT` controls the OpenClaw dashboard forward.
 </AgentOnly>
 <AgentOnly variant="hermes">
 
-For Hermes, `NEMOCLAW_DASHBOARD_PORT` controls the built-in dashboard forward, which defaults to `18789`. The OpenAI-compatible API is separate and serves `/v1` on a per-sandbox port that defaults to `8642`. If `8642` is already held by another sandbox or by a non-OpenShell host listener, onboarding scans `8642` through `8652` and uses the next free API port. Set `NEMOCLAW_HERMES_API_PORT=<N>` before you onboard a new sandbox to pin a port from `8642` through `8652`. If another sandbox or host listener holds the pinned port, onboarding exits instead of selecting a different port. The sandbox relay binds the port when the sandbox starts, so set this variable for an existing sandbox only together with `--recreate-sandbox`. For an existing sandbox, a different value without `--recreate-sandbox` exits before the host forward changes. Set `NEMOCLAW_HERMES_DASHBOARD_TUI=1` only when you want Hermes' optional in-browser TUI tab.
+For Hermes, `NEMOCLAW_DASHBOARD_PORT` controls the built-in dashboard forward, which defaults to `18789`. The OpenAI-compatible API is separate and serves `/v1` on a per-sandbox port that defaults to `8642`. If `8642` is already held by another sandbox or by a non-OpenShell host listener, onboarding scans `8642` through `8652` and uses the next free API port. Set `NEMOCLAW_HERMES_API_PORT=<N>` before you onboard a new sandbox to pin a port from `8642` through `8652`. If another sandbox or host listener holds the pinned port, onboarding exits instead of selecting a different port. The sandbox relay binds the port when the sandbox starts, so set this variable for an existing sandbox only together with `--recreate-sandbox`. For an existing sandbox, a different value without `--recreate-sandbox` exits before the host forward changes. Set `NEMOCLAW_HERMES_DASHBOARD=1` to enable the optional Hermes dashboard. The dashboard port overrides apply only when this variable is enabled. Set `NEMOCLAW_HERMES_DASHBOARD_TUI=1` only when you want the optional in-browser TUI tab.
 
 | Variable                        | Default | Service                                   |
 | ------------------------------- | ------- | ----------------------------------------- |
 | `NEMOCLAW_DASHBOARD_PORT`       | 18789   | Hermes built-in dashboard forward port    |
 | `NEMOCLAW_HERMES_API_PORT`      | 8642    | Hermes OpenAI-compatible API forward port |
+| `NEMOCLAW_HERMES_DASHBOARD`     | 0       | Enable the optional Hermes dashboard      |
+| `NEMOCLAW_HERMES_DASHBOARD_PORT` | 18789   | Hermes dashboard forward port; when set, it must match `NEMOCLAW_DASHBOARD_PORT` |
+| `NEMOCLAW_HERMES_DASHBOARD_INTERNAL_PORT` | 19119 | Hermes dashboard backend port        |
 | `NEMOCLAW_HERMES_DASHBOARD_TUI` | 0       | Optional Hermes in-browser TUI tab        |
 
 </AgentOnly>
@@ -8666,7 +8699,7 @@ The following endpoint groups are allowed by default:
 | --- | --- | --- | --- |
 | `nvidia` | `integrate.api.nvidia.com:443` | `/usr/local/bin/openclaw` | POST to inference and embedding paths, GET to model listings |
 | `clawhub` | `clawhub.ai:443` | `/usr/local/bin/openclaw`, `/usr/local/bin/node` | GET, POST, including scoped package paths |
-| `openclaw_api` | `openclaw.ai:443` | `/usr/local/bin/openclaw`, `/usr/local/bin/node` | GET, POST |
+| `openclaw_api` | `openclaw.ai:443`, `catalog.openclaw.ai:443` | `/usr/local/bin/openclaw`, `/usr/local/bin/node` | GET and POST to `openclaw.ai`; GET only to `catalog.openclaw.ai` |
 | `openclaw_docs` | `docs.openclaw.ai:443` | `/usr/local/bin/openclaw` | GET only |
 | `npm_registry` | `registry.npmjs.org:443` | `/usr/local/bin/openclaw` only (openclaw plugins install) | GET only; while the broader `npm` preset is active, its reviewed L4 transport metadata temporarily applies to this overlapping route |
 
@@ -9864,7 +9897,7 @@ NemoClaw disables the native agent entry first and cleans only live resources wh
 ## Agent MCP Capability Is Missing
 
 If add or restart reports that the OpenClaw native writer, Hermes transaction helper, or Deep Agents native MCP capability v3 is unavailable, rebuild the sandbox onto a current image before retrying.
-When an older OpenClaw or Deep Agents sandbox has a legacy MCP file, preview `mcp migrate`, then use `mcp migrate --apply` to convert it. A native definition that conflicts with the legacy definition stops migration before mutation.
+When an older OpenClaw or Deep Agents sandbox has a legacy MCP file, preview `mcp migrate`, then use `mcp migrate --apply` when you intend to convert it. To delete one named legacy entry instead, run `mcp remove <server>`; NemoClaw removes it only when a matching committed registry row proves ownership and otherwise preserves it. A native definition that conflicts with the legacy definition stops migration before mutation.
 
 <AgentOnly variant="deepagents">
 Migration carries the legacy `.deepagents/.nemoclaw-mcp.json` entries through a normal rebuild into the native `/sandbox/.deepagents/.mcp.json` file.
@@ -11021,7 +11054,7 @@ The in-sandbox OpenClaw gateway can drop its HTTP listener while its process sta
 
 NemoClaw prevents restart-class configuration changes from causing this condition and recovers a gateway that stops serving:
 
-- The generated sandbox config pins `gateway.reload.mode` to `hot`, so configuration changes never make the gateway restart itself out from under the sandbox supervisor.
+- The generated sandbox config pins `gateway.reload.mode` to `off`, so configuration changes never make the gateway restart itself out from under the sandbox supervisor.
 - A serving watchdog inside the sandbox stops a gateway process that does not serve, and the supervisor relaunches it.
 
 The watchdog treats the gateway as serving only while the local health endpoint answers `200` or `401`, the same response requirement the sandbox applies when it waits for the gateway at startup. These probe outcomes count as not serving:
@@ -11064,7 +11097,7 @@ When the gateway is not serving, `openclaw health` can report `gateway_transport
 
 The watchdog converts a gateway that cannot serve into a process exit that the sandbox supervisor already knows how to relaunch. It does not correct the OpenClaw lifecycle condition that left the process running. It stays necessary until an OpenClaw gateway that cannot serve exits on its own.
 
-Because of the `hot` pin, restart-class configuration changes made inside the sandbox log `config reload requires gateway restart; hot mode ignoring` and do not take effect until the gateway restarts. For example, `openclaw plugins install` logs that message until the gateway restarts. Apply them with a supervised restart:
+Because `gateway.reload.mode` is pinned to `off`, configuration changes made inside the sandbox do not hot-reload. For example, `openclaw plugins install` can update the configuration while the running gateway continues using its previous configuration. Apply changes with a supervised restart:
 
 ```bash
 $$nemoclaw <name> gateway restart
@@ -12371,11 +12404,11 @@ Hermes and OpenAI-compatible-only agents use the endpoint's `/v1/chat/completion
 
 Fix the streaming layer on the endpoint or gateway, or onboard with a different Anthropic-compatible endpoint. The official Anthropic provider does not run this check and is not affected. If an OpenClaw sandbox created by an older release fails at runtime with an empty final response on an Anthropic-compatible endpoint, re-run `$$nemoclaw onboard` so the streaming check can diagnose the endpoint. If the endpoint serves a reasoning-only model, set `NEMOCLAW_REASONING=true` to skip the streaming sequence and forced tool-call checks. Streaming or native tool-call defects then surface at runtime instead of during onboarding.
 
-### `NEMOCLAW_DISABLE_DEVICE_AUTH=1` does not change an existing sandbox
+### `NEMOCLAW_DISABLE_DEVICE_AUTH=1` does not disable pairing
 
-This is expected behavior. `NEMOCLAW_DISABLE_DEVICE_AUTH` is a build-time setting used when NemoClaw creates the sandbox image. Changing or exporting it later does not rewrite the baked `openclaw.json` inside an existing sandbox.
+This is expected behavior. OpenClaw 2026.9.1 retired the device-auth bypass. NemoClaw accepts `NEMOCLAW_DISABLE_DEVICE_AUTH` and its provenance input only while managed Dockerfile callers transition, but it does not emit an OpenClaw device-auth bypass key. Changing the input before or after a build does not skip device pairing.
 
-If you need a different device-auth setting, rerun onboarding so NemoClaw rebuilds the sandbox image with the desired configuration. For the security trade-offs, refer to [Security Best Practices](../security/best-practices).
+Complete the normal pairing flow for each browser or CLI device. For the security model, refer to [Gateway Authentication Controls](../security/gateway-authentication-controls).
 
 ### `openclaw.json` is empty after changing inference
 
@@ -14097,7 +14130,7 @@ The following patterns weaken security without providing meaningful benefit.
 | Adding an entrypoint capability layer | OpenShell owns child capability enforcement for managed sandboxes. A second entrypoint policy can drift from exec and connect behavior. | Keep OpenShell enforcement enabled. For direct container launches, make the container runtime the owner and pass `--cap-drop=ALL`. |
 | Treating mutable agent config as an isolation boundary | The generated config tree contains model routing, channel settings, and runtime integration state (`/sandbox/.openclaw` for OpenClaw, `/sandbox/.hermes` for Hermes, `/sandbox/.deepagents` for Deep Agents). NemoClaw supports this state as mutable, so the agent can change it independently of host-managed policy and credential routing. | Treat OpenShell policy and credential providers as the enforcement boundary. Monitor agent-config drift and recreate the sandbox from trusted inputs after suspected compromise. |
 | Adding inference provider hosts to the network policy for NemoClaw inference | Direct network access to an inference host bypasses credential isolation and usage tracking. | Use OpenShell inference routing instead of adding hosts like `api.openai.com` or `api.anthropic.com` to the network policy. Apply `claude-code` only when intentionally running the separate Claude Code CLI inside the sandbox. |
-| Disabling device auth for remote deployments | Without device auth, any device on the network can connect to the gateway without pairing. Combined with a cloudflared tunnel, this makes the dashboard publicly accessible and unauthenticated. | Keep `NEMOCLAW_DISABLE_DEVICE_AUTH` at its default (`0`). Only set it to `1` for local headless or development environments. |
+| Assuming the retired device-auth bypass disables pairing | OpenClaw 2026.9.1 ignores the legacy `NEMOCLAW_DISABLE_DEVICE_AUTH` compatibility input, so relying on it can leave an operator unable to connect and mistaken about the active authentication controls. | Complete the normal device-pairing flow for every browser or CLI device. Use loopback access or SSH port forwarding for remote dashboards. |
 
 ## Known Limitations
 
@@ -15125,10 +15158,12 @@ Device authentication requires each connecting device to go through a pairing fl
 
 | Aspect | Detail |
 |---|---|
-| Default | The base Dockerfile enables device authentication for loopback dashboards. Standard onboarding currently applies a managed compatibility opt-out for immediate dashboard access. NemoClaw also disables device authentication for non-loopback `CHAT_UI_URL` values. |
-| What you can change | Outside managed onboarding, set `NEMOCLAW_DISABLE_DEVICE_AUTH=1` only as a deliberate build-time opt-out. The setting and its managed-vs-operator provenance are baked into `openclaw.json` audit metadata and the config is verified by hash at startup. |
-| Risk if relaxed | Disabling device auth allows any device on the network to connect to the gateway without proving identity. This is dangerous when combined with LAN-bind changes or cloudflared tunnels in remote deployments, resulting in an unauthenticated, publicly reachable dashboard. |
-| Recommendation | Prefer loopback access or SSH port forwarding so device authentication stays enabled. If a browser-only remote dashboard requires the compatibility setting, use HTTPS and restrict who can reach the dashboard. |
+| Default | OpenClaw requires the normal device-pairing flow for local and remote dashboards. |
+| What you can change | OpenClaw 2026.9.1 retired the device-auth bypass. `NEMOCLAW_DISABLE_DEVICE_AUTH` and its provenance input remain accepted only while managed Dockerfile callers transition; they no longer emit an OpenClaw config key. |
+| Risk if relaxed | Bypassing device identity would allow a client to connect without proving its paired identity. NemoClaw does not emit the retired bypass. |
+| Recommendation | Prefer loopback access or SSH port forwarding and complete the normal pairing flow for every browser or CLI device. |
+
+OpenClaw's native managed lifecycle runs the gateway and agent commands as the sandbox identity. Its authentication database and SQLite sidecars use owner-only modes, which protect them from other OS identities but do not create a privilege boundary between processes running as that same sandbox identity. The OpenShell sandbox remains the isolation boundary from the host. NemoClaw's restored-clone approval path passes only the matching local device's pending request, paired record, and credential to its bounded approval child; unrelated device credentials are not included.
 
 ## Gateway Bind Address
 
@@ -15141,20 +15176,11 @@ NemoClaw binds the OpenShell gateway to loopback by default.
 | Risk if relaxed | Other hosts on the network may be able to reach the OpenShell gateway. NemoClaw rejects wildcard Docker-driver gateway binds while gateway JWT auth is active. |
 | Recommendation | Keep the gateway loopback default and expose only the dashboard forward when remote access is needed. |
 
-## Insecure Auth Derivation
+## Dashboard Transport
 
-The `allowInsecureAuth` setting controls whether the gateway permits non-HTTPS authentication.
+OpenClaw 2026.9.1 retired `gateway.controlUi.allowInsecureAuth`, so NemoClaw no longer emits or suppresses findings for that flag. Keep non-loopback dashboards behind HTTPS; the default loopback URL remains `http://127.0.0.1:18789`.
 
-| Aspect | Detail |
-|---|---|
-| Default | Derived from the `CHAT_UI_URL` scheme at build time. When the URL uses `http://` (local development), insecure auth is allowed. When it uses `https://` (remote or production), insecure auth is blocked. |
-| What you can change | This is derived automatically from `CHAT_UI_URL`. Set `CHAT_UI_URL` to an `https://` URL to enforce secure auth. |
-| Risk if relaxed | Allowing insecure auth over HTTPS defeats the purpose of TLS, because authentication tokens transit in cleartext. |
-| Recommendation | Use `https://` for any deployment accessible beyond `localhost`. The default local URL (`http://127.0.0.1:18789`) correctly allows insecure auth for local development. |
-
-OpenClaw's security audit keeps NemoClaw-managed loopback `allowInsecureAuth` findings and provenance-known loopback device-auth opt-out findings visible as accepted findings instead of counting them as unexplained active findings.
-
-Device-auth findings record whether the opt-out came from NemoClaw's managed onboarding compatibility behavior or an operator-provided `NEMOCLAW_DISABLE_DEVICE_AUTH=1`; an opt-out with missing provenance remains active.
+NemoClaw no longer emits audit suppressions for the retired authentication flags.
 
 For audit reporting, NemoClaw treats an onboard-time `NEMOCLAW_DASHBOARD_BIND=0.0.0.0` setting or WSL's default all-interface dashboard forward as remote dashboard exposure.
 Outside WSL, a non-loopback `CHAT_UI_URL` changes the browser URL and its security settings but does not widen the host forward.
@@ -15162,22 +15188,17 @@ For an explicit `NEMOCLAW_DASHBOARD_BIND=0.0.0.0` bind, use the same setting on 
 
 If the sandbox was created without that explicit setting, NemoClaw refuses the remote forward until you recreate it with `NEMOCLAW_DASHBOARD_BIND=0.0.0.0 $$nemoclaw onboard --recreate-sandbox`; this keeps the generated audit state aligned with the host exposure state.
 
-On WSL, the ready summary still uses a loopback URL, but the generated audit configuration leaves the device-auth and insecure-auth findings active.
-For an explicit remote bind with a loopback `CHAT_UI_URL`, NemoClaw disables device auth and enables OpenClaw's Host-header origin fallback because the browser's remote origin is not known at image-build time.
+On WSL, the ready summary still uses a loopback URL.
+For an explicit remote bind with a loopback `CHAT_UI_URL`, NemoClaw enables OpenClaw's Host-header origin fallback because the browser's remote origin is not known at image-build time.
 
-Both settings expand access and must remain explicit; use HTTPS or an SSH local forward when possible.
+That setting expands access and must remain explicit; use HTTPS or an SSH local forward when possible.
 
-In that state, NemoClaw does not add the loopback-only audit suppressions, so the resulting device-auth, insecure-auth, and Host-header fallback findings remain active.
-The generated configuration uses audit check IDs and flag details, records why each setting is present, and leaves the original severity and remediation under `suppressedFindings` in JSON output.
+In that state, NemoClaw does not add audit suppressions, so the Host-header fallback finding remains active.
 
-The audit also reports that suppressions are active so you can review the accepted risk.
-These suppressions change audit reporting only.
-They do not make either flag safe, weaken enforcement, or suppress unrelated findings.
-
-Review the accepted findings and their recorded reasons:
+Review the active findings, including the Host-header fallback finding described above:
 
 ```bash
-openclaw security audit --json | jq '.suppressedFindings'
+openclaw security audit --json | jq '.findings'
 ```
 
 Remove the underlying risky condition when dashboard compatibility no longer requires it.
@@ -15370,7 +15391,7 @@ The following checks run as part of the audit:
 - Weak-model susceptibility assessment.
 - Multi-user exposure matrix.
 - Node command policy validation.
-- Dangerous config flag scanning (`allowInsecureAuth`, `dangerouslyDisableDeviceAuth`, and similar flags).
+- Dangerous config flag scanning (including Host-header origin fallback and similar flags).
 
 ## Skill and Extension Supply Chain Scanning
 

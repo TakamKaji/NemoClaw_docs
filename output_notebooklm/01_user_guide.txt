@@ -1837,6 +1837,8 @@ OpenShell withholds the credential before the binding is active and outside the 
 
 Credential keys must still be unique across providers attached to the same sandbox.
 NemoClaw rejects managed MCP credential-key reuse and requires a unique least-privilege token and environment key for each server.
+It also rejects credential-bound definitions for the same normalized endpoint URL when their credential bindings differ, because OpenShell cannot choose between credentials for otherwise indistinguishable requests.
+Entries that intentionally share one credential binding are not ambiguous; otherwise, keep one managed definition for that URL or use distinct endpoint URLs.
 
 A managed MCP provider created by an earlier NemoClaw build can have the profile-less `generic` type and cannot satisfy this binding contract.
 NemoClaw refuses to restart or rebuild that registration.
@@ -1857,7 +1859,9 @@ This does not expose the raw credential to the sandbox before the request is aut
 ## Agent Adapters
 
 <AgentOnly variant="openclaw">
-OpenClaw writes the native `openclaw.json` `mcp.servers` map in the sandbox. Older managed Mcporter entries are accepted only by the explicit `mcp migrate` path.
+OpenClaw writes the native `openclaw.json` `mcp.servers` map in the sandbox.
+Use `mcp migrate --apply` to convert older managed Mcporter entries to native configuration.
+To discard an entry instead, follow [Remove a Server](manage-mcp-servers#remove-a-server); removal requires proven registry ownership.
 </AgentOnly>
 <AgentOnly variant="hermes">
 Hermes writes managed HTTP entries under `/sandbox/.hermes/config.yaml`.
@@ -1892,7 +1896,8 @@ The command carries no MCP traffic or raw service credential, and its payload co
 </AgentOnly>
 <AgentOnly variant="openclaw">
 
-OpenClaw stores MCP servers in the native `openclaw.json` `mcp.servers` map. Run `nemoclaw <name> mcp migrate` before the first mutation when an older sandbox still contains a managed Mcporter entry. The migration preview calls out that materializing the native entry activates behavior OpenClaw previously did not load.
+Before converting an older managed Mcporter entry, run `nemoclaw <name> mcp migrate` to preview the change.
+The preview explains that creating the native entry activates behavior OpenClaw previously did not load.
 
 </AgentOnly>
 <AgentOnly variant="deepagents">
@@ -3432,9 +3437,7 @@ Use these details when your first-run path needs more control.
     NemoClaw registers inference, prompts for optional web search and messaging channels, prepares the managed startup profile, starts the sandbox from the managed image, sets up OpenClaw, and applies the selected network policy tier and presets.
 
     <Note>
-    Onboarding includes a managed `NEMOCLAW_DISABLE_DEVICE_AUTH=1` compatibility setting in the startup profile so the dashboard is usable during setup.
-    NemoClaw records that this value came from onboarding rather than reporting it as an operator-selected opt-out.
-    This setting is fixed when the sandbox is created; setting it in the host environment afterward does not affect that sandbox.
+    OpenClaw requires device pairing during onboarding. The managed startup profile still carries `NEMOCLAW_DISABLE_DEVICE_AUTH` and its provenance only as legacy compatibility inputs while managed callers transition. OpenClaw 2026.9.1 retired the bypass, so NemoClaw does not emit a device-auth bypass key and changing this input does not skip pairing.
     </Note>
 
     If registered sandboxes already exist, the installer prepares the current NemoClaw CLI without replacing OpenShell and requires a fresh backup of every registered sandbox before it changes the gateway.
@@ -7025,22 +7028,17 @@ docker exec --user root "$SANDBOX_CTR" chmod 660 /sandbox/.openclaw/openclaw.jso
 docker exec --user root "$SANDBOX_CTR" chmod 660 /sandbox/.openclaw/.config-hash
 ```
 
-After uploading the config, check `/tmp/gateway.log`.
-Confirm that the gateway hot-reloaded the provider or `agents.list` change:
+After uploading the config, restart the managed gateway.
+The restart verifies gateway health before it exits successfully.
+Then confirm that OpenClaw loaded the `agents.list` change:
 
 ```bash
-nemoclaw "$SANDBOX" logs --since 5m --tail 200
+nemoclaw "$SANDBOX" gateway restart
 nemoclaw "$SANDBOX" agents list --json
 ```
 
-Expected output:
-
-```text
-config change detected; evaluating reload (...)
-config hot reload applied (...)
-```
-
 The `agents list` output should include `vision-operator`.
+If the restart fails, correct the reported gateway error and rerun `nemoclaw "$SANDBOX" gateway restart` before you use the sub-agent.
 
 ## Add Sub-Agent Credentials
 
@@ -8449,9 +8447,11 @@ $$nemoclaw inference set --provider <provider> --model <model> --sandbox <name>
 <AgentOnly variant="openclaw">
 
 For OpenClaw, NemoClaw updates the provider namespace and selected model in the running configuration.
-Changes within the current API family hot-reload without replacing the gateway process.
-When the API family changes, NemoClaw commits the route and configuration, then restarts only the OpenClaw gateway and verifies its health.
+After any changed configuration sync, NemoClaw restarts only the OpenClaw gateway and verifies its health.
+The sandbox remains running, but agent requests are briefly interrupted.
 After every changed synchronized route, NemoClaw verifies that the local CLI device has the managed gateway's required pairing scopes before it reports success.
+If the restart fails, the route and configuration remain committed.
+Run `$$nemoclaw <name> gateway restart` to apply the committed configuration.
 If pairing does not converge, the route and configuration remain committed.
 Run `$$nemoclaw <name> doctor --fix`, then retry the agent turn.
 
@@ -9637,7 +9637,10 @@ A legacy image stops with migration guidance before it changes a live provider, 
 Hermes stores MCP servers in its native `config.yaml`. Registration and inspection preserve the stable credential handle from the readiness check in the OpenShell resolver placeholder without comparing it with host-side desired state.
 </AgentOnly>
 <AgentOnly variant="openclaw">
-OpenClaw stores MCP servers in `openclaw.json` under `mcp.servers`. Existing Mcporter entries require the explicit migration described in [Manage MCP Servers](manage-mcp-servers#migrate-an-existing-registration).
+OpenClaw stores MCP servers in `openclaw.json` under `mcp.servers`.
+To continue using or updating an existing Mcporter entry, follow [Migrate an Existing Registration](manage-mcp-servers#migrate-an-existing-registration).
+To remove an entry instead, `$$nemoclaw my-sandbox mcp remove <server>` supports direct removal when its committed registry row proves ownership and the removal preconditions are met.
+Refer to [Remove a Server](manage-mcp-servers#remove-a-server).
 </AgentOnly>
 
 An interrupted add is retried from the current agent and OpenShell sources. A deterministic provider name lets the retry recognize a partially created provider without a host-side transaction marker. The retry resumes only when the native entry, generated policy, provider identity and credential key, and sandbox attachment form an exact prefix of the requested add; conflicting or ambiguous resources remain unchanged and stop the command.
@@ -9781,6 +9784,8 @@ Use a dedicated service name such as `MY_SERVICE_MCP_TOKEN`.
 NemoClaw requires exactly one `--env` bearer credential per server.
 Use a distinct environment variable for each managed server in the same sandbox because credential keys must be unique across attached providers.
 NemoClaw binds each dedicated provider to its generated MCP endpoint, so OpenShell resolves the placeholder only for that endpoint's host, port, and path.
+One normalized endpoint URL can have only one credential-bound managed server definition in a sandbox.
+If two definitions need different credentials, retain one definition for that URL or configure distinct endpoint URLs so OpenShell can select one credential unambiguously.
 
 If this server uses the profile-less `generic` provider from an earlier NemoClaw build, remove it and add it again with the credential exported.
 That provider cannot be bound to an endpoint, so restart and rebuild fail closed until you recreate the registration.
@@ -10634,7 +10639,7 @@ An existing valid provider can remain ready when a host variable is unset becaus
 
 ## Migrate an Existing Registration
 
-Preview legacy Mcporter or Deep Agents projection entries before the first mutation with the cutover release:
+To keep using legacy Mcporter or Deep Agents projection entries, preview their conversion to native configuration:
 
 ```bash
 $$nemoclaw my-sandbox mcp migrate
@@ -10789,6 +10794,20 @@ unset LOCAL_MCP_TOKEN
 Removing the server deletes the agent-native entry, removes its generated key from the current OpenShell policy, and detaches the provider. The provider itself is preserved for explicit cleanup. The re-add performs a new DNS preflight and records the reviewed exact address set.
 
 ## Remove a Server
+
+For a legacy registration, removal requires a committed registry row that proves ownership of the named entry.
+Removal also requires every other committed legacy row to have an observed legacy entry with the same server name.
+If a registry-only row remains, NemoClaw preserves all sources and refuses removal.
+Run `$$nemoclaw my-sandbox mcp migrate --apply` when you intend to convert those registrations to native configuration, or explicitly resolve the registry-only rows first.
+When these conditions pass, you do not need to migrate the named entry before removing it.
+NemoClaw verifies that the named legacy entry is absent before retiring its ownership row and cleaning up policy and provider attachments.
+Ownership rows for remaining legacy entries are preserved so you can remove or migrate them later.
+If the registry write fails after the agent entry is removed, rerun the same removal command.
+The retry verifies that the entry is still absent and compares any remaining policy's recorded registration and provider identity with the committed ownership row before retiring that row.
+Provider detachment still requires an exact match with the live provider identity.
+NemoClaw preserves unproven entries and refuses removal when the same server exists in both legacy and native configuration.
+
+Remove the named registration:
 
 ```bash
 $$nemoclaw my-sandbox mcp remove github
@@ -11015,8 +11034,9 @@ and network policy until you rebuild it.
 ## Avoid Cross-Sandbox Conflicts
 
 <Warning title="Conflict Detection Scope">
-  NemoClaw checks only the sandboxes recorded in the selected OpenShell gateway's sandbox registry.
-  It cannot detect or prevent Slack credential reuse across independent OpenShell gateways.
+NemoClaw checks credential and cross-sandbox conflicts only against the selected OpenShell gateway's sandbox registry.
+It cannot detect or prevent Slack credential reuse across independent OpenShell gateways.
+For Microsoft Teams, NemoClaw also checks TCP listeners on the selected local webhook port.
 </Warning>
 
 Use distinct credentials and resources for each active messaging sandbox. Follow these channel-specific rules:
@@ -11024,13 +11044,33 @@ Use distinct credentials and resources for each active messaging sandbox. Follow
 - Use a distinct iLink `accountId` for each WeChat sandbox.
 - Run only one active Slack sandbox on each OpenShell gateway.
 - Use distinct bot and Socket Mode app tokens across OpenShell gateways.
-- Use a different local webhook port for each Microsoft Teams sandbox.
+- Use a local webhook port that no unrelated process or active Microsoft Teams sandbox uses.
 
 When you onboard, rebuild, or add a channel, the command aborts on a conflict or an incomplete required check within the selected OpenShell gateway's sandbox registry. Legacy entries without credential hashes count as incomplete. An unreadable messaging registry also causes onboarding and rebuild to abort. Onboarding and rebuild have no conflict override.
 
 For `channels add` only, `--force` overrides conflict and incomplete-check aborts. Use it only when you accept the duplicate-consumer or shared-resource risk. Rerun `channels add <channel>` with the intended token to refresh stored non-secret identity metadata.
 
-Before a rebuild, NemoClaw checks the messaging plan before backup or deletion. A conflict leaves the original sandbox intact. Resolve any conflict, then rerun the operation. `$$nemoclaw status` reports cross-sandbox overlaps within the selected OpenShell gateway's sandbox registry.
+For Microsoft Teams, an unrelated host listener causes `channels add` to abort before it changes the channel unless you use `--force`.
+A direct OpenShell forward can keep the selected port only when NemoClaw verifies its listener belongs to the current sandbox and gateway.
+A stale forward record alone is not accepted.
+A port probe that cannot verify availability also aborts.
+Free an unrelated listener, or set `MSTEAMS_PORT` or `TEAMS_PORT` to a free port.
+
+Before a rebuild, NemoClaw checks the messaging plan before backup and checks it again after MCP preparation, before deletion.
+A registry or Microsoft Teams host-port conflict stops rebuild before sandbox deletion.
+NemoClaw attempts to restore MCP changes made during preparation.
+Resolve the conflict and any reported MCP recovery failure, then rerun the operation.
+`$$nemoclaw status` reports cross-sandbox overlaps within the selected OpenShell gateway's sandbox registry.
+
+After recreation, NemoClaw verifies the replacement's required webhook forward.
+If verification fails, rebuild exits nonzero without deleting the replacement sandbox.
+NemoClaw retains existing backup and recovery files.
+Correct the reported forwarding error, then run `$$nemoclaw <sandbox> rebuild --yes` to retry recovery.
+
+If an older registry entry lacks lifecycle identity, channel provider operations restore missing fields only from a matching completed onboarding receipt.
+The receipt must identify the same live sandbox on the recorded gateway.
+Missing proof or conflicting identity stops the operation; `--force` does not override this check.
+When no matching receipt exists, run `$$nemoclaw <sandbox> rebuild --yes` to record its lifecycle identity, then rerun the channel command.
 
 ## Stop All Delivery
 
@@ -12359,7 +12399,7 @@ Some changes apply at runtime, while image and filesystem changes require a rebu
 | Filesystem layout | Locked at creation | Re-onboard with `$$nemoclaw onboard --recreate-sandbox` |
 | Sandbox name | Locked at creation | Re-onboard with a different `--name` |
 | GPU passthrough or device selector | Locked at creation | Re-onboard with `--gpu` or `--sandbox-gpu-device` |
-| `agents.list` | Runtime; OpenClaw hot-reloads on config change | Prefer agent or NemoClaw commands that keep host and sandbox state aligned |
+| `agents.list` | Runtime after gateway restart; generated OpenClaw configuration disables hot reload | Prefer agent or NemoClaw commands that keep host and sandbox state aligned, then run `$$nemoclaw <name> gateway restart` |
 | `openclaw.json` keys | Mixed; supported config and inference updates apply at runtime, while image, policy, web search, and channel changes can require rebuild | Use `$$nemoclaw inference set` or `$$nemoclaw <name> config set` so the config and integrity hash change together |
 
 For a new or pristine OpenClaw workspace, `NEMOCLAW_MINIMAL_BOOTSTRAP=1` avoids roughly 3,000 tokens of per-turn project-context overhead by skipping the default template seed. It does not delete existing workspace files.
@@ -12765,7 +12805,8 @@ Point that URL at the host port NemoClaw forwards for the sandbox.
 The default local webhook port is `3978`.
 Set `MSTEAMS_PORT` or `TEAMS_PORT` before onboarding or `channels add teams` when you need another port.
 
-No two active Teams sandboxes can share the same local webhook port.
+The selected local webhook port must be free or belong to the current sandbox's verified direct OpenShell forward.
+An unrelated host process or another active Teams sandbox cannot share the port.
 
 ## Configure Credentials and Access
 
