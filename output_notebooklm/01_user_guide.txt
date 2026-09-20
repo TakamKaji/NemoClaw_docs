@@ -2486,6 +2486,8 @@ Use these details when your first-run path needs more control.
     ```
 
     This path does not inspect, start, or use a host Ollama process.
+    Leave port `11434` free on `127.0.0.1` and on the Portable host-gateway listener IP.
+    A host Ollama service or leftover Portable container on those published addresses fails inference create before the Portable Ollama runner starts.
     It does not use the default Docker runtime.
     Before the provider-selection step completes, NemoClaw creates the receipt-owned runner, sends one validation request for the selected model, and confirms that the model is loaded.
     NemoClaw records the provider selection only after those checks pass.
@@ -3842,7 +3844,7 @@ The Podman path does not enable the Docker-specific managed llama.cpp or Windows
 If the installer offers Express on WSL, a qualifying N1x WSL host uses managed llama.cpp with Qwen 3.6 35B-A3B.
 The installer leaves inference selection to onboarding.
 Onboarding requires Linux ARM64 WSL, one GPU whose normalized identity is either `NVIDIA RTX Spark N1X` or `NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)`, the default local Docker context, at least 48,000 MiB of Docker and GPU memory, driver version `580.65.06` or later, Docker storage and runtime readiness, NVIDIA GPU integration, and a successful Docker Desktop GPU passthrough proof.
-The Windows chassis model does not participate in selection.
+The Windows chassis model does not participate in managed llama.cpp selection.
 If N1x readiness does not match before managed selection starts, Windows Express selects WSL-local Ollama.
 If a required check fails after managed selection starts, onboarding stops before installation.
 Other WSL hosts also use WSL-local Ollama for Express installation.
@@ -3873,7 +3875,9 @@ A direct request from WSL can fail because Docker Desktop defines this hostname 
 Do not set Windows `OLLAMA_HOST` to `0.0.0.0:11434`; the wildcard listener is unauthenticated and disables the loopback-only HTTP `Host` validation that NemoClaw requires.
 Do not run both the Windows and WSL Ollama instances on port `11434` at the same time.
 Use one instance, or move one of them to a different port before running `$$nemoclaw onboard`.
-A WSL host whose Windows product reports RTX Spark N1x uses capacity from the selected Docker or Podman provider's CUDA proof to rank installed Ollama models.
+On a WSL RTX Spark N1x, NemoClaw ranks installed Ollama models with capacity from the selected Docker or Podman provider's CUDA proof.
+The proof-backed GPU identity or a Windows chassis model that reports `RTX Spark N1X` qualifies the host for this ranking.
+The chassis model does not establish N1x WSL identity.
 Both providers run the same pinned CUDA workload and capacity query; their provider implementation owns the GPU injection arguments.
 When `qwen3.6:35b` is installed and that proof reports at least 30,000 MiB available, NemoClaw selects it before `qwen3.5:9b`.
 Other Windows on Arm GPUs remain compute-constrained and select `qwen3.5:9b` instead of the 30B and 35B starter models.
@@ -6329,6 +6333,8 @@ Before NemoClaw accepts or reuses the runner, the recorded launch arguments and 
 A missing or changed value causes a configuration drift error instead of runner reuse.
 It then creates the runner, sends one validation request for the selected model, and confirms that Ollama loaded the selected model.
 This path does not inspect, start, or use a host Ollama process, and it does not use the default Docker runtime.
+Port `11434` must be free on `127.0.0.1` and on the Portable host-gateway listener IP before inference create.
+Stop a host Ollama service or leftover Portable Ollama container on those published addresses first.
 
 If the published runner later stops, use `$$nemoclaw <name> recover` or `$$nemoclaw <name> connect --probe-only` to resume only the exact receipt-owned runner.
 Ordinary `connect` also resumes it when the recorded inference route is unavailable.
@@ -6647,7 +6653,10 @@ If no installed known tag fits, NemoClaw displays starter choices and warns when
 After a model fails validation, NemoClaw excludes it from the next installed-model menu.
 
 On Windows on Arm N1X systems with a Snapdragon X processor, automatic selection omits the 30B and 35B starter models and selects `qwen3.5:9b`.
-On a WSL RTX Spark N1x, NemoClaw can select an installed `qwen3.6:35b` only when the Windows product identity qualifies and the selected Docker or Podman provider's CUDA proof reports at least 30,000 MiB available.
+On a WSL RTX Spark N1x, NemoClaw can select an installed `qwen3.6:35b` only when the selected Docker or Podman provider's CUDA proof reports at least 30,000 MiB available.
+NemoClaw runs the proof only when `nvidia-smi` reports exactly one GPU row.
+The host qualifies for this selection when the GPU's normalized identity is `NVIDIA RTX Spark N1X` or `NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)`, or when the Windows chassis model reports `RTX Spark N1X`.
+The chassis model qualifies only this Ollama model selection; it does not establish N1x WSL identity for system readiness or managed llama.cpp selection.
 The proof runs one pinned CUDA workload and capacity query through the provider abstraction; Docker supplies its GPU flag and Podman supplies its NVIDIA CDI device without a separate model-selection path.
 Missing, malformed, or insufficient proof capacity retains the `qwen3.5:9b` fallback.
 This safeguard only changes automatic selection.
@@ -12193,6 +12202,10 @@ openshell forward list
 </AgentOnly>
 
 ## Run Multiple Sandboxes
+
+Choose a distinct sandbox name of 1 to 19 characters before onboarding.
+The limit matches OpenShell's routed sandbox-name limit and applies to every agent runtime.
+For the complete naming rules, refer to [`onboard --name`](../../reference/commands#--name-sandbox).
 
 <AgentOnly variant="openclaw,hermes">
 Each sandbox needs its own dashboard port because `openshell forward` refuses to bind a port that another sandbox already uses.
