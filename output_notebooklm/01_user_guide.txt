@@ -2397,6 +2397,10 @@ Review the [Prerequisites](prerequisites) before you begin.
     nemohermes my-hermes connect
     hermes
     ```
+
+    When `launch` or `connect` finds the retired `nemoclaw-light` skin, NemoClaw removes its configuration selection and skin file.
+    A cleanup failure produces a warning and does not stop the terminal session.
+    Hermes supplies native terminal appearance behavior, and NemoClaw leaves every other `display.skin` selection unchanged.
   </Step>
 </Steps>
 
@@ -10128,10 +10132,10 @@ Run `$$nemoclaw backup-all` before broad maintenance such as `$$nemoclaw update`
 $$nemoclaw backup-all
 ```
 
-`backup-all` walks the sandboxes registered on the host, creates a snapshot for each eligible running or temporarily started sandbox, and stores the snapshot bundles under `~/.nemoclaw/rebuild-backups/<name>/`. If a registered docker-driver sandbox's container is stopped, `backup-all` starts the container for the duration of the backup and returns it to its stopped state afterward. If the container cannot be returned to the stopped state, the backup run fails and reports that the container was left running. If a sandbox is not running and its container cannot be started this way, start the sandbox or its container and rerun `$$nemoclaw backup-all`.
+`backup-all` walks the sandboxes registered on the host, creates a snapshot for each eligible running or temporarily started sandbox, and stores the snapshot bundles under `~/.nemoclaw/rebuild-backups/<name>/`. If a registered standard sandbox is stopped, `backup-all` asks OpenShell to start that exact sandbox for the duration of the backup and asks OpenShell to return it to `Stopped` afterward. If either lifecycle transition fails, the backup run fails with the affected sandbox named. Correct the reported OpenShell lifecycle problem, run `$$nemoclaw <name> start` when appropriate, and rerun `$$nemoclaw backup-all`; do not start or stop the provider container directly.
 
 For each eligible sandbox, `backup-all` holds one lifecycle transaction through the complete backup.
-Within that transaction, it starts a stopped container when required, copies sandbox state, and returns any container it started to the stopped state.
+Within that transaction, it asks OpenShell to start a stopped sandbox when required, copies sandbox state, and asks OpenShell to return that sandbox to `Stopped`.
 A backup failure marks that sandbox as failed, and `backup-all` continues with the next sandbox.
 
 When a backup fails, NemoClaw identifies the affected state item and reports `permission denied`, `tar read error`, or `absent after extraction` when available. Use `$$nemoclaw <name> snapshot list` and `$$nemoclaw <name> snapshot restore` to inspect or restore one sandbox's bundles later.
@@ -10282,75 +10286,70 @@ Refer to [Messaging bridge appears running but no messages arrive](../../referen
 # SPDX-License-Identifier: Apache-2.0
 title: "Understand Gateway Lifecycle Control"
 sidebar-title: "Understand Gateway Lifecycle Control"
-description: "Understand how NemoClaw authenticates, executes, and verifies gateway recovery and restart operations."
-description-agent: "Explains the direct root-entrypoint and OpenShell-managed gateway lifecycle topologies, controller trust boundaries, health proofs, and fail-closed behavior. Use when reviewing recover or gateway restart security."
-keywords: ["gateway lifecycle control", "nemoclaw recover", "gateway restart", "privileged control"]
+description: "Understand how NemoClaw invokes native gateway lifecycle commands and verifies recovery."
+description-agent: "Explains native agent lifecycle ownership, OpenShell containment, health proofs, and fail-closed behavior. Use when reviewing recover or gateway restart security."
+keywords: ["gateway lifecycle control", "nemoclaw recover", "gateway restart", "native lifecycle"]
 content:
   type: "concept"
 skill:
   priority: 20
 agent-variants: ["openclaw", "hermes"]
 ---
-Built-in OpenClaw and Hermes images support two direct-container lifecycle topologies for `recover` and `gateway restart`.
+Built-in OpenClaw and Hermes images leave agent gateway lifecycle with the native agent runtime.
+OpenShell owns sandbox containment and the authoritative sandbox lifecycle phase.
+NemoClaw resolves the registered sandbox, invokes the native command through that OpenShell sandbox, and observes the result.
 
-| Topology | Process ownership | Lifecycle and trust boundary |
-|---|---|---|
-| Direct root entrypoint | `nemoclaw-start` is root PID 1, the gateway runs under the separate `gateway` UID, and the agent runs under the `sandbox` UID. | A root-only request channel reaches PID 1. The supervisor tracks the child, applies the transactional restart seal, validates the config transaction, and launches the replacement under the gateway UID. |
-| OpenShell-managed | `/opt/openshell/bin/openshell-sandbox` is PID 1. It launches nonroot `nemoclaw-start`, which owns and reaps the gateway. The supervisor, gateway, and agent all use the `sandbox` UID. | A root-owned mode `0500` controller entered through sanitized registry-scoped direct-container control validates a stable process shape, authorizes one exit while the controller identity remains live, signals the observed child through a pidfd, waits for supervisor respawn, and proves replacement health. |
+| Component | Responsibility |
+|---|---|
+| OpenShell | Selects and contains the sandbox, projects approved credentials, and records the authoritative sandbox lifecycle phase. |
+| Native agent runtime | Owns the agent gateway, background work, cron work, hooks, and child processes. |
+| NemoClaw host CLI | Resolves the registered sandbox and agent, invokes the native lifecycle command, verifies gateway health, and repairs host-side forwards. |
 
-The managed controller authenticates the host lifecycle action and prevents PID reuse from redirecting its signal.
-It cannot prove process provenance against a malicious process running under the same sandbox UID, and it does not create gateway and agent UID isolation.
-For `recover` and `gateway restart`, the managed controller acquires the expected-exit lock before it inspects the supervisor or gateway.
-Lock acquisition, gateway termination, and replacement health share one recovery deadline.
-If lock acquisition reaches that deadline, the controller returns `SUPERVISOR_BUSY` without publishing an expected-exit marker.
+NemoClaw does not signal a gateway process, authorize a process exit, or respawn an agent-owned process.
+It does not add a second gateway lifecycle controller inside the sandbox.
 
 <AgentOnly variant="hermes">
-Hermes configuration remains mutable in both topologies.
-Before a restart, the supervisor validates the secret boundary and records one stable config snapshot in its transaction metadata.
-The native `mcp_servers` content in that snapshot remains authoritative, including direct edits. No separate host-side MCP registry or intended/applied marker participates in restart eligibility.
-
-The direct root-entrypoint topology keeps the integrity metadata under root ownership while it seals a restart transaction.
-That metadata does not make the complete Hermes config a relaunch allowlist.
-The managed topology has no durable root-owned config anchor because the supervisor, gateway, and agent share one UID.
+Hermes configuration remains mutable.
+The native restart path validates the secret boundary before it replaces the gateway.
+The native `mcp_servers` content remains authoritative, including direct edits.
+No separate host-side MCP registry or intended/applied marker participates in restart eligibility.
 </AgentOnly>
-
-This compatibility path remains necessary while the OpenShell-managed topology owns a nonroot supervisor and shared gateway-agent UID.
-Remove it only after the minimum supported OpenShell provides a root-owned lifecycle supervisor or a gateway UID distinct from the agent, then migrate both built-in agents to that boundary.
 
 ## Verify Recovery Health
 
-For built-in OpenClaw and Hermes controllers, a successful `recover` or `gateway restart` response supplies the initial authenticated gateway-health proof.
-After the settle window, NemoClaw sends one read-only authenticated `probe` through the same controller before it declares success.
+`gateway restart` invokes the native OpenClaw or Hermes lifecycle command through the selected OpenShell sandbox.
+NemoClaw then polls the agent health endpoint for the timeout declared in the agent manifest.
+It waits through the shared settle window and requires the gateway to remain healthy before it reports success.
 
-The controller rechecks the managed child, listener, HTTP health, and required auxiliary processes from inside the gateway network namespace without restarting the gateway.
-A failed managed probe cannot be overridden by an outer-namespace HTTP response.
-
-Custom agents that recover through an SSH script do not use this controller probe and continue to poll ordinary gateway health.
+`recover` checks the same native health endpoint.
+If a built-in gateway is stopped, `recover` reports that state instead of relaunching the process.
+Use `gateway restart` to request a native restart, or restart the sandbox through OpenShell when the native command cannot run.
 
 <AgentOnly variant="hermes">
+Hermes can close the OpenShell exec relay while its native restart command replaces the gateway.
+When NemoClaw receives the expected relay-closure result, it waits for the selected sandbox control plane to become ready again.
+This wait is bounded.
+NemoClaw then checks the Hermes health endpoint and host-side forwards.
+
 The nonroot Hermes supervisor continuously repairs the gateway, API relay, dashboard, dashboard relay, and gateway log stream.
 Four consecutive gateway health failures trigger recovery of the observed gateway child.
 
-Five unexpected gateway exits or failed replacement candidates within 60 seconds stop relaunch for the current supervisor instance.
-An authenticated host action authorizes one exit bound to the gateway process ID and kernel start identity while the root controller process remains live, so deliberate `gateway restart` and controller-driven replacement do not consume that crash budget.
-
-Correct the reported process or health failure, then stop and start the sandbox to reset the supervisor.
+Five status-75 service-managed restart requests within 60 seconds stop the supervisor before a sixth gateway launch.
+Stop and start the sandbox to reset the supervisor.
+If the requests recur, inspect the gateway logs and correct the action or configuration that requests each restart.
 Rebuild only if the sandbox still cannot start.
 
-The authorization records host intent for that exit; it does not claim that the host signal was the only possible cause of process termination in the shared-UID topology.
 After the in-sandbox processes are healthy, the host repairs only the host-side OpenShell forwards.
 </AgentOnly>
 
-## Fail Closed on Unsupported Topologies
+## Fail Closed on Unsupported Runtimes
 
-The host selects the matching controller automatically for `recover` and `gateway restart`.
-Ordinary `openshell sandbox exec` and manual in-sandbox relaunch are not fallback paths.
+NemoClaw runs the lifecycle command only after it resolves a supported gateway runtime for the registered sandbox.
+Terminal agents fail as unsupported because they do not have an agent gateway.
+An absent agent definition or a native command failure stops the operation before host-forward repair.
 
-A current built-in image supports both the direct root-entrypoint and OpenShell-managed topologies.
-An arbitrary nonroot entrypoint that does not match the managed OpenShell process shape fails closed with `privileged control unavailable`.
-
-Kubernetes and other deployments without a matching direct container also fail closed with `privileged control unavailable`.
-Older images without the matching supervisor or managed controller helper must be updated:
+For gateway lifecycle, NemoClaw does not fall back to direct provider-container mutation or manual process signaling.
+If the sandbox cannot run the current native lifecycle command, update its image:
 
 ```bash
 $$nemoclaw <name> rebuild --yes
@@ -10359,7 +10358,7 @@ $$nemoclaw <name> rebuild --yes
 ## Related Topics
 
 - [Recover and Rebuild Sandboxes](../operate-sandboxes/recover-and-rebuild-sandboxes) for recovery commands and rebuild fallback.
-- [`gateway restart` or `recover` reports `privileged control unavailable`](../../reference/troubleshooting#gateway-restart-or-recover-reports-privileged-control-unavailable) for remediation.
+- [`gateway restart` or `recover` reports `privileged control unavailable`](../../reference/troubleshooting#gateway-restart-or-recover-reports-privileged-control-unavailable) for native lifecycle remediation.
 - [Trusted Computing Base](../../security/trusted-computing-base) for the broader security boundary.
 
 
@@ -11243,22 +11242,23 @@ If you cannot complete the reboot, backup, or full quarantine, leave every artif
 
 Do not use cross-sandbox snapshot restore from the legacy sandbox because that flow preserves the source image. The current CLI deliberately does not interpret, resume, or delete ambiguous legacy recovery state.
 
-## Restart a Stopped Sandbox Container
+## Restart a Stopped Sandbox
 
-If NemoClaw reports that a Docker-driver sandbox is stopped, restart the existing container:
+If NemoClaw reports that a standard sandbox is stopped, ask OpenShell to restart that exact sandbox:
 
 ```bash
 $$nemoclaw <sandbox-name> start
 ```
 
-This path preserves the sandbox workspace after the container starts.
-`start` also repairs a sandbox that OpenShell still reports as `Stopped` while its container runs,
-which can happen when something started the container outside OpenShell. It reports that it is
-starting the sandbox through OpenShell rather than treating the running container as already
-started.
-If the container is paused, follow the printed `docker unpause` guidance instead.
-If Docker no longer has the container, destroy the stale NemoClaw entry and onboard a clean replacement.
-Restore a separately created snapshot afterward if one is available; rebuild cannot recover a workspace or live OpenShell policy that no longer exists.
+This path preserves the sandbox workspace and leaves lifecycle ownership with OpenShell. `start`
+and `recover` reconcile a sandbox that OpenShell still reports as `Stopped`; neither command
+directly restarts or unpauses the underlying provider container. Before destructive replacement,
+run `$$nemoclaw <sandbox-name> status`. If the owning gateway reports the registered sandbox
+missing, NemoClaw leaves any provider container untouched. Preserve any separate snapshot, use
+`$$nemoclaw <sandbox-name> destroy --yes` to retire the stale registered sandbox when the command
+can prove the OpenShell resource absent, then onboard a clean replacement. Restore the snapshot
+afterward if one is available; rebuild cannot recover a workspace or live OpenShell policy that no
+longer exists.
 
 <AgentOnly variant="openclaw,hermes">
   The `start` command repairs the agent runtime and host-side port forwards.
@@ -11269,26 +11269,28 @@ Restore a separately created snapshot afterward if one is available; rebuild can
 ## Recover the Agent Runtime
 
 <AgentOnly variant="openclaw,hermes">
-  `recover` can start an existing stopped Docker-driver sandbox before it repairs the agent
-  runtime. It starts the sandbox through OpenShell, which restarts the same container and also
-  advances the sandbox out of the `Stopped` phase that the readiness check waits on. It starts only
-  a non-paused container that Docker still associates with the registered sandbox. If that container
-  is already running while OpenShell reports `Stopped`, `recover` still starts the sandbox through
-  OpenShell to repair the phase. It leaves paused containers and running sandboxes in other phases
-  unchanged. If OpenShell cannot start a stopped container, recovery starts the container directly
-  so it is running again, and `start` repairs the phase on the next run. If neither start succeeds,
-  recovery continues to the OpenShell readiness check and reports the resulting failure.
+  `recover` can start an existing stopped standard sandbox before it repairs the agent runtime. It
+  submits that lifecycle mutation through OpenShell and waits for OpenShell to advance the sandbox
+  out of the `Stopped` phase. If OpenShell cannot start the sandbox, recovery reports the failure;
+  it does not fall back to direct provider-container lifecycle actions.
 </AgentOnly>
 
 <AgentOnly variant="openclaw">
 If `$$nemoclaw <name> status` reports `Phase: Stopped` after an intentional stop, run `$$nemoclaw <name> start`.
-If status reports `sandbox_container_stopped`, a missing sandbox, or an unhealthy gateway, run the recover command instead of opening a shell.
+If status reports `sandbox_container_stopped` or an unhealthy gateway, run the recover command instead of opening a shell. For a missing sandbox, follow the replacement procedure under [Restart a Stopped Sandbox](#restart-a-stopped-sandbox).
 
 ```bash
 $$nemoclaw <sandbox-name> recover
 ```
 
-The command repairs a stopped in-sandbox gateway and re-establishes the dashboard port-forward in one step. It is idempotent and safe to script. If the gateway is already healthy, `recover` exits after the probe and does not restart it. If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable. If a listener that NemoClaw cannot attribute to the sandbox's own OpenShell forward holds the port, `recover` reports it and leaves it running. It then exits non-zero and does not restore the forward. Legacy SSH forward records do not establish ownership. Stop the owning OpenShell gateway or service to release the listener before retrying recovery.
+The command verifies the native gateway and re-establishes the dashboard port forward.
+If the gateway is stopped, `recover` reports it and does not relaunch it.
+Run `gateway restart` to request a native restart.
+If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable.
+If a listener that NemoClaw cannot attribute to the sandbox's OpenShell forward holds the port, `recover` reports it and leaves it running.
+It then exits nonzero and does not restore the forward.
+Legacy SSH forward records do not establish ownership.
+Stop the owning OpenShell gateway or service to release the listener before retrying recovery.
 
 Use `gateway restart` when you intentionally need a supported OpenClaw gateway to reload runtime configuration or plugins.
 
@@ -11296,23 +11298,40 @@ Use `gateway restart` when you intentionally need a supported OpenClaw gateway t
 $$nemoclaw <sandbox-name> gateway restart
 ```
 
-The restart command asks the topology-specific controller to stop the tracked gateway child, wait for the entrypoint to launch a replacement, and prove listener and HTTP health. The host then checks or recovers host-side dashboard, messaging, and agent forwards. Refer to [`$$nemoclaw <name> recover`](../../reference/commands#$$nemoclaw-name-recover) and [`$$nemoclaw <name> gateway restart`](../../reference/commands#$$nemoclaw-name-gateway-restart) for details.
+The restart command invokes OpenClaw's native lifecycle command through the selected OpenShell sandbox.
+NemoClaw then verifies gateway health and checks or recovers host-side dashboard, messaging, and agent forwards.
+Refer to [`$$nemoclaw <name> recover`](../../reference/commands#$$nemoclaw-name-recover) and [`$$nemoclaw <name> gateway restart`](../../reference/commands#$$nemoclaw-name-gateway-restart) for details.
 
 </AgentOnly>
 
 <AgentOnly variant="hermes">
 If `$$nemoclaw <name> status` reports `Phase: Stopped` after an intentional stop, run `$$nemoclaw <name> start`.
-If status reports `sandbox_container_stopped`, a missing sandbox, or an unhealthy Hermes gateway, run the recover command instead of opening a shell.
+If status reports `sandbox_container_stopped` or an unhealthy Hermes gateway, run the recover command instead of opening a shell. For a missing sandbox, follow the replacement procedure under [Restart a Stopped Sandbox](#restart-a-stopped-sandbox).
 
 ```bash
 $$nemoclaw <sandbox-name> recover
 ```
 
-The command repairs a stopped in-sandbox gateway and re-establishes the dashboard port-forward in one step. It is idempotent and safe to script. If the gateway is already healthy, `recover` does not restart it. If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable. If a listener that NemoClaw cannot attribute to the sandbox's own OpenShell forward holds the port, `recover` reports it and leaves it running. It then exits non-zero and does not restore the forward. Legacy SSH forward records do not establish ownership. Stop the owning OpenShell gateway or service to release the listener before retrying recovery.
+The command verifies the native gateway and re-establishes the dashboard port forward.
+If the gateway is stopped, `recover` reports it and does not relaunch it.
+Run `gateway restart` to request a native restart.
+If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable.
+If a listener that NemoClaw cannot attribute to the sandbox's OpenShell forward holds the port, `recover` reports it and leaves it running.
+It then exits nonzero and does not restore the forward.
+Legacy SSH forward records do not establish ownership.
+Stop the owning OpenShell gateway or service to release the listener before retrying recovery.
 
 The [`nemoclaw-acp`](../../reference/commands#nemoclaw-acp) adapter uses only the exact OpenShell gateway recorded for its managed Hermes sandbox. It can select and, when required, start only that exact gateway when it is missing, unhealthy, or unreachable, or when a different gateway is connected. A conflicting or ambiguous gateway identity, authentication, schema, timeout, or other observation failure stops the adapter before gateway startup or session creation.
 
-Before it repairs the gateway, `recover` checks for a NemoClaw cron restore gate or release recovery record left by an interrupted rebuild. The gate continues to block new Hermes turns and cron dispatch across gateway and container restarts in the same sandbox. If release rollback could not restore the gate, `recover` uses the root-owned recovery record to reacquire it before gateway repair can start dispatch. After gateway repair, `recover` waits for active agent work to finish and validates the restored cron jobs and scripts. It clears NemoClaw-owned gate and release recovery state only after validation succeeds. If no independent operator drain exists, successful recovery prints `Hermes cron dispatch resumed after restored jobs and scripts were validated.` If an operator drain exists, recovery prints `Hermes cron restore gate cleared; the independent operator drain remains active.` The command does not own or clear the Hermes operator drain, so new Hermes turns and cron dispatch remain blocked while that drain is active. If gate reacquisition or cron validation fails, `recover` exits nonzero and retains the recovery state for another attempt.
+Before it verifies the gateway, `recover` checks for a NemoClaw cron restore gate or release recovery record left by an interrupted rebuild.
+The gate continues to block new Hermes turns and cron dispatch across gateway and sandbox restarts.
+If release rollback could not restore the gate, `recover` uses the root-owned recovery record to reacquire it before validation can resume dispatch.
+After gateway verification, `recover` waits for active agent work to finish and validates the restored cron jobs and scripts.
+It clears NemoClaw-owned gate and release recovery state only after validation succeeds.
+If no independent operator drain exists, successful recovery prints `Hermes cron dispatch resumed after restored jobs and scripts were validated.`
+If an operator drain exists, recovery prints `Hermes cron restore gate cleared; the independent operator drain remains active.`
+The command does not own or clear the Hermes operator drain, so new Hermes turns and cron dispatch remain blocked while that drain is active.
+If gate reacquisition or cron validation fails, `recover` exits nonzero and retains the recovery state for another attempt.
 
 Use `gateway restart` when you intentionally need a supported Hermes gateway to reload runtime configuration or plugins.
 
@@ -11320,12 +11339,19 @@ Use `gateway restart` when you intentionally need a supported Hermes gateway to 
 $$nemoclaw <sandbox-name> gateway restart
 ```
 
-The restart command asks the topology-specific controller to stop the tracked gateway child, wait for the entrypoint to launch a replacement, and prove listener and HTTP health. The host then checks or recovers host-side dashboard, messaging, and agent forwards.
+The restart command invokes Hermes' native lifecycle command through the selected OpenShell sandbox.
+If that command closes the OpenShell exec relay before it returns status, NemoClaw waits for the sandbox control plane to become ready again.
+NemoClaw then verifies gateway health and checks or recovers host-side dashboard, messaging, and agent forwards.
+
+When the gateway exits cleanly or with exit status `79`, the supervisor waits up to 120 seconds for the authenticated gated recovery request.
+If the request does not arrive, the supervisor exits nonzero and leaves the gateway stopped.
+Follow the printed recovery guidance by running `$$nemoclaw <sandbox-name> stop`, then `$$nemoclaw <sandbox-name> start`.
 
 For Hermes, the entrypoint supervisor owns the gateway, dashboard process, internal API relay, dashboard relay, and gateway log stream.
 The nonroot managed supervisor repairs those processes continuously and stops an alive but deaf gateway after four consecutive failed health checks.
-Five unexpected gateway exits or failed replacement candidates within 60 seconds stop relaunch for the current supervisor instance. Host-authorized exits do not consume this crash budget.
-Correct the reported failure, then run `$$nemoclaw <sandbox-name> stop` and `$$nemoclaw <sandbox-name> start` to reset the supervisor.
+Five status-75 service-managed restart requests within 60 seconds stop the supervisor before a sixth gateway launch.
+Run `$$nemoclaw <sandbox-name> stop` and `$$nemoclaw <sandbox-name> start` to reset the supervisor.
+If the requests recur, inspect the gateway logs and correct the action or configuration that requests each restart.
 Rebuild only if the sandbox still cannot start.
 
 The host does not start the in-sandbox processes independently. Refer to [`$$nemoclaw <name> recover`](../../reference/commands#$$nemoclaw-name-recover) and [`$$nemoclaw <name> gateway restart`](../../reference/commands#$$nemoclaw-name-gateway-restart) for details.
@@ -11333,10 +11359,13 @@ The host does not start the in-sandbox processes independently. Refer to [`$$nem
 </AgentOnly>
 
 <AgentOnly variant="openclaw,hermes">
-Recovery uses registry-scoped privileged direct-container control and does not fall back to ordinary `openshell sandbox exec` or a manual in-sandbox relaunch.
-If the native supervisor remains absent after bounded recovery, NemoClaw leaves the container unchanged and directs you to rebuild or re-onboard.
+Recovery repairs supported agent processes and host forwards inside the registered sandbox. When the
+sandbox itself is stopped, `start` submits that lifecycle mutation to OpenShell; recovery does not
+take independent ownership of the provider container. If the native supervisor remains absent after
+bounded recovery, NemoClaw leaves the sandbox unchanged and directs you to rebuild or re-onboard.
 
-For the controller topology, trust boundary, and fail-closed conditions, refer to [Understand Gateway Lifecycle Control](../configure-sandboxes/understand-gateway-lifecycle-control). If recovery cannot repair a sandbox that needs credentials or a current controller contract, rebuild it.
+For the lifecycle trust boundary and fail-closed conditions, refer to [Understand Gateway Lifecycle Control](../configure-sandboxes/understand-gateway-lifecycle-control).
+If recovery cannot verify a sandbox that needs current credentials or native lifecycle support, rebuild it.
 
 </AgentOnly>
 <AgentOnly variant="deepagents">
@@ -11427,7 +11456,7 @@ Rebuild creates the replacement from the base image selected during preflight, e
 If replacement onboarding returns a nonzero status, rebuild stops before post-create state restoration and preserves the backup and registry recovery state.
 It does not report a successful rebuild.
 
-If the sandbox's container is stopped (for example, an out-of-band container kill left the sandbox in `Phase: Error`), rebuild starts the container for the duration of the pre-recreate state backup and returns it to its stopped state afterward, the same recovery `$$nemoclaw backup-all` uses for a stopped container. If no stopped container can be found for the sandbox, or the retried backup still fails, rebuild aborts without recreating the sandbox; it reports an incomplete-snapshot notice only when a partial snapshot was retained. If the backup itself succeeds but the started container cannot be returned to its stopped state, rebuild also aborts, so a sandbox that was stopped before rebuild started is never left running without a warning.
+If the sandbox is stopped (for example, an out-of-band runtime failure left it in `Phase: Error`), rebuild asks OpenShell to start that exact sandbox for the duration of the pre-recreate state backup and asks OpenShell to return it to `Stopped` afterward, the same lifecycle path `$$nemoclaw backup-all` uses. If OpenShell cannot start the sandbox, or the retried backup still fails, rebuild aborts without recreating the sandbox; it reports an incomplete-snapshot notice only when a partial snapshot was retained. If the backup succeeds but OpenShell cannot return the sandbox to `Stopped`, rebuild also aborts and reports the failed transition.
 
 <AgentOnly variant="hermes">
 
@@ -11525,7 +11554,17 @@ Do not log, share, or commit the token.
 nemohermes <sandbox-name> gateway-token --quiet
 ```
 
-Before post-restore repairs, NemoClaw verifies that the recreated sandbox still identifies as Hermes and exits nonzero if its identity does not match the rebuild target. After state restore, NemoClaw restarts the Hermes gateway so it reads the restored durable state, then restores managed MCP configuration through the normal lifecycle. MCP restoration performs an acknowledged gateway reload, so NemoClaw finishes by verifying the final running gateway and its managed MCP state without replacing that verified process again. The gateway starts during recreation and reads its durable state before the restore replaces it, which is why the first post-restore restart must happen before managed MCP restoration. `rebuild` exits nonzero instead of reporting success when it cannot verify final gateway health or managed MCP state. Follow the printed recovery guidance, using `$$nemoclaw <sandbox-name> gateway restart` first for gateway health, `$$nemoclaw <sandbox-name> recover` when the restart does not restore verified health, and `$$nemoclaw <sandbox-name> mcp restart` for incomplete managed MCP restoration.
+Before post-restore repairs, NemoClaw verifies that the recreated sandbox still identifies as Hermes and exits nonzero if its identity does not match the rebuild target.
+After state restore, NemoClaw restarts the Hermes gateway so it reads the restored durable state, then restores managed MCP configuration through the normal lifecycle.
+MCP restoration performs an acknowledged gateway reload, so NemoClaw finishes by verifying the final running gateway and its managed MCP state without replacing that verified process again.
+The gateway starts during recreation and reads its durable state before the restore replaces it, which is why the first post-restore restart must happen before managed MCP restoration.
+`rebuild` exits nonzero instead of reporting success when it cannot verify final gateway health or managed MCP state.
+Follow the printed recovery guidance.
+Run `$$nemoclaw <sandbox-name> gateway restart` first to request a native gateway restart.
+After gateway health returns, run `$$nemoclaw <sandbox-name> recover` only to reconcile host-side forwards or cron restore state.
+If gateway health does not return, run `$$nemoclaw <sandbox-name> stop`, then `$$nemoclaw <sandbox-name> start`.
+Run `$$nemoclaw <sandbox-name> rebuild` only if the sandbox still cannot start.
+Run `$$nemoclaw <sandbox-name> mcp restart` for incomplete managed MCP restoration.
 
 When the rebuild backup contains active Hermes cron jobs that reference scripts, NemoClaw validates those script references before it deletes the existing sandbox. The check covers the default profile and named profiles. Each referenced script must exist, be readable, be a regular file, and remain inside its profile's `scripts` directory. Disabled and paused jobs do not require their referenced scripts. If this validation fails, the rebuild keeps the existing sandbox and reports the preserved backup path.
 
@@ -12173,7 +12212,7 @@ The baseline permits only the managed inference route. GitHub, npm, and other se
 # SPDX-License-Identifier: Apache-2.0
 title: "Run Sandboxes"
 sidebar-title: "Run Sandboxes"
-description: "Run multiple sandboxes and stop or start containers, with dashboard and tunnel guidance where supported."
+description: "Run multiple sandboxes and stop or start them through OpenShell, with dashboard and tunnel guidance where supported."
 description-agent: "Explains multiple-sandbox naming and stop or start operations, plus dashboard and Cloudflare tunnel controls where the selected agent supports them. Use when operating one or more existing sandboxes."
 keywords: ["nemoclaw multiple sandboxes", "nemoclaw stop", "nemoclaw start", "sandbox operation"]
 content:
@@ -12229,7 +12268,7 @@ When creating a Hermes sandbox, if another sandbox or a host listener already ho
 <AgentOnly variant="openclaw,hermes">
 If you intentionally run separate OpenShell gateways on the same host, set a different `NEMOCLAW_GATEWAY_PORT` before each onboarding run.
 NemoClaw isolates the gateway name and local state by port so one port-specific gateway does not replace another.
-Sandbox-scoped commands that read, exec into, or inspect a sandbox, such as `$$nemoclaw <name> exec` and `$$nemoclaw <name> status`, address each sandbox through its recorded gateway binding, so the current shell's `NEMOCLAW_GATEWAY_PORT` does not redirect them. Lifecycle commands such as `$$nemoclaw <name> stop` still act on the gateway that `NEMOCLAW_GATEWAY_PORT` selects.
+Sandbox-scoped commands, including `exec`, `status`, `start`, and `stop`, address the sandbox through its recorded gateway binding. `NEMOCLAW_GATEWAY_PORT` selects the gateway for onboarding and new gateway-scoped setup; it does not redirect an existing sandbox command.
 A non-default `NEMOCLAW_GATEWAY_PORT` also gets its own host state root at `~/.nemoclaw/gateways/<port>/`, with a separate sandbox registry, snapshots, and legacy credential-migration files, so gateway-scoped state stays segregated while shared host-level files remain under `~/.nemoclaw/`.
 On first use after upgrading, NemoClaw moves legacy rows and related state only when their recorded gateway identity matches the selected port; ambiguous state is left untouched with remediation.
 Provider credentials remain in the OpenShell gateway store.
@@ -12253,7 +12292,7 @@ Hermes also retains or restores its registered OpenAI-compatible API forward usi
 <AgentOnly variant="deepagents">
 If you intentionally run separate OpenShell gateways on the same host, set a different `NEMOCLAW_GATEWAY_PORT` before each onboarding run.
 NemoClaw isolates the gateway name and local state by port so one port-specific gateway does not replace another.
-Sandbox-scoped commands that read, exec into, or inspect a sandbox, such as `nemo-deepagents <name> exec` and `nemo-deepagents <name> status`, address each sandbox through its recorded gateway binding, so the current shell's `NEMOCLAW_GATEWAY_PORT` does not redirect them. Lifecycle commands such as `nemo-deepagents <name> stop` still act on the gateway that `NEMOCLAW_GATEWAY_PORT` selects.
+Sandbox-scoped commands, including `exec`, `status`, `start`, and `stop`, address the sandbox through its recorded gateway binding. `NEMOCLAW_GATEWAY_PORT` selects the gateway for onboarding and new gateway-scoped setup; it does not redirect an existing sandbox command.
 A non-default `NEMOCLAW_GATEWAY_PORT` also gets its own host state root at `~/.nemoclaw/gateways/<port>/`, with a separate sandbox registry, snapshots, and legacy credential-migration files, so gateway-scoped state stays segregated while shared host-level files remain under `~/.nemoclaw/`.
 On first use after upgrading, NemoClaw moves legacy rows and related state only when their recorded gateway identity matches the selected port; ambiguous state is left untouched with remediation.
 Provider credentials remain in the OpenShell gateway store.
@@ -12297,16 +12336,16 @@ nemo-deepagents onboard --name <sandbox-name>
 
 ## Stop and Start a Sandbox
 
-Stop a sandbox's container to free CPU, memory, and GPU resources without losing anything:
+Stop a sandbox through OpenShell to free CPU, memory, and GPU resources without losing anything:
 
 ```bash
 $$nemoclaw <sandbox-name> stop
 ```
 
 Workspace files, credentials, network policies, and the registry entry are preserved.
-The container stops running.
+OpenShell stops the sandbox's provider workload.
 <AgentOnly variant="openclaw,hermes">
-After the container stops, NemoClaw attempts to stop that sandbox's host dashboard forward.
+After the sandbox stops, NemoClaw attempts to stop that sandbox's host dashboard forward.
 The shared host gateway and tunnel services keep serving other sandboxes.
 </AgentOnly>
 
@@ -12317,11 +12356,11 @@ $$nemoclaw <sandbox-name> start
 ```
 
 <AgentOnly variant="openclaw,hermes">
-After Docker reports the existing container as running, NemoClaw waits for OpenShell to report the sandbox in the `Ready` or `Running` state.
+After OpenShell accepts the start, NemoClaw waits for it to report the sandbox in the `Ready` or `Running` state.
 NemoClaw recovers missing agent processes and host forwards only after that phase, so a slow sandbox start does not need a separate `recover` command.
 </AgentOnly>
 <AgentOnly variant="deepagents">
-After Docker reports the existing container as running, NemoClaw waits for OpenShell to report the sandbox in the `Ready` or `Running` state, then verifies the managed terminal runtime before the command reports success.
+After OpenShell accepts the start, NemoClaw waits for it to report the sandbox in the `Ready` or `Running` state, then verifies the managed terminal runtime before the command reports success.
 </AgentOnly>
 Refer to [`$$nemoclaw <name> stop`](../../reference/commands#$$nemoclaw-name-stop) and [`$$nemoclaw <name> start`](../../reference/commands#$$nemoclaw-name-start) for details.
 Use [`$$nemoclaw <name> destroy`](../../reference/commands#$$nemoclaw-name-destroy) when you want to delete the sandbox instead.
@@ -12421,11 +12460,12 @@ The runtime source of truth is `/sandbox/.openclaw/openclaw.json`. The host regi
 
 Host-side OpenClaw config writes run under the per-sandbox transition lock and bind the replacement to the SHA-256 digest of the matching read. Before `config set` replaces the live file, NemoClaw validates the complete candidate with the installed OpenClaw runtime. If candidate validation fails, the command preserves the existing config and does not reach the gateway restart path. The root-only config guard validates bounded JSON input, transactionally publishes fresh config and hash inodes, and restores the prior mutable posture without adopting concurrent path changes.
 
-In the direct root-entrypoint topology, gateway restart performs a read-only config and hash preflight and temporarily seals fresh inodes while the root PID 1 supervisor replaces the gateway child.
-In the OpenShell-managed topology, the installed root controller performs the config preflight while the nonroot `nemoclaw-start` supervisor replaces the gateway child.
+`gateway restart` invokes OpenClaw's native safe restart command in the selected OpenShell sandbox.
+The native runtime owns restart admission and gateway replacement.
+NemoClaw does not signal or respawn the gateway.
 
-Mutable config in the managed topology keeps the same trust and time-of-check/time-of-use limits as a managed cold start and does not receive the direct root-entrypoint restart seal.
-If preflight detects an unsafe path, invalid config, invalid ownership posture, or hash drift, restart refuses while the old healthy gateway is still serving.
+If the native command rejects the active configuration or the replacement does not become healthy, NemoClaw reports the failed command or health check instead of success.
+After the native restart, NemoClaw verifies gateway health and repairs host-side forwards.
 
 </AgentOnly>
 <AgentOnly variant="hermes">
@@ -13873,7 +13913,7 @@ The `min_openclaw_version` field in `nemoclaw-blueprint/blueprint.yaml` is the c
 </AgentOnly>
 <AgentOnly variant="hermes">
 
-The Hermes agent manifest declares the expected Hermes version and the `hermes --version` probe command.
+The Hermes agent manifest expects Hermes `0.21.3` from release tag `v2026.9.14` and declares the `hermes --version` probe command.
 
 </AgentOnly>
 <AgentOnly variant="deepagents">
