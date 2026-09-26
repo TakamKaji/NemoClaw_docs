@@ -1905,7 +1905,7 @@ Messaging channel presets are scoped to the sandbox's active agent; if an agent 
 |----------|--------|---------------|
 | Brave Search | `brave` | OpenClaw |
 | Claude Code CLI | `claude-code` | OpenClaw and Hermes |
-| Homebrew packages | `brew` | OpenClaw and Hermes |
+| Homebrew packages | `brew-balanced` for Balanced; `brew` for Open or explicit broader access | OpenClaw and Hermes |
 | Discord messaging | `discord` | OpenClaw and Hermes |
 | GitHub and GitHub API | `github` | OpenClaw and Hermes |
 | Gmail IMAP and SMTP | `gmail` | OpenClaw and Hermes |
@@ -2196,8 +2196,13 @@ Use these presets when an agent workflow needs to install packages or download m
 |----------|--------|
 | npm or Yarn packages | `npm` |
 | Python packages from PyPI with `pip`, Python, or `uv` | `pypi` |
-| Homebrew packages | `brew` |
+| Homebrew packages | `brew-balanced` for Balanced; `brew` for Open or explicit broader access |
 | Hugging Face model or dataset access | `huggingface` |
+
+Balanced already includes `brew-balanced`, so it does not need the `brew` additions below.
+Those commands opt into unrestricted raw GitHub methods; Open uses that broader preset by default.
+Existing `brew` grants remain active when you reselect Balanced defaults.
+To narrow an existing grant, use the [Homebrew preset replacement procedure](#homebrew-specifics) below.
 
 Add only the preset required for the task:
 
@@ -2222,7 +2227,20 @@ If `uv` is installed somewhere else in the sandbox, add a custom preset for that
 
 ### Homebrew Specifics
 
-The sandbox base image includes Homebrew (Linuxbrew), so apply the `brew` preset before installing a formula.
+The sandbox base image includes Homebrew (Linuxbrew).
+Balanced supplies its network access through `brew-balanced`; Open supplies it through `brew`.
+Adding `brew-balanced` alone does not narrow an existing `brew` grant.
+Balanced defaults preserve existing grants. To explicitly narrow an older `brew` grant, remove it before adding the restricted preset:
+
+```bash
+$$nemoclaw my-assistant policy remove brew --yes &&
+  $$nemoclaw my-assistant policy add brew-balanced --yes
+```
+
+Verify that `policy list` shows `● brew-balanced` and `○ brew`.
+If the addition fails, resolve the reported error and rerun the add command.
+Keep `brew` on Open or when you intend its broader access.
+Use the broader `brew` command below only when you intend to allow unrestricted raw GitHub methods.
 A `/usr/local/bin/brew` wrapper puts the entry point on the sandbox `PATH` while delegating to the Linuxbrew prefix.
 Installed formula commands are available from the Linuxbrew bin directory in sandbox shell sessions:
 
@@ -5693,22 +5711,22 @@ Slack requires both `SLACK_BOT_TOKEN` (bot user OAuth) and `SLACK_APP_TOKEN` (ap
 
 ### `$$nemoclaw <name> channels remove <channel>`
 
-Clear the stored credentials for a messaging channel and rebuild the sandbox so the image drops the channel. Running `remove` for a channel that was never configured is a no-op against the credentials file and still triggers the rebuild prompt. When the bridge provider is attached to a live sandbox, NemoClaw detaches it before deleting the provider from the OpenShell gateway. If deletion fails, NemoClaw attempts to restore the attachment before returning the failure. If restoration also fails, the diagnostic names the provider and sandbox and warns that channel delivery may remain interrupted. If the matching built-in policy preset is applied, NemoClaw also removes that preset from the current OpenShell policy so the upstream API is no longer allow-listed after the channel is gone. When removing Teams, NemoClaw removes Teams-owned Microsoft login credential bindings from matching Outlook policy endpoints. It refuses to remove a binding owned by another integration. No session preset list exists to synchronize.
+Clear the stored credentials for a messaging channel and rebuild the sandbox so the image drops the channel. Running `remove` for a channel that was never configured is a no-op against the credentials file and normally still triggers the rebuild prompt. OpenClaw WeChat also checks for orphaned physical session state when no channel or policy entry exists; if cleanup cannot be confirmed, removal stops before rebuilding. When the bridge provider is attached to a live sandbox, NemoClaw detaches it before deleting the provider from the OpenShell gateway. If deletion fails, NemoClaw attempts to restore the attachment before returning the failure. If restoration also fails, the diagnostic names the provider and sandbox and warns that channel delivery may remain interrupted. If the matching built-in policy preset is applied, NemoClaw also removes that preset from the current OpenShell policy so the upstream API is no longer allow-listed after the channel is gone. When removing Teams, NemoClaw removes Teams-owned Microsoft login credential bindings from matching Outlook policy endpoints. It refuses to remove a binding owned by another integration. No session preset list exists to synchronize.
 
 For QR-paired channels (today: WhatsApp), NemoClaw destructively clears the in-sandbox session directories before the rebuild so the `state_dirs` backup does not restore the auth blob and let the channel reconnect:
 
 - OpenClaw: `/sandbox/.openclaw/<channel>/` (for example `/sandbox/.openclaw/whatsapp/`).
 - Hermes: `/sandbox/.hermes/platforms/<channel>/` (for example `/sandbox/.hermes/platforms/whatsapp/`). For WhatsApp, NemoClaw also clears the current Dashboard profile at `/sandbox/.hermes/profiles/dashboard-home/platforms/whatsapp/session/` and the legacy migration source at `/sandbox/.hermes/dashboard-home/platforms/whatsapp/session/`.
 
-NemoClaw runs the cleanup through `openshell sandbox exec` first.
-If OpenShell is unavailable or its outcome is inconclusive, NemoClaw retries the same cleanup through the sandbox's registered local runtime provider unless OpenShell reports cancellation.
-NemoClaw permits this retry only because removing the declared paths is idempotent and the success sentinel verifies completion.
-A runtime validation or identity refusal stops removal instead of falling through to SSH.
-If the sentinel remains absent after any permitted local retry, NemoClaw tries SSH.
-For OpenClaw WeChat only, if the sentinel remains absent after those attempts, NemoClaw asks the registered runtime provider to run its distinct stopped-state cleanup.
-If cleanup still fails, the command refuses to rebuild and prints recovery guidance for the reported condition.
-Fix that condition, then rerun the command.
-This failure prevents the next rebuild from restoring stale channel authentication files.
+NemoClaw runs cleanup for a running sandbox through native OpenShell execution.
+Cleanup succeeds only when the command exits successfully and returns its completion sentinel.
+If execution fails or the result is inconclusive, the command refuses to rebuild and prints recovery guidance.
+Fix the reported condition, then rerun the command so a rebuild cannot restore stale channel authentication files.
+
+For OpenClaw WeChat only, NemoClaw checks the registered runtime provider for its distinct stopped-state cleanup before native execution.
+The provider must confirm sandbox ownership, a stopped runtime resource, and one writable state resource containing the declared paths.
+If the registry entry is missing, the provider does not support stopped-state cleanup, or no eligible stopped runtime resource exists, NemoClaw falls through to native cleanup.
+Removal proceeds only when that command exits successfully and returns its completion sentinel.
 
 ```bash
 $$nemoclaw my-assistant channels remove telegram
@@ -8846,9 +8864,16 @@ During onboarding, the wizard prompts for a policy tier that determines the defa
 | Tier | Presets included | Description |
 | --- | --- | --- |
 | Restricted | No tier defaults | Starts from the baseline policy. Web search or messaging integrations selected earlier can still suggest their required presets; deselect them during policy review for baseline-only access. Restricted suppresses other agent-required additions; reapply them later with `policy add` only after reviewing the additional egress. |
-| Balanced (default) | `npm`, `pypi`, `huggingface`, `brew`, `brave`; selected `tavily` web search access when supported | Full dev tooling. Fresh onboarding filters web-search egress to the provider selected for the active agent. No messaging platform access. Apply the `weather` preset explicitly if your agent needs read-only weather lookups. |
+| Balanced (default) | `npm`, `pypi`, `huggingface`, `brew-balanced`, `brave`; selected `tavily` web search access when supported | Full dev tooling. Fresh onboarding filters web-search egress to the provider selected for the active agent. No messaging platform access. Apply the `weather` preset explicitly if your agent needs read-only weather lookups. |
 | Open | `npm`, `pypi`, `huggingface`, `brew`, `brave`, `weather`, `public-reference`, `slack`, `discord`, `telegram`, `wechat` (experimental), `whatsapp` (experimental), `teams` (experimental), `jira`, `outlook`; selected `tavily` web search access when supported | Broad access across third-party services including messaging, productivity, weather, and public-reference APIs. Fresh onboarding filters web-search egress to the provider selected for the active agent. |
 | Personal | `personal-open-internet` (mandatory) | Lets every sandbox binary open TCP connections to public and private address ranges on destination ports `80` and `443`. The broad route replaces overlapping web endpoints while preserving non-web policy. Unspecified, loopback, and link-local ranges remain blocked. |
+
+Balanced uses `brew-balanced` to allow only GET and HEAD to `raw.githubusercontent.com` for the preset's binaries.
+Open retains unrestricted raw GitHub access through `brew`, and Personal retains its broad web policy.
+Reselecting Balanced's suggested presets preserves an existing `brew` grant, including its unrestricted raw GitHub access.
+Adding `brew-balanced` does not narrow that broader grant.
+To narrow it, explicitly remove `brew` and apply `brew-balanced`.
+Resuming onboarding reapplies the saved selection; skipping optional setup preserves existing grants.
 
 When Personal is selected or carried forward, the `personal-open-internet` preset is mandatory for every agent and every onboarding entry point. Interactive choices, `NEMOCLAW_POLICY_MODE=custom`, and `NEMOCLAW_POLICY_MODE=skip` control only additional presets; they cannot deselect, skip, or replace Personal's required web authority.
 
@@ -11642,6 +11667,31 @@ bash uninstall.sh --yes
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
 ```
 
+<AgentOnly variant="openclaw,hermes">
+
+### Onboarding fails because the inference route served no model catalog
+
+Onboarding verifies the sandbox inference route before it reports the deployment healthy.
+When `https://inference.local/v1/models` keeps returning `HTTP 404`, the route answered but served no model catalog, so nothing validated your selected model against the provider.
+Onboarding retries for the usual startup budget, then marks the `inference` check failed and exits nonzero instead of reporting a verified deployment.
+
+Re-check the route and the recorded provider and model:
+
+```bash
+$$nemoclaw <name> status
+```
+
+`$$nemoclaw <name> status` applies the same HTTP 404 rule, so onboarding and status agree about the model catalog.
+
+Confirm the provider and model are configured for this sandbox and that the endpoint serves `/v1/models`.
+This result is resumable, so correct the endpoint and continue the recorded session:
+
+```bash
+$$nemoclaw onboard --resume
+```
+
+</AgentOnly>
+
 ## Runtime
 
 <AgentOnly variant="openclaw">
@@ -12263,13 +12313,14 @@ When you run an `openclaw` command through `$$nemoclaw <name> exec -- ...` and i
 ```text
 $$nemoclaw: a device scope upgrade is waiting for approval inside sandbox 'my-assistant'.
   The OpenClaw gateway refused the command until the requested scopes are approved.
-  Review pending requests: $$nemoclaw my-assistant exec -- openclaw devices list
+  Open a prepared shell:   $$nemoclaw my-assistant connect
+  In that shell, review:   openclaw devices list --json
   Approve the one you recognize, after checking its device and requested scopes:
-                           $$nemoclaw my-assistant exec -- openclaw devices approve <requestId>
+                           openclaw devices approve <requestId>
   Silence this hint:       export NEMOCLAW_NO_POLICY_HINT=1
 ```
 
-Read `openclaw devices list`, confirm the requesting device and the requested scopes, approve that request by id, then re-run the original command unchanged.
+Enter the prepared `connect` shell, read `openclaw devices list --json`, confirm the requesting client, device, and requested scopes, approve that request by id in the same shell, then re-run the original command unchanged.
 
 The hint never names a request id. NemoClaw cannot tell which pending request belongs to the failed command, so naming one would present an unrelated request — for example a different device asking for `operator.admin` — as this command's remedy. You make that decision from `devices list`.
 
@@ -14072,6 +14123,7 @@ NemoClaw ships preset policy files in `nemoclaw-blueprint/policies/presets/` for
 |---|---|---|
 | `brave` | Brave Search API. | Agent can issue search queries. |
 | `brew` | Homebrew (Linuxbrew) package manager. The sandbox base image includes the `brew` binary; this preset opens network egress to GitHub and the Homebrew formulae index so `brew install` can fetch bottles. | Allows installing arbitrary Homebrew packages, which may contain malicious code. |
+| `brew-balanced` | The same Homebrew endpoints and binaries as `brew`, with GET and HEAD only for `raw.githubusercontent.com`. Balanced selects this preset; Open keeps `brew`. | Allows downloading and installing arbitrary Homebrew packages, which may contain malicious code. |
 | `claude-code` | Claude Code CLI API, browser login, telemetry, and crash-report endpoints. | Allows a separately installed Claude Code CLI to reach Anthropic and telemetry hosts with its own credentials. On `platform.claude.com` the preset allows GET and POST on `/v1/oauth/**` only, which the browser login uses to exchange its authorization code. Do not use this preset for NemoClaw inference routing. |
 | `discord` | Discord REST API, WebSocket gateway, CDN. | CDN endpoint (`cdn.discordapp.com`) allows GET to any path. WebSocket uses `access: full` (no inspection). |
 | `github` | GitHub and GitHub REST API. | Gives agent read/write access to repositories and issues via `git`. |
@@ -14220,7 +14272,7 @@ They provide guidance on which controls to keep tight or relax.
 Use for always-on assistants with minimal external access.
 
 - Select the Restricted tier during onboarding.
-  Onboarding defaults to the Balanced tier, which selects the `npm`, `pypi`, `huggingface`, and `brew` presets.
+  Onboarding defaults to the Balanced tier, which selects the `npm`, `pypi`, `huggingface`, and `brew-balanced` package presets.
 - Choose no web search when prompted.
   Enabling web search adds the selected `brave` or `tavily` preset even with the Restricted tier.
 - Keep the remaining defaults and do not add other presets.
