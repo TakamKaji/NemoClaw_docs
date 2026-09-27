@@ -4811,7 +4811,8 @@ NemoClaw does not signal, authorize, or respawn an agent-owned process.
 
 For Hermes, the entrypoint supervisor also owns the dashboard process, internal API relay, dashboard relay, and gateway log stream.
 The managed nonroot supervisor continuously repairs those processes and stops an alive but deaf gateway after four consecutive failed health checks.
-If the gateway requests a service-managed restart with status 75 five times within 60 seconds, the supervisor stops before a sixth launch.
+If the gateway requests a fifth service-managed restart with status 75 within 60 seconds, the supervisor waits until the rolling window permits a relaunch.
+The sandbox remains active during this cooldown.
 Clean exits and status 79 wait for authenticated recovery, while other exit statuses fail immediately.
 If the Hermes restart closes the OpenShell exec relay before it returns status, NemoClaw waits for the selected sandbox control plane to become ready again.
 
@@ -5891,24 +5892,33 @@ $$nemoclaw my-assistant mcp migrate --apply
 
 ### `$$nemoclaw <name> mcp update`
 
-Replace the complete denied-tool list for one current managed MCP server without changing its agent-native endpoint, credential reference, provider, attachment, or agent adapter.
+Update the denied-tool list or refresh public address pins for one registered MCP server.
+Both operations use the live OpenShell policy and preserve the agent-native endpoint, credential reference, provider, attachment, and agent adapter.
 Pass one or more `--deny-tool <name-or-glob>` options, or pass `--clear-deny-tools` to remove every denied-tool rule.
-The two modes cannot be combined.
-Live OpenShell policy is the enforcement source of truth; NemoClaw does not persist a duplicate denied-tool intent. The command validates the current source and address pins, removes the current route, and applies the replacement. If activation fails, the route remains blocked and the error prints the exact `mcp update` retry command. Rebuild snapshots and restores the complete live policy, including denied-tool rules.
+Use only one mode per command: `--deny-tool`, `--clear-deny-tools`, or `--refresh-public-pins`.
+Live OpenShell policy is the enforcement source of truth; NemoClaw does not persist duplicate MCP intent. A denied-tool update validates the current source and address pins, removes the current route, and applies the replacement. If activation fails, the route remains blocked and the error prints the exact `mcp update` retry command. Rebuild snapshots and restores the complete live policy, including denied-tool rules.
 
 ```bash
 $$nemoclaw my-assistant mcp update github --deny-tool 'delete_*' --deny-tool 'admin_*'
 $$nemoclaw my-assistant mcp update github --clear-deny-tools
+$$nemoclaw my-assistant mcp update github --refresh-public-pins
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--deny-tool <name-or-glob>` | Replace the denied-tool list with repeatable exact names or OpenShell globs |
 | `--clear-deny-tools` | Remove every denied-tool rule |
+| `--refresh-public-pins` | Validate current public DNS answers and replace only the existing endpoint's `allowed_ips` |
+
+Public-pin refresh requires matching current sources and existing exact public pins.
+It preserves all other policy fields, including denied tools, methods, binary grants, and credential bindings.
+It rejects private or special-use answers, address ranges, and conflicting sources before writing.
+If the update is not confirmed, inspect status and the live policy before retrying.
+Restart, rebuild, and restore do not refresh pins.
 
 ### `$$nemoclaw <name> mcp status`
 
-Inspect MCP server state for one server or for all servers discovered from the agent-native configuration. Status joins that source with the live OpenShell policy, provider, attachment, and credential-key shape; no MCP registry row is consulted or created. For a trusted private endpoint, status also compares current DNS answers with recorded pins without changing the policy. Text output reports `private address pins: match`, `drift`, or `unresolved`. JSON output reports the same value in `trustedPrivateTarget.state` and includes the recorded pins. When a single server is named, status requests a differential wire-level credential-resolution probe. It sends no probe traffic unless the policy binding is present, the expected provider attachment is confirmed, and the live provider has the `nemoclaw-mcp-v1` type, a valid resource version, and exactly one credential key matching the source placeholder; a readiness failure reports `unknown` with a `probe skipped` detail. When ready, the same MCP `initialize` is sent from inside the sandbox once with the recorded resolver placeholder header and once with a deliberately-unresolvable control bearer. Classification uses the two HTTP status codes plus curl exit codes for transport, timeout, and policy-denial outcomes; response bodies are never captured or printed. A `verified` verdict requires the placeholder request to be accepted (HTTP 2xx) while the control is rejected — the only outcome that proves a valid credential was on the wire. Identical HTTP 400, 401, or 403 rejections raise a warning that names the hypotheses — the placeholder forwarded verbatim, an expired or revoked credential that resolved correctly, or (for HTTP 400) endpoint request validation — and tells you to verify the stored credential first. For HTTP 401 or 403, a confirmed-valid credential means the host is not rewriting placeholders and agent runtimes receive the same auth failure and skip the server; HTTP 400 remains inconclusive because the endpoint may reject the probe request itself. Every other outcome — differing rejections (an endpoint may reject two different literal bearers differently), endpoints that skip authentication, endpoint outages, policy denials, and unreachable sandboxes — reports as `unknown` rather than blaming the credential rewrite, and a source URL that fails the current authenticated-endpoint boundary is never probed.
+Inspect MCP server state for one server or for all servers discovered from the agent-native configuration. Status joins that source with the live OpenShell policy, provider, attachment, and credential-key shape; no MCP registry row is consulted or created. Status also compares current DNS answers with recorded pins without changing the policy. Text output reports `public address pins:` or `private address pins:` with `match`, `drift`, or `unresolved`; public targets that resolve to private or special-use addresses report `rejected`. JSON output reports the state, recorded pins, and validated current pins when available in `publicTarget` or `trustedPrivateTarget`. Public drift directs you to `mcp update <server> --refresh-public-pins`, which changes only the live endpoint address pins. Trusted-private drift still requires review and remove-and-add approval. When a single server is named, status requests a differential wire-level credential-resolution probe. It sends no probe traffic unless the policy binding is present, the expected provider attachment is confirmed, and the live provider has the `nemoclaw-mcp-v1` type, a valid resource version, and exactly one credential key matching the source placeholder; a readiness failure reports `unknown` with a `probe skipped` detail. When ready, the same MCP `initialize` is sent from inside the sandbox once with the recorded resolver placeholder header and once with a deliberately-unresolvable control bearer. Classification uses the two HTTP status codes plus curl exit codes for transport, timeout, and policy-denial outcomes; response bodies are never captured or printed. A `verified` verdict requires the placeholder request to be accepted (HTTP 2xx) while the control is rejected — the only outcome that proves a valid credential was on the wire. Identical HTTP 400, 401, or 403 rejections raise a warning that names the hypotheses — the placeholder forwarded verbatim, an expired or revoked credential that resolved correctly, or (for HTTP 400) endpoint request validation — and tells you to verify the stored credential first. For HTTP 401 or 403, a confirmed-valid credential means the host is not rewriting placeholders and agent runtimes receive the same auth failure and skip the server; HTTP 400 remains inconclusive because the endpoint may reject the probe request itself. Every other outcome — differing rejections (an endpoint may reject two different literal bearers differently), endpoints that skip authentication, endpoint outages, policy denials, and unreachable sandboxes — reports as `unknown` rather than blaming the credential rewrite, and a source URL that fails the current authenticated-endpoint boundary is never probed.
 
 <AgentOnly variant="deepagents">
 `mcp status` exits with status `2` when the managed MCP projection is a symbolic link, FIFO, or another non-regular file.
@@ -7234,8 +7244,10 @@ When the sweep finds more than one port, it confirms once against the resulting 
 When it finds only the selected port, it uses the standard uninstall confirmation without a port list and runs that port once.
 Each port runs as its own uninstall so that every port-scoped value, including the state root, registry file, gateway name, and Docker resource names, resolves from that port rather than from the calling environment.
 An ambient `NEMOCLAW_OPENSHELL_GATEWAY_STATE_DIR` applies only to the currently selected port, which runs last.
-Child passes for other ports use their default per-port gateway state directories.
-If another port with a custom directory fails, rerun `NEMOCLAW_GATEWAY_PORT=<failed-port> NEMOCLAW_OPENSHELL_GATEWAY_STATE_DIR="<original-absolute-path>" $$nemoclaw uninstall`.
+The sweep restores each port's custom state directory from its sandbox registry or verified incomplete-create checkpoint.
+Invalid or conflicting recorded directories stop the sweep before any port cleanup.
+Ports without recorded directories use their per-port defaults, except when the selected port has an explicit override.
+For an older custom gateway whose directory was not recorded, rerun `NEMOCLAW_GATEWAY_PORT=<failed-port> NEMOCLAW_OPENSHELL_GATEWAY_STATE_DIR="<original-absolute-path>" $$nemoclaw uninstall`.
 The selected port runs last so its pass can remove the shared host resources once no other environment remains.
 `--delete-models`, `--destroy-user-data`, and `--keep-openshell` apply to every port; `--gateway` remains a check against the selected port only.
 A failure to enumerate the gateway state roots safely stops the sweep before any port uninstall begins.
@@ -9215,26 +9227,29 @@ content:
   type: "reference"
 agent-variants: ["pi"]
 ---
+
 Pi is a NemoClaw agent runtime. Docker is the initial compute runtime. Pi-specific code does not own Docker lifecycle, snapshot, recovery, or cleanup behaviour.
 
 <Warning>
-The Pi runtime remains a release candidate until final activation adds it to the supported inventory and complete managed-image cohort. Published candidate images and qualification evidence do not make Pi selectable in an ordinary installation.
+  The Pi runtime remains a release candidate until final activation adds it to the supported
+  inventory and complete managed-image cohort. Published candidate images and qualification evidence
+  do not make Pi selectable in an ordinary installation.
 </Warning>
 
 ## Initial Support Matrix
 
-| Dimension | Accepted value |
-|---|---|
-| Agent ID | `pi` |
-| Pi package | `@earendil-works/pi-coding-agent` 0.84.1 |
-| Node.js | 22.19 or later |
-| Host platform | Linux AMD64 or Linux ARM64 |
-| Compute runtime | Docker |
-| Managed API | OpenAI Chat Completions |
-| Sandbox route | `https://inference.local/v1` |
-| Qualification model | `nvidia/nemotron-3-super-120b-a12b` |
-| Interactive command | `pi` |
-| Headless command | `pi --no-approve --print` |
+| Dimension           | Accepted value                           |
+| ------------------- | ---------------------------------------- |
+| Agent ID            | `pi`                                     |
+| Pi package          | `@earendil-works/pi-coding-agent` 0.84.1 |
+| Node.js             | 22.19 or later                           |
+| Host platform       | Linux AMD64 or Linux ARM64               |
+| Compute runtime     | Docker                                   |
+| Managed API         | OpenAI Chat Completions                  |
+| Sandbox route       | `https://inference.local/v1`             |
+| Qualification model | `nvidia/nemotron-3-super-120b-a12b`      |
+| Interactive command | `pi`                                     |
+| Headless command    | `pi --no-approve --print`                |
 
 Podman, macOS, Windows, WSL, messaging, dashboards, device pairing, managed MCP, host mounts, and automatic third-party package installation are outside the initial matrix.
 
@@ -10332,9 +10347,26 @@ See [Add an MCP Server](../manage-sandboxes/mcp-servers/add-an-mcp-server) for t
 
 ## DNS Pins Drift
 
-If `mcp status <server>` reports `private address pins: drift`, review the endpoint address change before updating access.
-Status, restart, rebuild, and restore do not add the new addresses.
+If `mcp status <server>` reports `public address pins: drift`, refresh only its live policy pins:
 
+```bash
+$$nemoclaw <sandbox> mcp update <server> --refresh-public-pins
+$$nemoclaw <sandbox> mcp status <server> --tools
+```
+
+The refresh preserves all other policy fields, including denied tools, and retains the existing agent configuration and credentials.
+Successful tool discovery verifies recovery.
+Status, restart, rebuild, and restore preserve the live pins.
+If refresh cannot confirm a write, inspect status and the live OpenShell policy before retrying.
+
+If status reports `public address pins: rejected`, DNS resolved to a private or special-use address.
+Investigate the destination change; refresh does not approve that address.
+
+If status reports `public address pins: unresolved`, DNS is unavailable and the recorded pins remain unchanged.
+Retry status after DNS recovers.
+
+If status reports `private address pins: drift`, review the endpoint address change before updating access.
+Status, restart, rebuild, and restore do not add new trusted-private addresses.
 Remove and re-add the server with the same trusted host to perform a new preflight and record new pins:
 
 ```bash
@@ -10350,8 +10382,8 @@ unset LOCAL_MCP_TOKEN
 A `CONNECT 403` after an address change can mean that OpenShell rejected a current DNS answer outside `allowed_ips`.
 Do not add a provider's complete address range or broaden the policy to bypass the denial.
 
-Cloudflare Quick Tunnels rotate public edge addresses and are not durable for address pinning.
-A named tunnel can keep one hostname while its resolved addresses still change.
+Cloudflare Quick Tunnels and named tunnels can rotate public edge addresses while keeping one hostname.
+A managed MCP server can require another explicit pin refresh after each public address change.
 Use stable private DNS and a routed private HTTPS endpoint for a host-local MCP server.
 
 If status reports matching pins but the request still receives `CONNECT 403`, inspect the OpenShell policy and audit logs.
@@ -12401,6 +12433,10 @@ If the endpoint is correct but requests still fail, check for network policy rul
 
 If you entered an AWS Bedrock Runtime URL such as `https://bedrock-runtime.us-east-1.amazonaws.com` in the **Other Anthropic-compatible endpoint** flow, NemoClaw auto-detects it and routes sandbox traffic through a host-local adapter. Use the raw Bedrock Runtime host, not an Anthropic `/v1/messages` path, and verify that the model ID or inference profile ID is valid for that region. For auth, export `AWS_BEARER_TOKEN_BEDROCK`, `AWS_PROFILE`, or standard IAM environment credentials before onboarding; if you paste a key at the `COMPATIBLE_ANTHROPIC_API_KEY` prompt, NemoClaw uses it only as the adapter's Bedrock bearer token. Region errors usually mean the pasted endpoint region, `AWS_REGION`, `AWS_DEFAULT_REGION`, or the model/inference profile ID do not match.
 
+The adapter advertises model IDs to readiness checks only after that running adapter completes a successful inference request for them.
+Onboarding performs this request before checking sandbox readiness; failed requests do not add a model to the catalog.
+This uses the existing Bedrock Runtime inference permissions and does not query the Bedrock control-plane catalog.
+
 For Ollama, vLLM, NIM, and compatible-endpoint inference validation, the default timeout is 180 seconds. The managed NIM startup health wait uses a separate 15-minute (900-second) default and still exits early if the container stops before it becomes healthy. On Docker 29.x or hosts using the containerd image store, managed NIM onboarding resolves and pulls the host-platform image digest when NGC exposes a multi-architecture image index. If you still see NGC repository-format or attestation errors, confirm Docker can run `docker manifest inspect` for the selected image and that you are logged in to `nvcr.io`. If large prompts still cause timeouts, increase it with `NEMOCLAW_LOCAL_INFERENCE_TIMEOUT` before re-running onboard:
 
 ```bash
@@ -13489,10 +13525,13 @@ nemohermes <name> rebuild --yes
 
 The Hermes entrypoint supervisor remains responsible for the gateway, dashboard, internal API relay, dashboard relay, and gateway log stream throughout recovery.
 In the OpenShell-managed topology, that nonroot supervisor repairs failed auxiliaries continuously and recovers a gateway after four consecutive failed listener or HTTP health checks.
-Five status-75 service-managed restart requests within 60 seconds stop the supervisor before a sixth gateway launch.
+A fifth status-75 service-managed restart request within 60 seconds starts a cooldown.
+The supervisor waits until the rolling window permits another restart, then relaunches the gateway automatically.
 The host repairs only the host-side OpenShell forwards after the supervised processes pass health checks.
 
-### Hermes Stops Repeated Service-Managed Restarts
+<a id="hermes-stops-repeated-service-managed-restarts"></a>
+
+### Repeated Hermes Service-Managed Restarts
 
 Valid Hermes config changes alone do not stop relaunch.
 The supervisor adopts a stable, secret-boundary-safe config snapshot before launching a replacement gateway. If the startup log reports `HERMES_RUNTIME_PREPARATION_FAILED stage=<stage>`, the named environment, config, dependency, provider, or messaging input still failed after five bounded preparation attempts. Correct that input through its supported host-side configuration or credential flow, then restart the sandbox:
@@ -13503,8 +13542,7 @@ nemohermes <name> stop
 nemohermes <name> start
 ```
 
-The supervisor stops before a sixth gateway launch after five status-75 service-managed restart requests within 60 seconds.
-Run `nemohermes <name> stop` followed by `nemohermes <name> start` to reset the supervisor.
+During a restart-rate cooldown, wait for the supervisor to relaunch the gateway automatically.
 If the requests recur, inspect the gateway logs and correct the action or configuration that requests each restart.
 Other unexpected gateway exit statuses fail immediately and do not consume this restart budget.
 
