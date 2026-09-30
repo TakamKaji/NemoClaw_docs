@@ -1156,8 +1156,9 @@ That narrow transition is allowed so uninstall can finish removing the remaining
 `$$nemoclaw stop` does not scan or signal the externally supervised gateway.
 Final-sandbox cleanup can stop local dashboard forwards and remove the modern local gateway registration.
 It does not signal the gateway, use the legacy `gateway destroy` fallback, or remove its Docker volumes.
-Uninstall can delete the selected sandboxes, providers, and local registration.
-It keeps the externally supervised gateway process, Docker resources, and OpenShell binaries.
+When another gateway environment remains, gateway-scoped cleanup can delete selected sandboxes and remove the local registration without signaling the externally supervised gateway.
+Full uninstall refuses bulk sandbox cleanup and exits before deleting selected sandboxes, providers, or the local registration.
+It preserves that downstream state together with the externally supervised gateway process, Docker resources, and OpenShell binaries.
 
 Registering and selecting the validated endpoint changes only the local OpenShell gateway registration used by downstream commands.
 It does not transfer process ownership to NemoClaw.
@@ -2242,11 +2243,14 @@ Start standard onboarding with `NEMOCLAW_GATEWAY_RUNTIME=podman $$nemoclaw onboa
 Before selecting it, review its qualified host requirements and limitations in [Platform Support](../reference/platform-support#deployment-paths) and the [Podman troubleshooting guide](../reference/troubleshooting#podman).
 Managed llama.cpp and Windows-host Ollama remain Docker Desktop-only on WSL. Managed local vLLM install/start remains Docker-backed and is unavailable when Docker is absent; attaching an already-running local vLLM server remains a separate path.
 
-NemoClaw uses an isolated `python3` helper for descriptor-relative migration snapshot sanitization and deletion.
-NemoClaw does not resolve this credential-bearing helper through the host `PATH`.
+NemoClaw's active rebuild-backup sanitizer uses an isolated `python3` helper for descriptor-relative inspection and mutation.
+NemoClaw does not resolve this credential-bearing sanitizer through the host `PATH`.
 It accepts a verified executable at `/usr/bin/python3`, `/usr/local/bin/python3`, `/opt/homebrew/bin/python3`, `/opt/local/bin/python3`, or beside the Node.js executable.
 The sanitizer fails closed before it reads snapshot content if no candidate passes its ownership, permission, and executable checks.
-Supported Linux, macOS, and WSL environments provide the required POSIX filesystem operations.
+The sanitizer requires the POSIX filesystem operations available on supported Linux, macOS, and WSL environments.
+<AgentOnly variant="openclaw">
+Legacy snapshot deletion uses a separate descriptor-relative helper resolved as `python3` through `PATH`.
+</AgentOnly>
 Native Windows is not a supported execution path; use WSL.
 
 If you choose the native Linux Ollama install path, the onboard wizard also requires `zstd` for Ollama archive extraction.
@@ -2540,7 +2544,13 @@ Use these details when your first-run path needs more control.
 
     This path does not inspect, start, or use a host Ollama process.
     Leave port `11434` free on `127.0.0.1` and on the Portable host-gateway listener IP.
-    A host Ollama service or leftover Portable container on those published addresses fails inference create before the Portable Ollama runner starts.
+    When no sandbox has lifecycle authority for the same name, a `--fresh` retry first retires an exact abandoned receipt-owned provider, Portable runner, and private inference state before it starts the replacement transaction.
+    An active sandbox with that name keeps its provider, Portable runner, and private inference state.
+    If the recorded provider, runtime, socket, network, or private state authority changed, onboarding stops and preserves that state.
+    There is no automated recovery for that authority-drift result.
+    `--fresh` has already discarded the previous onboarding session.
+    Preserve the private inference state and exact redacted error; do not edit or delete them; and [file a NemoClaw issue](https://github.com/NVIDIA/NemoClaw/issues/new) for maintainer review before retrying.
+    An unrelated host Ollama service or unowned listener on those published addresses still fails inference create before the Portable Ollama runner starts.
     It does not use the default Docker runtime.
     Before the provider-selection step completes, NemoClaw creates the receipt-owned runner, sends one validation request for the selected model, and confirms that the model is loaded.
     NemoClaw records the provider selection only after those checks pass.
@@ -3551,7 +3561,11 @@ Use these details when your first-run path needs more control.
     | Model Router | You want NemoClaw to start the host-side model router. | `NVIDIA_INFERENCE_API_KEY` |
 
     For an OpenAI-compatible HTTP endpoint on `localhost`, `127.0.0.1`, or `[::1]`, press Enter to select no authentication when the endpoint uses the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`.
-    Port `11435` supports this mode only when `NEMOCLAW_OLLAMA_PROXY_PORT` uses a different free port.
+    Port `11435` is reserved for the proxy and is unavailable for new no-authentication endpoints.
+    Recovery can retain an existing no-authentication route on `11435` only when the proxy has moved and no other protected service owns that port.
+    The shared protected proxy stays pinned to its existing backend; reuse that endpoint.
+    Moving or removing a sandbox does not release the host-global binding.
+    To select a different no-authentication backend, back up the sandboxes and remove the final NemoClaw gateway with the uninstaller before reinstalling.
 
     After you enter a sandbox name, the wizard asks for final confirmation before it registers the provider, prompts for integrations, and creates the sandbox.
 
@@ -5012,7 +5026,12 @@ The sandbox does not receive the raw API key.
 
 Use `COMPATIBLE_API_KEY` for an OpenAI-compatible endpoint that requires authentication.
 For an HTTP endpoint on `localhost`, `127.0.0.1`, or `[::1]`, you can select no authentication on the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`.
-Port `11435` supports no authentication only when `NEMOCLAW_OLLAMA_PROXY_PORT` uses a different free port.
+Port `11435` is reserved for the proxy and is unavailable for new no-authentication endpoints.
+Recovery can retain an existing no-authentication route on `11435` only when the proxy has moved and no other protected service owns that port.
+NemoClaw rejects no-authentication endpoints on configured or recorded gateway, dashboard, agent API, Model Router, and credential-adapter ports.
+The shared protected proxy stays pinned to its existing backend; reuse that endpoint.
+Moving or removing a sandbox does not release the host-global binding.
+To select a different no-authentication backend, back up the sandboxes and remove the final NemoClaw gateway with the uninstaller before reinstalling.
 For non-interactive onboarding of that OpenAI-compatible endpoint, set `NEMOCLAW_COMPATIBLE_AUTH_MODE=none`.
 Use `COMPATIBLE_ANTHROPIC_API_KEY` for a custom Anthropic-compatible endpoint.
 Anthropic-compatible onboarding requires a non-empty value even when the upstream server does not authenticate requests.
@@ -6424,7 +6443,13 @@ A missing or changed value causes a configuration drift error instead of runner 
 It then creates the runner, sends one validation request for the selected model, and confirms that Ollama loaded the selected model.
 This path does not inspect, start, or use a host Ollama process, and it does not use the default Docker runtime.
 Port `11434` must be free on `127.0.0.1` and on the Portable host-gateway listener IP before inference create.
-Stop a host Ollama service or leftover Portable Ollama container on those published addresses first.
+When no sandbox has lifecycle authority for the same name, a `--fresh` retry first retires an exact abandoned receipt-owned gateway provider, Portable Ollama runner, and private inference state, including when the replacement selects another model.
+An active sandbox with that name keeps its gateway provider, Portable Ollama runner, and private inference state.
+If the recorded provider, runtime, socket, network, or private state authority changed, onboarding exits nonzero and preserves that state.
+There is no automated recovery for that authority-drift result.
+`--fresh` has already discarded the previous onboarding session.
+Preserve the private inference state and exact redacted error; do not edit or delete them; and [file a NemoClaw issue](https://github.com/NVIDIA/NemoClaw/issues/new) for maintainer review before retrying.
+Stop an unrelated host Ollama service or unowned listener on those published addresses first.
 
 If the published runner later stops, use `$$nemoclaw <name> recover` or `$$nemoclaw <name> connect --probe-only` to resume only the exact receipt-owned runner.
 Ordinary `connect` also resumes it when the recorded inference route is unavailable.
@@ -6837,7 +6862,7 @@ Onboarding does not display this degraded result.
 Before you continue, inspect the configured backend port:
 
 ```bash
-backend_port=${NEMOCLAW_VLLM_PORT:-8000}
+backend_port=8000 # Replace with the port in the endpoint URL entered during onboarding.
 lsof -nP -iTCP:"$backend_port" -sTCP:LISTEN
 ```
 
@@ -6862,19 +6887,22 @@ To qualify for automatic rewriting, an HTTP endpoint URL must use the loopback h
 Automatic rewriting is limited to the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) and ports `11434` and `11435`.
 NemoClaw validates the entered URL from the host and registers the OpenShell gateway route through `host.openshell.internal:<port>` for sandbox traffic.
 Sandbox inference requests continue to use the base `inference.local` policy, so the managed compatible-endpoint route does not require adding the `local-inference` preset.
-NemoClaw leaves URLs without an explicit port, URLs on `:80` or another privileged port, and URLs on unsupported ports unchanged.
-Those URLs require a separately compatible runtime topology and network policy.
+For authenticated endpoints, NemoClaw leaves URLs without an explicit port, URLs on `:80` or another privileged port, and URLs on unsupported ports unchanged.
+Those authenticated URLs require a separately compatible runtime topology and network policy.
 This rewrite depends on an OpenShell topology that resolves `host.openshell.internal` inside the sandbox; if that bridge is unavailable, onboarding can still validate the host URL, but `$$nemoclaw <name> status` is the authoritative runtime check.
 For no-authentication endpoints on the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`, keep the server bound to loopback.
 NemoClaw's token-protected proxy makes the loopback service reachable from the sandbox without exposing the backend on other host interfaces.
-Port `11435` is the default proxy listener, so an endpoint using that port requires `COMPATIBLE_API_KEY` unless you configure `NEMOCLAW_OLLAMA_PROXY_PORT` to use a different free port before onboarding.
+Port `11435` is reserved for the proxy and is unavailable for new no-authentication endpoints.
+Recovery can retain an existing no-authentication route on `11435` only when the proxy has moved and no other protected service owns that port.
+The shared proxy stays pinned to its existing backend; reuse that endpoint.
+Moving or removing a sandbox does not release the host-global binding.
+To select a different no-authentication backend, back up the sandboxes and remove the final NemoClaw gateway with the uninstaller before reinstalling.
 
 If you manually enter a sandbox-internal alias such as `http://host.openshell.internal:8000/v1`, host-side endpoint probing is skipped during onboarding.
 Use a host-routable endpoint such as `localhost` when you need onboarding to verify the API, tool-calling, and streaming paths before gateway registration.
 Otherwise, verify the runtime route after onboarding with `$$nemoclaw <name> status` and a short agent request.
 
 For an HTTP URL using the host `localhost`, `127.0.0.1`, or `[::1]` and the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`, the API key prompt says that pressing Enter selects no authentication.
-Port `11435` also supports this mode when `NEMOCLAW_OLLAMA_PROXY_PORT` uses a different free port before onboarding.
 Other URLs still require `COMPATIBLE_API_KEY`.
 
 Refer to [Choose a Compatible Inference API](choose-compatible-inference-api) for the probe order and runtime API selection.
@@ -6936,7 +6964,7 @@ NEMOCLAW_PROVIDER=custom \
 | `NEMOCLAW_PROVIDER` | Set to `custom`. |
 | `NEMOCLAW_ENDPOINT_URL` | Base URL of the server, without userinfo, query, or fragment components. |
 | `NEMOCLAW_MODEL` | Model ID reported by the server. |
-| `NEMOCLAW_COMPATIBLE_AUTH_MODE` | Set to `none` to explicitly select no authentication for an HTTP endpoint using `localhost`, `127.0.0.1`, or `[::1]` and the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`. Port `11435` requires `NEMOCLAW_OLLAMA_PROXY_PORT` to use a different free port. |
+| `NEMOCLAW_COMPATIBLE_AUTH_MODE` | Set to `none` to explicitly select no authentication for an HTTP endpoint using `localhost`, `127.0.0.1`, or `[::1]` and the port selected by `NEMOCLAW_VLLM_PORT` (`8000` by default) or port `11434`. Protected service ports remain excluded. |
 | `NEMOCLAW_REASONING` | Enables reasoning-only validation with the case-insensitive true values `true`, `1`, `yes`, and `y`. |
 | `NEMOCLAW_TRUSTED_PRIVATE_HOSTS` | Optional comma-separated hostnames or IP literals for operator-owned private endpoints. Wildcards are not supported. |
 | `NEMOCLAW_TRUSTED_PRIVATE_INFERENCE_HOSTS` | Inference-only compatibility alias for `NEMOCLAW_TRUSTED_PRIVATE_HOSTS`. Inference onboarding combines entries from both variables. |
@@ -7818,6 +7846,11 @@ The vLLM `/v1/responses` endpoint does not run the configured tool-call parser, 
 <Warning>
 Local vLLM does not require authentication by default.
 Existing-server and single-host managed-vLLM paths use `NEMOCLAW_VLLM_PORT`, which defaults to `8000`, on host loopback for validation and on the OpenShell Docker bridge for sandbox traffic.
+After onboarding, `status` and `doctor` probe an authenticated managed single-host vLLM container on its published loopback port.
+For a bearerless server, they use the port in the sandbox's recorded `http://host.openshell.internal:<port>/v1` route.
+When that route is valid, no later port environment override is required.
+For vLLM, `connect` runs these host probes only when it repairs the route.
+A missing or invalid recorded route makes a bearerless probe fall back to `NEMOCLAW_VLLM_PORT`, which defaults to `8000`.
 Use a host firewall with default-deny inbound rules.
 Allow the configured TCP port only from the OpenShell Docker subnet to its gateway address, keep loopback access, and deny the port on every other interface.
 Do not expose the port to your LAN or the internet.
@@ -7949,7 +7982,13 @@ $$nemoclaw onboard --profile <profile-id> --vllm-gpu-device <index-or-uuid>
 #### Handle a Running vLLM Server
 
 The single-host managed vLLM runtime is host-global.
-Destroying a sandbox does not stop it, and the container remains available for other sandboxes.
+`$$nemoclaw <name> destroy` keeps the container while any registered sandbox in any gateway state root reports provider `vllm-local`.
+Local NIM uses the same provider identifier and counts as a possible consumer.
+After the last such sandbox is destroyed, an eligible `destroy` removes the verified NemoClaw-managed container and frees its GPU memory.
+When ownership or Docker state cannot be verified, NemoClaw retains recovery state and reports the reason instead of claiming completed retirement.
+Resolve the cause, then rerun the same `destroy` command.
+Pass `--keep-vllm` or set `NEMOCLAW_KEEP_VLLM=1` to preserve the container for a later sandbox.
+Refer to [CLI Commands](../../reference/commands) for the cleanup conditions.
 Later standard onboarding normally reuses a server that is already listening on the configured vLLM port instead of replacing it automatically.
 When a managed GPU selection accompanies explicit managed-install intent, NemoClaw preserves that intent and reports the running-server conflict.
 
@@ -7986,7 +8025,7 @@ Choose one action:
   ```
 
 Accept the result when onboarding completes and `$$nemoclaw list` reports the new sandbox with provider `vllm-local` and the expected model.
-NemoClaw does not stop or recreate a running vLLM server automatically because another sandbox can use it.
+Onboarding does not stop or recreate a running vLLM server automatically because another sandbox can use it.
 
 NemoClaw requires a resumed session to reuse the recorded GPU selector.
 A legacy in-progress session cannot add one, and a resumed session cannot change one.
@@ -10300,9 +10339,9 @@ Run `$$nemoclaw <name> gateway restart` to make the gateway open the restored da
 </AgentOnly>
 
 <Note>
-`--to` is not available for a snapshot of a sandbox that uses a NemoClaw-managed image.
-NemoClaw reports that the restore is not available and stops before it creates, deletes, or changes the destination sandbox.
-Restore that snapshot into its source sandbox without `--to`.
+  `--to` is not available for a snapshot of a sandbox that uses a NemoClaw-managed image. NemoClaw
+  reports that the restore is not available and stops before it creates, deletes, or changes the
+  destination sandbox. Restore that snapshot into its source sandbox without `--to`.
 </Note>
 
 To clone a snapshot into a different sandbox name, pass `--to <name>`. If the destination sandbox already exists, NemoClaw refuses to overwrite it unless you pass `--force`:
@@ -10449,8 +10488,8 @@ $$nemoclaw backup-all
 
 `backup-all` walks the sandboxes registered on the host, creates a snapshot for each eligible running or temporarily started sandbox, and stores the snapshot bundles under `~/.nemoclaw/rebuild-backups/<name>/`. If a registered standard sandbox is stopped, `backup-all` asks OpenShell to start that exact sandbox for the duration of the backup and asks OpenShell to return it to `Stopped` afterward. If either lifecycle transition fails, the backup run fails with the affected sandbox named. Correct the reported OpenShell lifecycle problem, run `$$nemoclaw <name> start` when appropriate, and rerun `$$nemoclaw backup-all`; do not start or stop the provider container directly.
 
-For each eligible sandbox, `backup-all` holds one lifecycle transaction through the complete backup.
-Within that transaction, it asks OpenShell to start a stopped sandbox when required, copies sandbox state, and asks OpenShell to return that sandbox to `Stopped`.
+For a stopped sandbox, `backup-all` first asks OpenShell to start it in a separate bounded operation.
+After OpenShell accepts the start, one lifecycle transaction covers readiness, state capture, and returning the sandbox to `Stopped`.
 A backup failure marks that sandbox as failed, and `backup-all` continues with the next sandbox.
 
 When a backup fails, NemoClaw identifies the affected state item and reports `permission denied`, `tar read error`, or `absent after extraction` when available. Use `$$nemoclaw <name> snapshot list` and `$$nemoclaw <name> snapshot restore` to inspect or restore one sandbox's bundles later.
@@ -11806,7 +11845,15 @@ $$nemoclaw <sandbox-name> rebuild
 
 On WSL with Docker Desktop, a generated replacement image build uses a temporary credential-free Docker configuration when the configured Docker Desktop credential helper is unavailable. NemoClaw removes the temporary configuration after the build and does not modify your Docker configuration. An explicit custom Dockerfile continues to use your configured Docker credentials because its base image or build steps might require a private registry. If that custom rebuild cannot reach the credential helper, restore the Docker Desktop session or credential-helper access before retrying.
 
-Rebuild creates the replacement from the base image selected during preflight, even when the source sandbox records an older base-image hint.
+Generated-image rebuilds use the base image selected during preflight, even when the source sandbox records an older base-image hint.
+Custom Dockerfile rebuilds use the recorded Dockerfile source.
+
+<AgentOnly variant="openclaw,hermes">
+A sandbox created with `--from-image` rebuilds from its recorded digest instead.
+Before backup or deletion, NemoClaw makes that digest available in Docker and validates its platform, runtime metadata, tool disclosure mode, and immutable local content identity.
+If a pull or validation fails, rebuild keeps the existing sandbox and stops before replacement.
+</AgentOnly>
+
 If replacement onboarding returns a nonzero status, rebuild stops before post-create state restoration and preserves the backup and registry recovery state.
 It does not report a successful rebuild.
 
@@ -14240,6 +14287,11 @@ The whole-host sweep applies this gate separately to each selected gateway port.
 If a backup fails or any registered sandbox is skipped, uninstall stops that gateway pass before OpenShell resource cleanup.
 A registry entry confirmed absent from both the selected gateway and Docker is exempt because no sandbox state remains to capture.
 When uninstall confirms that no sibling gateways remain, it also removes the shared CLI, services, images, providers, configuration, models, and swap.
+During full uninstall, NemoClaw requires complete selected-gateway authority before it removes provider registrations, the gateway registration, `sandboxes.json`, or later local state.
+It also requires two consecutive empty OpenShell sandbox inventories.
+If the authority is incomplete or the inventory cannot be verified or does not remain empty, uninstall exits nonzero and preserves that downstream state for retry.
+The OpenShell sandbox deletion can partially complete before verification fails.
+Resolve the reported OpenShell authority or inventory error, inspect the selected gateway, and rerun the same uninstall command.
 During full uninstall, a managed distributed-vLLM receipt makes NemoClaw first revalidate the recorded plan and every cluster node, GPU, container, and SSH peer identity.
 It then removes only the receipt-owned containers.
 The managed-cluster receipt is host-global under `~/.nemoclaw/`.
@@ -14549,6 +14601,10 @@ When all your registered sandboxes resolve to one recorded gateway, the command 
 
 Each rebuild destroys the old container and creates a new one while preserving the manifest-defined workspace or agent state that NemoClaw knows how to snapshot.
 `upgrade-sandboxes --check` can report a sandbox as stale because the running agent version is behind, because the managed NemoClaw image fingerprint differs from the current CLI, or both.
+
+Sandboxes created with `--from-image` remain pinned to their publisher-managed image digest.
+`upgrade-sandboxes` lists these sandboxes but excludes them from agent version and image drift classification, including with `--auto`.
+After you update NemoClaw, run `$$nemoclaw <sandbox-name> rebuild` to revalidate the external image and recreate the sandbox from its recorded digest.
 
 Custom-image sandboxes created with `--from <Dockerfile>` are not marked stale solely by image fingerprint, so an upgrade check does not accidentally replace them with the default image.
 Runtime changes outside the manifest-defined state paths, such as packages installed manually in the running container, are not preserved.
