@@ -3949,8 +3949,10 @@ The proof-backed GPU identity or a Windows chassis model that reports `RTX Spark
 The chassis model does not establish N1x WSL identity.
 Both providers run the same pinned CUDA workload and capacity query; their provider implementation owns the GPU injection arguments.
 When `qwen3.6:35b` is installed and that proof reports at least 30,000 MiB available, NemoClaw selects it before `qwen3.5:9b`.
+A Windows chassis model that reports Station GB300 also qualifies for this ranking through Docker Desktop.
+Its proof must verify every reported GPU, include an `NVIDIA GB300` device, and report at least 30,000 MiB available.
 A Windows on Arm host with multiple GPUs uses the provider proof to validate every reported device and its aggregate capacity, but that proof does not qualify a generic host for automatic 30B or 35B selection.
-Only the N1x qualification described above can select `qwen3.6:35b`; other Windows on Arm GPUs remain compute-constrained and select `qwen3.5:9b`.
+Only the N1x or Station GB300 qualification described above can select `qwen3.6:35b`; other Windows on Arm GPUs remain compute-constrained and select `qwen3.5:9b`.
 <AgentOnly variant="openclaw">
 For the selection boundary and remaining N1X limitations, refer to [Use Ollama for Local Inference](/user-guide/openclaw/inference/local-inference/set-up-ollama).
 </AgentOnly>
@@ -6773,6 +6775,9 @@ When `nvidia-smi` reports multiple plausible NVIDIA GPU rows on WSL ARM64, NemoC
 The host qualifies for this selection when the GPU's normalized identity is `NVIDIA RTX Spark N1X`, `NVIDIA RTX Spark N1X (5120-core Blackwell RTX GPU)`, or `NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)`, or when the Windows chassis model reports `RTX Spark N1X`.
 The chassis model qualifies only this Ollama model selection; it does not establish N1x WSL identity for system readiness or managed llama.cpp selection.
 The proof runs one pinned CUDA workload and capacity query through the provider abstraction; Docker supplies its GPU flag and Podman supplies its NVIDIA CDI device without a separate model-selection path.
+On a WSL Station GB300, the Docker proof can also qualify the host for `qwen3.6:35b`.
+The bounded Windows chassis model must report Station GB300, the proof must match every reported GPU, and at least one proved device must report an `NVIDIA GB300` name.
+The Station GB300 qualification does not apply to Podman, managed llama.cpp, managed vLLM, or generic multi-GPU hosts.
 Missing, malformed, mismatched, or insufficient proof capacity retains the `qwen3.5:9b` fallback.
 This safeguard only changes automatic selection.
 
@@ -8197,7 +8202,17 @@ When you start managed vLLM outside the installer express flow, NemoClaw uses th
 | Linux with an NVIDIA GPU | `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` |
 
 For the managed one-host DGX Spark and N1x `nvidia/Qwen3.6-35B-A3B-NVFP4` profiles, NemoClaw enables async scheduling and does not enable multi-token prediction (MTP) speculative decoding.
-The DGX Spark profile retains `--gpu-memory-utilization 0.4`, a `262144`-token context window, `4` concurrent sequences, and an `8192`-token batch limit.
+DGX Spark automatically selects its Qwen recipe from the detected unified-memory capacity:
+
+| Detected capacity | Context tokens | Concurrent sequences | Batched tokens | GPU-memory utilization |
+|---|---|---|---|---|
+| At least 60 GB and less than 64 GB | 32,768 | 1 | 4,096 | 0.5 |
+| At least 64 GB | 262,144 | 4 | 8,192 | 0.4 |
+
+The smaller recipe admits a nominal 64 GB DGX Spark that reports about 61.6 GB of usable unified memory.
+It remains Experimental with software validation; physical 64 GB Spark qualification is pending.
+Unknown capacity or less than 60 GB does not qualify for either Qwen recipe.
+Before installation, NemoClaw displays the selected hardware profile and context limit.
 The Deferred N1x profile uses `--gpu-memory-utilization 0.6`, a `32768`-token context window, `2` concurrent sequences, and a `4096`-token batch limit.
 The two-sequence limit permits vLLM to schedule a compaction summary while an agent response uses the other sequence.
 Both profiles retain chunked prefill, prefix caching, and their registered parsers and acceleration backends.
@@ -8545,7 +8560,7 @@ Follow the diagnostic to restore valid telemetry, correct the selected GPU, or f
 Then run `$$nemoclaw onboard --resume`.
 
 To bound resource use while investigating long-context workflows on one DGX Spark, select the Qwen profile.
-The following override disables async scheduling and lowers the context window, concurrent-sequence limit, and batch limit to the current N1x defaults.
+For a Spark with at least 64 GB of detected unified memory, the following override disables async scheduling and lowers the context window, concurrent-sequence limit, and batch limit to the current N1x defaults.
 
 ```bash
 NEMOCLAW_PROVIDER=install-vllm \
@@ -9797,8 +9812,7 @@ After a successful rebuild, `channels add` checks the selected Telegram, Discord
 
 <AgentOnly variant="openclaw">
 An official-plugin provenance failure stops the image build before these runtime checks.
-Report the failure diagnostic, plugin name and NemoClaw version to a maintainer; NemoClaw manages the package pins and build cache.
-Refer to [Official messaging plugin verification stops the build](../../reference/troubleshooting#official-messaging-plugin-verification-stops-the-build).
+Follow the recovery procedure in [Official messaging plugin verification stops the build](../../reference/troubleshooting#official-messaging-plugin-verification-stops-the-build).
 </AgentOnly>
 
 If you defer the rebuild, apply the change later:
@@ -10489,8 +10503,9 @@ $$nemoclaw backup-all
 `backup-all` walks the sandboxes registered on the host, creates a snapshot for each eligible running or temporarily started sandbox, and stores the snapshot bundles under `~/.nemoclaw/rebuild-backups/<name>/`. If a registered standard sandbox is stopped, `backup-all` asks OpenShell to start that exact sandbox for the duration of the backup and asks OpenShell to return it to `Stopped` afterward. If either lifecycle transition fails, the backup run fails with the affected sandbox named. Correct the reported OpenShell lifecycle problem, run `$$nemoclaw <name> start` when appropriate, and rerun `$$nemoclaw backup-all`; do not start or stop the provider container directly.
 
 For a stopped sandbox, `backup-all` first asks OpenShell to start it in a separate bounded operation.
-After OpenShell accepts the start, one lifecycle transaction covers readiness, state capture, and returning the sandbox to `Stopped`.
-A backup failure marks that sandbox as failed, and `backup-all` continues with the next sandbox.
+After OpenShell accepts the start, one lifecycle transaction waits for SSH readiness, captures state, and returns the sandbox to `Stopped`.
+It reserves time for the return transition.
+A readiness, backup, or return failure marks that sandbox as failed, and `backup-all` continues with the next sandbox.
 
 When a backup fails, NemoClaw identifies the affected state item and reports `permission denied`, `tar read error`, or `absent after extraction` when available. Use `$$nemoclaw <name> snapshot list` and `$$nemoclaw <name> snapshot restore` to inspect or restore one sandbox's bundles later.
 
@@ -11859,20 +11874,30 @@ It does not report a successful rebuild.
 
 If the sandbox is stopped, rebuild asks OpenShell to start that exact sandbox for the duration of the pre-recreate state backup and asks OpenShell to return it to `Stopped` afterward, the same lifecycle path `$$nemoclaw backup-all` uses. If OpenShell cannot start the sandbox, or the retried backup still fails, rebuild aborts without recreating the sandbox; it reports an incomplete-snapshot notice only when a partial snapshot was retained. If the backup succeeds but OpenShell cannot return the sandbox to `Stopped`, rebuild also aborts and reports the failed transition.
 
-<AgentOnly variant="openclaw">
+<AgentOnly variant="openclaw,deepagents">
 On OpenShell 0.0.116, `start` cannot restart a sandbox in `Phase: Error`.
-For a managed Docker OpenClaw sandbox whose container is stopped, `rebuild` can capture its declared state without starting or executing in that container.
-User-managed `.env` and `.mcp.json` files are not captured or restored by this path.
-Keep secure host copies of any needed values or configuration before rebuilding, then re-add those files after recovery.
-It verifies the recorded sandbox and container identities, preserves MCP configuration and the live policy, sanitizes the backup, and then creates and verifies a replacement.
-OpenClaw's machine identity and gateway pairing state stay outside the backup.
+For a managed Docker OpenClaw or Deep Agents Code sandbox whose container is stopped, `rebuild` can capture declared state without starting or executing in that container.
+For Deep Agents Code, it carries only supported managed native MCP entries through a bounded recovery handoff.
 
+It verifies the recorded sandbox and container identities, preserves the live policy, sanitizes the backup, and then creates and verifies a replacement.
 This recovery requires the original container to remain present and unchanged.
 NemoClaw accepts its local managed state volume only when ownership metadata matches and no other container references it.
-It refuses other mounts within or above `/sandbox/.openclaw`, unsupported filesystem entries, or a source archive larger than 1 GiB.
+It refuses other mounts within or above the agent state directory, unsupported filesystem entries, or a source archive larger than 1 GiB.
 A capture or ownership failure preserves the original sandbox and stops replacement.
 The snapshot records the source as stopped even though the verified replacement runs.
 If temporary capture cleanup fails, the warning names the private directory to remove before retrying.
+
+</AgentOnly>
+
+<AgentOnly variant="deepagents">
+`.deepagents/.env`, authentication state, and user-authored or unsupported `.deepagents/.mcp.json` content are not captured by this path.
+Keep secure host copies and restore them only through their owning supported workflow.
+</AgentOnly>
+
+<AgentOnly variant="openclaw">
+User-managed `.env` and `.mcp.json` files are not captured or restored by this path.
+Keep secure host copies of any needed values or configuration, then re-add those files after recovery.
+OpenClaw's machine identity and gateway pairing state stay outside the backup.
 
 </AgentOnly>
 
@@ -13092,7 +13117,8 @@ Prepare the Google Cloud resources before you enable the channel.
 - Enable the Google Chat API and configure the Chat app that the sandbox will run.
 - Create a service account and download a JSON key. The JSON must contain
   non-empty `client_email` and `private_key` string fields.
-- Minify the service-account JSON to one line before you paste it at the `GOOGLECHAT_SERVICE_ACCOUNT` prompt.
+- Minify the service-account JSON to one line before you paste it at the interactive prompt.
+  `GOOGLECHAT_SERVICE_ACCOUNT` accepts the downloaded JSON with LF or CRLF line breaks when you set it in the host environment.
 
 Keep the JSON key available on the trusted host during enrollment.
 Do not copy it into the sandbox or the agent configuration.
@@ -14167,9 +14193,11 @@ Let onboarding create the directory when possible. Every existing ancestor, from
 If onboarding stops immediately after reserving that directory, uninstall removes the marker-only reservation only while the selected gateway port is free. Gateway configuration, a runtime marker, or a PID file moves cleanup to the managed-gateway checks instead. A port-bound marked gateway with valid generated configuration can be retired after the port is free and a complete process scan proves that no live process claims its state; a listener or unproven process preserves the directory. Inspect and stop the listener or matching gateway process, then rerun uninstall after the port is free.
 Onboarding holds an exclusive lifecycle lock from reservation through gateway initialization.
 If uninstall reports that onboarding owns the state directory while onboarding is active, wait for onboarding to finish and rerun uninstall; the reservation is preserved.
-If the reported `onboard.lock` remains after onboarding ended abruptly, rerun uninstall after the recorded process ends so NemoClaw can recover the stale lock.
-Uninstall reports the lock path and preserves a recent malformed lock for 30 seconds because another process can still be writing it.
-Wait until the lock has not changed for at least 30 seconds, confirm that no onboarding process shares the state root, and retry.
+If the reported `onboard.lock` remains after onboarding ends abruptly, wait briefly and rerun uninstall to retry lock acquisition.
+A recorded PID or command describes the lock record. It does not prove that process owns an active lock.
+Do not stop a process or delete the lock from that record.
+NemoClaw preserves a recent malformed lock for 30 seconds because another process can still be writing it.
+Wait at least 30 seconds, then retry.
 After successful managed cleanup, uninstall recursively removes that directory and all contents.
 `--keep-openshell` preserves it.
 </Warning>
