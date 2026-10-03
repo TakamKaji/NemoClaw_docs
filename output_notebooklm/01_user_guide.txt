@@ -16,7 +16,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join-7289da)](https://discord.gg/XFpfPv9Uvx)
 
 NVIDIA NemoClaw is an open source reference stack for running supported AI agents more safely inside [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes.
-It provides guided onboarding, managed inference, network policy, managed integrations, snapshots, and lifecycle operations through the NemoClaw CLI and its agent-specific aliases.
+It provides guided onboarding, managed inference, network policy, managed integrations, OpenShell-backed state persistence, and lifecycle operations through the NemoClaw CLI and its agent-specific aliases.
 
 **Supported agents:**
 
@@ -198,7 +198,7 @@ openclaw config set agents.defaults.heartbeat.every 2h
 Use `0m` to disable heartbeats.
 Run `openclaw config unset agents.defaults.heartbeat.every` to return the cadence to OpenClaw's default behavior without removing NemoClaw's isolated-session setting.
 Restart and reconnect preserve the current value.
-Rebuild restores the sanitized configuration captured immediately before rebuild, while snapshot restore reapplies the value from the selected snapshot.
+Rebuild transfers the complete native configuration captured immediately before replacement. To roll back to an earlier cadence, set the recorded value explicitly; the retired selective snapshot restore flow is not available.
 
 
 ========================================
@@ -285,7 +285,7 @@ Disabling fallback keeps verification on the selected embedding provider.
 The restart activates the plugin and memory settings.
 OpenClaw owns the native configuration after first launch.
 Restart and reconnect preserve the current native changes.
-Rebuild restores the sanitized configuration captured immediately before rebuild, while snapshot restore reapplies the settings from the selected snapshot.
+Rebuild transfers the complete native configuration captured immediately before replacement. To roll back to earlier memory-search settings, reapply them explicitly from an independent trusted record; the retired selective snapshot restore flow is not available.
 The `local-inference` OpenShell policy preset controls access to the private host bridge URL.
 
 ## Rebuild and Verify the Index
@@ -760,8 +760,8 @@ NemoClaw separates provider credentials, host metadata, and sandbox state.
 | OpenShell gateway | Provider credentials and provider registrations | Reused when the gateway and provider binding remain available. Raw values cannot be read back. |
 | `~/.nemoclaw/` on the host | Sandbox registry, provider names, and onboarding session state | Preserved by normal updates. The directory contains no sandbox policy or provider credential values. |
 | Agent configuration in the sandbox | Generated inference routes, OpenShell resolver placeholders, and agent-specific settings | Regenerated from host registry and OpenShell state. Generated files are not a credential store. |
-| Manifest-defined sandbox state | Agent workspace, memory, skills, and agent-specific durable files | Snapshotted and restored according to the selected agent manifest. |
-| Arbitrary environment and profile edits | Direct shell exports and edits outside the manifest contract | Not guaranteed. Export host variables again and use documented host commands for durable configuration. |
+| OpenShell native home/workspace | The complete agent tree, including unknown files, configuration, histories, hooks, plugins, packages, cron data, and child-agent state | Transferred as one opaque archive without an agent-specific path inventory. |
+| State outside the native home/workspace | Container image and system paths, plus shell state that exists only in a running process | Not transferred. Download needed files before replacement and export host variables again. |
 
 NemoClaw holds an environment-supplied provider credential in memory while it registers the value with OpenShell. The sandbox receives a resolver placeholder, and OpenShell substitutes the raw value at egress. For details, refer to [Credential Storage](../security/credential-storage).
 
@@ -771,7 +771,7 @@ Install a declarative agent skill through the supported host command:
 $$nemoclaw headless-agent skill install ./my-skill/
 ```
 
-The skill directory must contain `SKILL.md` with a `name` field in its YAML frontmatter. Do not assume that packages, shell exports, or profile edits made by a skill survive a rebuild.
+The skill directory must contain `SKILL.md` with a `name` field in its YAML frontmatter. Files a skill writes under the native home/workspace survive a rebuild; process-only shell exports and changes elsewhere do not.
 
 ## Add a Least-Privilege Policy
 
@@ -785,16 +785,15 @@ $$nemoclaw headless-agent policy add --from-file ./presets/internal-status.yaml 
 $$nemoclaw headless-agent policy list
 ```
 
-`--yes` skips the confirmation prompt but does not skip schema, destination, or SSRF validation. NemoClaw merges the validated content into the current OpenShell policy and stores no second copy in the sandbox registry. Snapshot clone and rebuild carry the complete current OpenShell policy forward. Keep the source YAML in your configuration repository so operators can review and intentionally reapply changes. For the preset schema and removal workflow, refer to [Network Policies](../reference/network-policies).
+`--yes` skips the confirmation prompt but does not skip schema, destination, or SSRF validation. NemoClaw merges the validated content into the current OpenShell policy and stores no second copy in the sandbox registry. Rebuild carries the complete current OpenShell policy forward. Keep the source YAML in your configuration repository so operators can review and intentionally reapply changes. For the preset schema and removal workflow, refer to [Network Policies](../reference/network-policies).
 
 An SSH command without `-t`, a service unit, and a CI job have no terminal on stdin, so the preset picker cannot run there. Pass the preset name, `--from-file`, or `--from-dir` in such a session. `policy add` and `policy remove` skip their confirmation prompts without a terminal on stdin, so neither needs `--yes` or `NEMOCLAW_NON_INTERACTIVE=1`.
 
 ## Plan for Updates and Rebuilds
 
-Create a named snapshot before host maintenance or a manual update:
+Keep an independent host copy before host maintenance or a manual update when you need an extra recovery point:
 
 ```bash
-$$nemoclaw headless-agent snapshot create --name before-maintenance
 export NEMOCLAW_INSTALL_REF="<next-reviewed-40-character-commit-sha>"
 [[ "$NEMOCLAW_INSTALL_REF" =~ ^[0-9a-f]{40}$ ]] || {
   echo "NEMOCLAW_INSTALL_REF must be a reviewed full commit SHA" >&2
@@ -808,28 +807,15 @@ $$nemoclaw upgrade-sandboxes --check
 
 Use a newly reviewed commit SHA for each planned update instead of relying on the mutable installer default. The installer requires current backups before it changes an existing managed installation. Use `$$nemoclaw headless-agent rebuild` when you need the current agent image while preserving supported state.
 
-| Item | Same-container restart | Snapshot and restore | Rebuild or sandbox upgrade |
-| --- | --- | --- | --- |
-| Provider configuration | Preserved | Provider names are recorded, but raw credentials are not in the snapshot | Regenerated from registry and OpenShell provider state |
-| Current OpenShell policy, including custom presets and host edits | Remains in OpenShell | Read live for a clone handoff, not stored in snapshot metadata | Read live and handed to replacement creation |
-| Manifest-defined user and agent state | Preserved | Preserved | Preserved when backup and restore succeed |
-| Arbitrary files outside manifest state | Usually remain in the same writable layer | Not preserved | Not preserved |
-| Manually installed system or global packages | Usually remain in the same writable layer | Not preserved | Not preserved |
-| Direct edits to generated profile, config, or environment files | May remain until regeneration | Agent-specific and usually excluded or filtered | Regenerated or filtered by the current manifest |
+| Item | Same-container restart | Rebuild or sandbox upgrade |
+| --- | --- | --- |
+| Complete native home/workspace | Preserved by OpenShell storage | Captured and restored as one opaque tree |
+| Unknown files, native config, histories, hooks, plugins, packages, cron data, and child-agent state under that tree | Preserved | Preserved without a NemoClaw path allowlist |
+| OpenShell policy and credential stores | Remain under OpenShell ownership | Re-established through OpenShell; not copied into the agent archive |
+| Container image and system paths outside the native home/workspace | Remain with the same container | Replaced by the selected image |
+| Host tunnel processes | Remain only while their host processes are active | Re-established and verified after rebuild |
 
-<AgentOnly variant="openclaw">
-  | OpenClaw gateway token | Rotated when the container starts with mutable configuration | Not
-  captured; a replacement sandbox generates a new token | Rotated for the replacement sandbox |
-</AgentOnly>
-<AgentOnly variant="hermes">
-  | Hermes `API_SERVER_KEY` | Preserved | Not captured; a replacement sandbox generates a new token
-  | Rotated for the replacement sandbox |
-</AgentOnly>
-| Host tunnel process | Not applicable to a container restart | Not preserved | Not preserved | |
-Dashboard, API, messaging, and agent forwards | Preserved only while their host processes remain
-active | Re-established during supported recovery | Re-established and verified after rebuild |
-
-Snapshot only the state that the current agent manifest declares. Download any required file outside that contract before a destructive operation. Refer to [Understand Sandbox State](../manage-sandboxes/state-and-backups/understand-sandbox-state) and [Create and Restore Snapshots](../manage-sandboxes/state-and-backups/create-and-restore-snapshots) for agent-specific exclusions.
+Download any state outside the OpenShell-provided native home/workspace before a destructive operation. Refer to [Understand Sandbox State](../manage-sandboxes/state-and-backups/understand-sandbox-state) and [Persist Sandbox State](../manage-sandboxes/state-and-backups/create-and-restore-snapshots) for the persistence boundary.
 
 ## Recover After a Host Reboot
 
@@ -886,7 +872,7 @@ $$nemoclaw headless-agent destroy --yes
 $$nemoclaw onboard
 ```
 
-The missing sandbox's state cannot be recovered unless you have a separate snapshot. After onboarding, restore that snapshot explicitly. For failure-specific recovery boundaries, refer to [Recover and Rebuild Sandboxes](../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes).
+The missing sandbox's state cannot be recovered unless you have an independent backup. After onboarding, restore that backup with the same external method used to create it. For failure-specific recovery boundaries, refer to [Recover and Rebuild Sandboxes](../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes).
 
 <AgentOnly variant="openclaw,hermes">
 
@@ -2226,7 +2212,6 @@ If you cannot add memory, configure at least 8 GB of swap to work around the iss
 | Node.js    | 22.19 or later |
 | npm        | 10 or later |
 | SHA-256 tool | `sha256sum` or `shasum`, required only when the installer must install or upgrade Node.js through nvm |
-| Python     | Python 3 at a trusted system location, with POSIX descriptor-relative filesystem support |
 | Container runtime | Docker Engine, Docker Desktop, or Colima on a tested platform (default), or rootless Podman on qualified native Linux and Windows WSL2 paths |
 | Platform   | Refer to [Platforms](#platforms) below |
 
@@ -2242,16 +2227,6 @@ Native Podman gateway readiness also requires `lsof` on `PATH` to verify the gat
 Start standard onboarding with `NEMOCLAW_GATEWAY_RUNTIME=podman $$nemoclaw onboard`.
 Before selecting it, review its qualified host requirements and limitations in [Platform Support](../reference/platform-support#deployment-paths) and the [Podman troubleshooting guide](../reference/troubleshooting#podman).
 Managed llama.cpp and Windows-host Ollama remain Docker Desktop-only on WSL. Managed local vLLM install/start remains Docker-backed and is unavailable when Docker is absent; attaching an already-running local vLLM server remains a separate path.
-
-NemoClaw's active rebuild-backup sanitizer uses an isolated `python3` helper for descriptor-relative inspection and mutation.
-NemoClaw does not resolve this credential-bearing sanitizer through the host `PATH`.
-It accepts a verified executable at `/usr/bin/python3`, `/usr/local/bin/python3`, `/opt/homebrew/bin/python3`, `/opt/local/bin/python3`, or beside the Node.js executable.
-The sanitizer fails closed before it reads snapshot content if no candidate passes its ownership, permission, and executable checks.
-The sanitizer requires the POSIX filesystem operations available on supported Linux, macOS, and WSL environments.
-<AgentOnly variant="openclaw">
-Legacy snapshot deletion uses a separate descriptor-relative helper resolved as `python3` through `PATH`.
-</AgentOnly>
-Native Windows is not a supported execution path; use WSL.
 
 If you choose the native Linux Ollama install path, the onboard wizard also requires `zstd` for Ollama archive extraction.
 The installer also requires `strings` from `binutils` to verify the OpenShell binary before it continues with OpenShell install work.
@@ -2622,11 +2597,10 @@ Use these details when your first-run path needs more control.
   </Accordion>
 
   <Accordion title="Manage a Hermes sandbox">
-    Use the `nemohermes` alias for lifecycle, logs, backups, rebuilds, and model changes.
+    Use the `nemohermes` alias for lifecycle, logs, rebuilds, and model changes.
 
     ```bash
     nemohermes my-hermes logs --follow
-    nemohermes my-hermes snapshot create --name before-change
     nemohermes inference set --model <model> --provider <provider> --sandbox my-hermes
     ```
 
@@ -2791,7 +2765,6 @@ Use these details when your first-run path needs more control.
     ```bash
     nemohermes my-hermes status
     nemohermes my-hermes logs --follow
-    nemohermes my-hermes snapshot create --name before-change
     nemohermes my-hermes rebuild
     ```
 
@@ -2816,7 +2789,7 @@ If `nemohermes` is unavailable after installing, reload your shell profile or fo
 
 - [Choose an Inference Provider](../inference/learn-and-choose/choose-inference-provider) explains how to choose or change a model and provider.
 - [Commands](../reference/commands) explains the `nemohermes` alias and its options.
-- [Create and Restore Snapshots](../manage-sandboxes/state-and-backups/create-and-restore-snapshots) explains how to preserve sandbox state.
+- [Persist Sandbox State](../manage-sandboxes/state-and-backups/create-and-restore-snapshots) explains OpenShell persistence and whole-home rebuild transfer.
 - [Monitor Sandbox Activity](../monitoring/monitor-sandbox-activity) explains how to inspect OpenShell events and sandbox logs.
 
 
@@ -3009,7 +2982,7 @@ Deep Agents Code runs from a NemoClaw-managed Python virtual environment at `/op
 
 ### State and Backup
 
-Deep Agents Code state lives under `/sandbox/.deepagents`. NemoClaw snapshot and rebuild flows preserve the app state directory and skills when those paths exist. During managed re-onboarding, NemoClaw restores the allowlisted UI and thread preferences, validated native interpreter settings, and native `startup.mode` from `config.toml`. Freshly generated model routing, update settings, and provider metadata remain authoritative; unknown, privileged, invalid, and security-sensitive keys are dropped. User-authored `hooks.json` is also preserved, so review its executable commands before restoring a snapshot from another workspace. NemoClaw recreates the sandbox when its live `dcode identity` output is unreadable or does not match the selected provider and model, then records the selection only after the restored runtime passes the same check. Run `nemoclaw <sandbox-name> snapshot create` after active `dcode` tasks finish. For `langchain-deepagents-code` sandboxes, NemoClaw refuses backup when it detects an active `dcode` task or cannot verify that the state tree is idle. `.deepagents/.mcp.json` is the agent-native MCP source. Managed entries contain only URLs and OpenShell placeholders, and rebuild carries them through its bounded transaction handoff rather than reconstructing them from the host registry. Service credentials remain in OpenShell provider state. NemoClaw intentionally does not back up `.deepagents/.env`. If `.deepagents/.state/auth.json` contains upstream credentials, or `.deepagents/.state/chatgpt-auth.json` exists, the managed Deep Agents Code launch paths refuse to start until that credential state is removed. Before a managed Deep Agents Code rebuild changes the sandbox, NemoClaw selects its recorded OpenShell gateway, tests the recorded inference route through `https://inference.local`, and prepares the replacement from the current agent configuration, OpenShell policy and providers, model, and build inputs with a pinned base and fingerprinted context. Initial failures stop before backup. After backup, NemoClaw rechecks the target, route, and retained build inputs before changing MCP state, then checks again after MCP preparation and before stopping inference or deleting the old sandbox. If the final check fails, NemoClaw restores the previous source state and keeps the existing sandbox intact. Rebuild carries the complete current OpenShell policy forward, including Deep Agents Code `tavily`, custom entries, and trusted host-side edits. The recorded observability choice is preserved unless explicitly overridden.
+Deep Agents Code state lives in its native home under `/sandbox`. OpenShell keeps that storage across stop, start, and reconnect without NemoClaw copying selected files. When a rebuild must create a replacement sandbox, NemoClaw transfers the complete native home and workspace as an opaque unit, including unknown files, configuration, skills, hooks, histories, packages, and plugins. NemoClaw does not merge `config.toml` keys or discard paths that are absent from an agent manifest. OpenShell-owned credentials remain outside the native home and are not included in the transfer. Finish active `dcode` tasks before rebuilding, and make an independent host copy when you need one.
 
   </Accordion>
 
@@ -3074,7 +3047,6 @@ Use normal sandbox lifecycle commands through either `nemo-deepagents` or `nemoc
 nemo-deepagents <sandbox-name> status
 nemo-deepagents <sandbox-name> logs --follow
 nemo-deepagents <sandbox-name> rebuild
-nemo-deepagents <sandbox-name> snapshot create --name before-change
 ```
 
 If you upgrade from a release that persisted LangSmith environment values, rebuild each existing Deep Agents Code sandbox so its image includes the corrected `start.sh`. If an existing sandbox displays `Choose a Recommended Model`, rebuild it so its image includes the managed startup behavior.
@@ -3086,7 +3058,7 @@ If you upgrade from a release that persisted LangSmith environment values, rebui
 - [Run Deep Agents Code](../manage-sandboxes/operate-sandboxes/run-deep-agents-code) explains interactive and headless operation, automation output, and approval boundaries.
 - [Choose an Inference Provider](../inference/learn-and-choose/choose-inference-provider) explains how to choose a provider and model.
 - [Understand Sandbox State](../manage-sandboxes/state-and-backups/understand-sandbox-state) explains `/sandbox/.deepagents`, memory, skills, and what NemoClaw preserves.
-- [Create and Restore Snapshots](../manage-sandboxes/state-and-backups/create-and-restore-snapshots) explains snapshot and rebuild preservation.
+- [Persist Sandbox State](../manage-sandboxes/state-and-backups/create-and-restore-snapshots) explains OpenShell persistence and whole-home rebuild transfer.
 - [Set Up Deep Agents Trace Export](../monitoring/set-up-deepagents-trace-export) configures the policy and host collector.
 - [Network Policies](../reference/network-policies#local-otlp-trace-export) explains the local collector egress preset.
 - [Troubleshooting](../reference/troubleshooting) covers common setup and runtime issues.
@@ -3521,7 +3493,7 @@ Use these details when your first-run path needs more control.
     For pre-fingerprint OpenClaw and Hermes registry entries, confirm that every listed sandbox used a NemoClaw-managed image before recovery onto the current managed image.
     In non-interactive runs, set `NEMOCLAW_CONFIRM_LEGACY_MANAGED_RECREATE` to the JSON array of printed names only after you verify every named sandbox used a managed image.
     Legacy managed-image confirmation never overrides recorded custom-image evidence.
-    A custom OpenClaw sandbox uses the same validated state backup boundary; OpenClaw's native plugin and package state is restored with the rest of its declared state.
+    A custom OpenClaw sandbox uses the same validated whole-home transfer; OpenClaw's native plugin and package state is restored with every other path under the OpenShell-provided native home.
     If a backup is skipped or fails, or automatic rebuild fails or is blocked, the installer exits nonzero before generic onboarding begins.
 
     The inference prompt presents these choices.
@@ -3621,7 +3593,7 @@ Use these details when your first-run path needs more control.
     When the selector is unset, OpenClaw chooses Brave Search when `BRAVE_API_KEY` is available, then Tavily Search when only `TAVILY_API_KEY` is available.
     Brave Search wins when both keys are available.
     Changing or disabling web search requires re-running onboarding with the new selection and accepting sandbox recreation, or passing `--recreate-sandbox`.
-    NemoClaw backs up supported workspace state before recreation and restores it into the replacement sandbox.
+    NemoClaw transfers the complete native home/workspace before recreation, including unknown files and agent-managed state. If that tree contains credential-bearing or uninspectable content, recreation stops before replacement; move credentials to supported OpenShell storage or bindings, then retry.
 
     The onboarding flow also offers Telegram, Discord, Slack, WeChat, WhatsApp, Microsoft Teams, and Google Chat.
     Press a channel number to toggle it, then press Enter to continue.
@@ -4974,10 +4946,9 @@ $$nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 
 A normal Pi rebuild replays the recorded context window, maximum output-token count, and reasoning flag.
 Changing those values requires a fresh replacement.
-Create a snapshot first when declared user state must survive, then export the new values and recreate the sandbox.
+Keep an independent copy first when you need an extra recovery point, then export the new values and recreate the sandbox.
 
 ```bash
-nemoclaw <sandbox-name> snapshot create --name before-model-change
 nemoclaw onboard --agent pi --name <sandbox-name> --fresh --recreate-sandbox
 ```
 
@@ -4997,7 +4968,7 @@ Use the same fresh replacement flow to change its provider or model.
 
 <AgentOnly variant="pi">
 
-- [Run and Manage Pi](../manage-sandboxes/run-pi) for rebuild and snapshot behaviour.
+- [Run and Manage Pi](../manage-sandboxes/run-pi) for rebuild and recovery behaviour.
 - [Pi Support and Security](../reference/pi-support) for supported inference and credential boundaries.
 
 </AgentOnly>
@@ -5135,13 +5106,10 @@ The first command records the source-subnet policy for the running adapter.
 NemoClaw retries revocation during the second command.
 When no other sandbox references the route, a completed switch without a revocation warning confirms that the adapter removed it.
 
-<Warning title="Create Snapshots Before Cleanup">
-NemoClaw attempts to wipe manifest-defined agent state before it deletes a sandbox.
-OpenShell can retain the per-name persistent volume after sandbox deletion.
-If the wipe cannot complete, onboarding with the same name can make old files available again.
-Do not rely on a retained volume as a backup.
-Before you destroy a remaining sandbox, create a snapshot of any state that you must keep.
-Refer to [Create and Restore Snapshots](../../manage-sandboxes/state-and-backups/create-and-restore-snapshots) for instructions.
+<Warning title="Download State Before Cleanup">
+Sandbox deletion is an OpenShell lifecycle operation and removes the sandbox's native storage.
+Before you destroy a remaining sandbox, download any state that you must keep to an independently managed location.
+Refer to [Transfer State Manually](../../manage-sandboxes/state-and-backups/transfer-state-manually) for instructions.
 </Warning>
 
 If the affected sandbox was destroyed or revocation continues to fail, destroy all remaining sandboxes before adapter cleanup.
@@ -7305,8 +7273,7 @@ The Omni demo helper stores the real provider key in two persistent sandbox file
 OpenClaw and any other process running as the sandbox user can read these files.
 Container root and administrators of the Docker host can also read them.
 The files remain across gateway restarts and for the life of the current sandbox container until you replace the key, remove the provider, or delete the sandbox.
-They do not survive a NemoClaw rebuild or snapshot restore: those flows strip credential values from `openclaw.json` and omit `auth-profiles.json`.
-Re-provision both copies before using the auxiliary provider after a rebuild or restore.
+A rebuild inspects the complete native home and fails before replacement when it finds these credential values; it does not strip them from an otherwise published transfer. Remove both copies or move the credential into supported OpenShell storage before rebuilding, then provision the auxiliary provider again after rebuild. The retired selective snapshot restore flow is not available.
 
 When you remove `vision-operator`, first remove it from `agents.list`.
 Then remove the provider and the retired agent's credential file, and restart the gateway:
@@ -10007,7 +9974,7 @@ unset DOORDASH_MCP_TOKEN
 ```
 
 NemoClaw writes the denied-tool list into the live OpenShell policy; it does not retain a duplicate registry copy.
-Restart leaves that policy unchanged, and rebuild snapshots and restores the complete live policy.
+Restart leaves that policy unchanged, and rebuild captures and restores the complete live policy.
 The option matches tool names only and does not inspect tool arguments.
 Use `mcp update` to replace or clear the list after registration.
 
@@ -10182,339 +10149,58 @@ NemoClaw does not start, wrap, or translate them.
 ---
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-title: "Create and Restore Snapshots"
-sidebar-title: "Create and Restore Snapshots"
-description: "Create, list, restore, clone, and bulk-create NemoClaw snapshots for sandbox state."
-description-agent: "Explains when to back up sandbox state and how to use snapshot create, list, restore, clone, and backup-all workflows. Use before rebuilds, upgrades, destroys, or state recovery."
-keywords: ["nemoclaw snapshot", "nemoclaw backup-all", "nemoclaw restore", "sandbox backup"]
+title: "Persist Sandbox State"
+sidebar-title: "Persist Sandbox State"
+description: "Understand OpenShell native home persistence and NemoClaw's whole-workspace replacement handoff."
+description-agent: "Explains which sandbox state OpenShell preserves and how rebuild transfers the complete native home when replacement is required."
+keywords: ["openshell storage", "nemoclaw rebuild", "sandbox state", "workspace persistence"]
 content:
-  type: "how_to"
+  type: "explanation"
 skill:
   priority: 20
 ---
 
-NemoClaw snapshots preserve manifest-defined sandbox state before destructive or state-changing operations. They are the preferred backup and restore path.
-
-## When to Create a Snapshot
-
-<AgentOnly variant="openclaw">
-- Before running `$$nemoclaw <name> destroy`.
-- Before major NemoClaw version upgrades.
-- Periodically, if you have invested time customizing your agent.
-</AgentOnly>
-<AgentOnly variant="hermes">
-- Before running `$$nemoclaw <name> destroy`.
-- Before major NemoClaw version upgrades.
-- Periodically, if you have invested time customizing your agent or paired messaging channels.
-</AgentOnly>
-<AgentOnly variant="deepagents">
-- Before running `$$nemoclaw <name> destroy`.
-- Before major NemoClaw version upgrades.
-- Periodically, if you have invested time customizing Deep Agents skills, memory, or managed MCP state.
-</AgentOnly>
-
-## Understand Snapshot Contents
-
-Snapshots capture the manifest-declared snapshot state directories and store them in `~/.nemoclaw/rebuild-backups/<name>/`. Agent manifests can also declare durable top-level state files. Treat snapshot directories as private local data.
-
-<AgentOnly variant="openclaw">
-  <Warning>
-    Inside an OpenClaw sandbox, `~` expands to `/sandbox`, not to the OpenClaw workspace. Files such
-    as `~/USER.md` and `~/SOUL.md` are therefore outside OpenClaw's managed state and are not
-    included in snapshots. Store them as `$OPENCLAW_WORKSPACE_DIR/USER.md` and
-    `$OPENCLAW_WORKSPACE_DIR/SOUL.md` so snapshot and restore operations preserve them.
-  </Warning>
-</AgentOnly>
-
-Before NemoClaw marks a snapshot complete, it strips recognized credential values from copied JSON, YAML, and `.env` files. It preserves recognized dependency lockfiles byte for byte when they contain only dependency metadata. This behavior includes installed npm `.package-lock.json` files. It omits a recognized lockfile when the file is invalid or contains any of these values:
-
-- A credential field.
-- A provider-shaped secret outside a dependency URL.
-- URL user information.
-- A credential-bearing query parameter.
-
-Dependency names in lockfile maps do not count as credential fields. NemoClaw also preserves valid, credential-free `node_modules/**/package.json` manifests byte for byte because dependency names can match credential field names. It omits an installed package manifest when the file contains invalid JSON, a credential or authentication field, a provider-shaped secret, or a credential-bearing URL. It continues to sanitize configuration and `.env` files inside installed dependency trees. It preserves OpenShell credential placeholders so rebuild can reattach the host-side provider. If NemoClaw cannot sanitize a copied configuration or environment file, it omits that file from the snapshot. If it cannot remove the unsafe file, snapshot creation returns an error. It deletes the incomplete backup when cleanup succeeds and reports when the backup remains. This sanitization uses an isolated `python3` helper on POSIX hosts to keep reads, replacements, and removals anchored to opened directory descriptors. If a copied file or parent directory changes identity during the operation, snapshot creation fails closed instead of following the changed path.
-
-<AgentOnly variant="openclaw">
-  NemoClaw parses native `openclaw.json` as JSON5 and serializes it as standard JSON before it stores the sanitized snapshot copy.
-  JSON5 comments and formatting do not survive snapshot creation, so a credential written only in a comment is not retained.
-</AgentOnly>
-
-<AgentOnly variant="hermes">
-A previous release sanitized dependency lockfiles and installed package manifests.
-It replaced package versions in the Hermes WhatsApp bridge with the `[STRIPPED_BY_MIGRATION]` marker and left a tree that `npm install` rejects.
-A sandbox rebuilt on such a release reports `whatsapp failed to connect` on every gateway start.
-Destroy that sandbox with `$$nemoclaw <sandbox> destroy --yes`.
-Then onboard again.
-A rebuild does not repair the damaged tree, because each rebuild restores the tree it backed up.
-</AgentOnly>
-
-<AgentOnly variant="hermes">
-Hermes snapshots include `SOUL.md`, user-created named profiles under `.hermes/profiles/`, the SQLite database behind `.hermes/state.db`, and the default kanban board in `.hermes/kanban.db`.
-The gateway, CLI, TUI, and Web Dashboard share the native `.hermes/config.yaml`; snapshots exclude that NemoClaw-managed file and do not retain the raw `.hermes/.env` file.
-For rebuild recovery, NemoClaw preserves only the allowlisted non-secret home-channel assignments from `.hermes/.env`; other values are not retained.
-Rebuild restore treats `.hermes/profiles/` as native agent-owned state and preserves user-created named profiles.
-On startup, NemoClaw migrates an older reserved `.hermes/profiles/dashboard-home/` into the shared native home, including a legacy WhatsApp session, and removes the retired profile.
-It removes named generated hash and runtime-state metadata.
-It also removes a legacy `config.yaml` or `.env` only when its contents match the generated projection of the native files.
-Other safe regular files merge only when the native destination is absent or byte-identical.
-Unsafe links or conflicting native and legacy files stop startup without deleting either copy.
-The default-profile snapshot also includes cron execution history in `.hermes/runtime/cron-executions.db` and Discord replay state in `.hermes/gateway/discord_message_recovery.db`.
-NemoClaw captures cron job definitions from `.hermes/cron` and user-authored cron scripts from `.hermes/scripts` as directory state.
-NemoClaw uses SQLite's online backup API and restores these databases through SQLite instead of copying live raw database files.
-After it replaces a database, NemoClaw opens a write transaction against the result and fails the restore when the database cannot be written.
-Named-profile cron and Discord databases under `.hermes/profiles/<name>/` use raw directory capture and can be inconsistent if a write overlaps the snapshot.
-
-Kanban backup is limited to the backward-compatible default board in `kanban.db`. Named boards, attachments, worker logs, scratch workspaces under `.hermes/kanban/`, and external directory or worktree targets are not included; back up that state separately.
-
-The Hermes state database can contain session metadata and message history needed for a faithful restore.
-
-</AgentOnly>
-<AgentOnly variant="deepagents">
-Deep Agents snapshots include manifest-declared state under `/sandbox/.deepagents`, including skills and runtime state, while omitting credential-bearing user files.
-NemoClaw refuses to create a snapshot when it detects an active `dcode` task or cannot verify that the Deep Agents state tree is idle.
-
-Wait for active `dcode` work to finish before running `$$nemoclaw <name> snapshot create`.
-
-</AgentOnly>
-
-Snapshot clone reads the source sandbox policy from OpenShell and passes it to destination creation through a private temporary handoff. If the policy contains a literal credential value, NemoClaw stops before it writes the handoff or changes the destination. Replace literal credentials with supported OpenShell credential bindings or resolver placeholders, then rerun the restore. The snapshot manifest and registry contain no custom-preset copy, baseline-exclusion record, or desired-policy replay state.
-
-The target sandbox's current agent manifest remains authoritative for directory and state-file restore behavior. NemoClaw rejects the restore when the snapshot's agent, config directory, any snapshot directory, state-file path, or state-file strategy conflicts with that manifest. Restore limits directory cleanup to state directories authorized by both the snapshot and the current manifest. It preserves target-only directories and directories whose backup failed.
-
-For OpenClaw, NemoClaw restores the complete credential-sanitized native config file.
-For other managed images, NemoClaw applies the current manifest's managed config merge rules and does not fall back to whole-file replacement.
-For Deep Agents targets, whole-file config replacement is limited to sandboxes created from a custom Dockerfile.
-
-## Create and List Snapshots
-
-```bash
-$$nemoclaw my-assistant snapshot create
-$$nemoclaw my-assistant snapshot list
-```
-
-`snapshot list` prints a table of version, name, timestamp, and path. NemoClaw computes versions (`v1`, `v2`, through `vN`) from timestamp order, so `vN` is always the newest snapshot.
-
-Snapshot creation and restore use the per-sandbox mutation lock so another host operation cannot change the same sandbox state concurrently.
-
-Tag a snapshot with a human-readable label:
-
-```bash
-$$nemoclaw my-assistant snapshot create --name before-upgrade
-```
-
-When a directory or state file cannot be captured, `snapshot create` reports the failed items, attempts to remove the incomplete snapshot, and exits nonzero.
-When cleanup succeeds, the command removes the incomplete snapshot.
-When cleanup fails, the command reports the retained snapshot path.
-The retained incomplete snapshot remains excluded from `snapshot list` and restore selection.
-The retained incomplete snapshot may contain unsanitized credentials.
-Do not restore, copy, share, or edit it.
-Repair access to the original sandbox state, then rerun `snapshot create`.
-Remove the retained directory only after you verify that the original sandbox or a complete snapshot contains every required state item.
-For a legacy snapshot whose manifest lacks a completion marker, NemoClaw excludes it from `snapshot list` and restore selection when any manifest-declared state file is absent from the snapshot directory.
-The state-file-presence check does not exclude an otherwise complete legacy snapshot when every declared state file is present or when its manifest declares no state files.
-
-## Restore a Snapshot
-
-<AgentOnly variant="openclaw">
-An in-place OpenClaw restore stops the sandbox before it changes state.
-This interrupts active agent work.
-After restored state is present, NemoClaw runs `openclaw doctor --fix` while the gateway remains held down.
-After `openclaw doctor --fix` succeeds, NemoClaw waits for OpenClaw's native startup-migration lease to clear.
-It then releases the maintenance window for one native OpenClaw start.
-If maintenance entry or restore fails, follow the printed lifecycle recovery.
-If NemoClaw reports a verified stopped sandbox, run `$$nemoclaw my-assistant start`.
-If NemoClaw directs you to stop and start the sandbox, run `$$nemoclaw my-assistant stop`, then `$$nemoclaw my-assistant start`.
-If that start reports that it consumed the OpenClaw maintenance abort and leaves the sandbox stopped, run `$$nemoclaw my-assistant start` again.
-Verify that the sandbox is ready, then retry the same snapshot restore command.
-</AgentOnly>
-
-Restore the latest snapshot:
-
-```bash
-$$nemoclaw my-assistant snapshot restore
-```
-
-Pass an exact version, name, or timestamp to select a specific snapshot. Use the exact timestamp from `snapshot list`; a timestamp prefix does not select a snapshot.
-
-```bash
-$$nemoclaw my-assistant snapshot restore v3
-$$nemoclaw my-assistant snapshot restore before-upgrade
-$$nemoclaw my-assistant snapshot restore 2026-04-14T09-40-09-760Z
-```
-
-In-place restore does not mutate the OpenShell policy.
-Cross-sandbox clone reads the source live policy and uses it only as the destination creation handoff.
-
-<AgentOnly variant="hermes">
-A running Hermes gateway keeps serving its pre-restore state databases until it reopens them.
-After a restore that includes Hermes state databases, the CLI prints a reminder to restart the gateway.
-Run `$$nemoclaw <name> gateway restart` to make the gateway open the restored databases.
-</AgentOnly>
-
-<Note>
-  `--to` is not available for a snapshot of a sandbox that uses a NemoClaw-managed image. NemoClaw
-  reports that the restore is not available and stops before it creates, deletes, or changes the
-  destination sandbox. Restore that snapshot into its source sandbox without `--to`.
-</Note>
-
-To clone a snapshot into a different sandbox name, pass `--to <name>`. If the destination sandbox already exists, NemoClaw refuses to overwrite it unless you pass `--force`:
-
-```bash
-$$nemoclaw my-assistant snapshot restore before-upgrade --to my-assistant-clone
-$$nemoclaw my-assistant snapshot restore before-upgrade --to my-assistant-clone --force --yes
-```
-
-Cross-sandbox restore from a stopped source is available for Docker- and VM-driver sandboxes. For a stopped source, its registry entry must record both the sandbox image and a complete inference route; NemoClaw creates the destination from the recorded image. NemoClaw stops before creating or replacing the destination when either record is missing, and directs you to run `$$nemoclaw onboard` when no image is recorded. For a Kubernetes-driver source, the pod image must remain resolvable through its gateway.
-
-For a new destination, NemoClaw waits for the owning gateway to report the sandbox as Ready with a valid live identity. It checks that identity again immediately before registration. NemoClaw assigns the destination a new lifecycle generation instead of copying the source sandbox's generation.
-
-### Recover a Failed Cross-Sandbox Clone
-
-If NemoClaw cannot securely remove the temporary clone policy after destination creation, it leaves the destination as a pending clone and does not restore snapshot state. Inspect and remove the task-owned file identified by the error, then rerun the same restore without `--force` so NemoClaw can reconcile the destination without deleting or recreating it.
-
-If NemoClaw cannot confirm the same valid destination identity after a clone create-attempt, it prints a create-attempt label.
-NemoClaw also keeps the clone's exact route and create-attempt record.
-Run the printed selector command.
-Do not retry the restore while the selector reports a sandbox or OpenShell cannot confirm the result.
-Retry only when the selector and destination name are absent and the retained route reservation still matches the snapshot source.
-If NemoClaw reports a route mismatch, preserve the recovery record and stop.
-NemoClaw removes only the matching retained route reservation before it starts a new create attempt.
-If the selector identifies a sandbox, resolve that retained sandbox through its owning gateway before you retry.
-
-If NemoClaw confirms the destination identity but cannot register or publish it, the restore exits nonzero before state restore.
-If the failure reports that the pending clone changed during registration, NemoClaw preserves the current registry row.
-If the pending row and live destination still match this restore, retry the same command without `--force` so NemoClaw can reconcile them.
-If you cannot prove that match, preserve the error and pending row for maintainer review.
-Do not use `--force` or delete the destination by name when ownership is uncertain.
-If the failure confirms an unregistered destination, run the owner-scoped deletion command that it prints:
-
-```bash
-openshell sandbox delete -g '<owning-gateway>' '<destination>'
-```
-
-After OpenShell deletes the destination, rerun the original `snapshot restore --to` command.
-
-Use this name-based deletion only when the error confirms that OpenShell created an unregistered destination. Do not use it for an ambiguous create result.
-
-For dashboard-enabled agents, NemoClaw allocates the destination sandbox its own dashboard port instead of reusing the source port. If no port is available, restore stops before deleting an existing `--force` destination.
-
-<AgentOnly variant="hermes">
-  NemoClaw also allocates the destination sandbox its own OpenAI-compatible API port from `8642`
-  through `8652` instead of reusing the source port. If no port in that range is free, restore stops
-  before deleting an existing `--force` destination. Run `openshell forward list` to read the
-  destination sandbox's API port.
-</AgentOnly>
-
-<AgentOnly variant="openclaw">
-After NemoClaw creates the destination, it stops the sandbox and holds its OpenClaw gateway down while it restores state and runs `openclaw doctor --fix`.
-After `openclaw doctor --fix` succeeds, NemoClaw waits for OpenClaw's native startup-migration lease to clear.
-It then releases the maintenance window for one native OpenClaw start.
-If maintenance entry, restoration, or doctor fails, NemoClaw prints lifecycle recovery steps.
-After maintenance starts, NemoClaw also attempts to stop the destination and reports whether that stop was verified.
-If NemoClaw directs you to stop and start the destination, run `$$nemoclaw <destination> stop`, then `$$nemoclaw <destination> start`.
-If that start reports that it consumed the OpenClaw maintenance abort and leaves the destination stopped, run `$$nemoclaw <destination> start` again.
-Verify that the destination is ready.
-After correcting the reported failure, retry with a new clone name.
-The incomplete clone remains registered; inspect it before deletion or replacement with `--force`.
-</AgentOnly>
-
-The force-overwrite path revalidates the exact destination before deletion and creates the same-name replacement only after deletion succeeds.
-
-## Restore Agent Configuration Safely
-
-The `$$nemoclaw <name> rebuild` command uses the same snapshot mechanism automatically. NemoClaw rejects unsafe symlinks and special files inside sandbox state during backup creation. It records multiply-linked regular files and archives each path as a separate regular file.
-
-<AgentOnly variant="openclaw">
-Snapshot restore performs a targeted repair for legacy `.openclaw-data` symlinks that older images created.
-Snapshots preserve the complete credential-sanitized `openclaw.json` file.
-Rebuild and restore replace the generated file with that native backup instead of reconstructing selected settings.
-This preserves OpenClaw-owned providers, tools, plugins, hooks, cron jobs, and gateway settings.
-During rebuild, NemoClaw then reapplies the entries owned by the current host-side messaging plan, so restored native channel values do not replace that plan.
-Use `$$nemoclaw <sandbox> channels` commands to change messaging channels.
-If the config cannot be restored safely, NemoClaw stops the restore instead of applying a partial fallback.
-Restore does not change OpenShell policy, credential bindings, or the host-side inference route.
-Reconcile those host resources when the restored configuration expects different values, then restart the gateway when OpenClaw requires it.
-
-OpenClaw's device identity keys and paired-device tokens are intentionally excluded from snapshots because backup sanitization scrubs them beyond use. Snapshot state replacement does not overwrite the destination sandbox's gateway pairing files, even when an older snapshot still contains them. After a cross-sandbox restore creates the destination, NemoClaw establishes gateway pairing and verifies it with an authenticated agent run. If verification fails, the restored state remains in the destination and the command exits nonzero. Run `$$nemoclaw <destination> connect` to retry pairing before you run an agent. OpenClaw regenerates its device identity on demand.
-
-</AgentOnly>
-<AgentOnly variant="hermes">
-Credential-bearing Hermes files such as `auth.json` are intentionally excluded from snapshots.
-NemoClaw-regenerated Hermes config files, including `config.yaml` and `.env`, are also excluded.
-NemoClaw recreates model, provider, and messaging credentials from host-side onboarding and OpenShell provider state during rebuild.
-During rebuild, NemoClaw restores supported credential-free Hermes settings that you applied with `config set`.
-It excludes managed route values and drops any setting that contains credential material.
-The rebuild report lists the restored and dropped setting keys.
-
-If a Hermes rebuild cannot validate or release its NemoClaw cron restore gate, NemoClaw preserves the state backup. If the rebuild already accepted the replacement sandbox, it also preserves the replacement journal. New Hermes turns and cron dispatch remain blocked while the gate exists.
-
-<Warning>
-Do not manually remove the root-owned cron restore marker.
-Removing it bypasses validation of the restored cron jobs and scripts.
-Correct the reported restore problem, then run `$$nemoclaw <sandbox-name> recover`.
-Recovery validates the restored cron tree before it clears the NemoClaw gate.
-If an independent Hermes operator drain exists, recovery leaves it active.
-After recovery succeeds, rerun `rebuild` with the same replacement settings so NemoClaw can retire the replacement journal.
-</Warning>
-
-After a rebuild restores `profiles`, NemoClaw preserves user-created named profiles unchanged.
-The reserved `profiles/dashboard-home` name is a one-time migration source rather than durable profile state.
-Startup moves safe legacy files into the native Hermes home and retires that directory.
-If migration reports a collision or unsafe path, inspect both copies from a trusted recovery environment; NemoClaw leaves them intact instead of choosing one.
-
-</AgentOnly>
-<AgentOnly variant="deepagents">
-### Excluded Deep Agents State
-
-Credential-bearing Deep Agents files such as `.deepagents/.env` and user-authored `.deepagents/.mcp.json` are intentionally excluded from snapshots. Deep Agents auth state files such as `.deepagents/.state/auth.json` and `.deepagents/.state/chatgpt-auth.json` are also excluded because the managed launcher refuses to start when upstream credential state is present.
-
-The agent-native `.deepagents/.mcp.json` is excluded from ordinary file copying because MCP is carried through the bounded source handoff.
-For a native-MCP runtime, NemoClaw carries managed entries from the agent source through the bounded rebuild or restore handoff.
-User-authored `hooks.json` is included and restored because managed interactive sessions support native Deep Agents Code hooks; review its executable commands before restoring a snapshot from another workspace.
-NemoClaw recreates the current inference route headers, `models` and `update` tables, and provider credentials from host-side onboarding and OpenShell provider state during rebuild.
-
-### Restore Managed Deep Agents Configuration
-
-For a NemoClaw-managed Deep Agents image, NemoClaw restores the allowlisted UI and thread preferences, native interpreter settings, and native startup approval mode from the previous `config.toml` when their values pass validation. Unknown, runtime-controlled, privileged, and security-sensitive backup keys are dropped instead of replacing freshly generated settings on that managed path.
-
-Before it restores snapshot files for a native-MCP runtime, NemoClaw verifies the current agent source and writes the native `.mcp.json` entry atomically. A legacy `.nemoclaw-mcp.json` source must be migrated first. If the native path `/sandbox/.deepagents/.mcp.json` is a directory, restore leaves snapshot files unchanged and prints a recovery command.
-Run that command to move the directory into a new recovery location.
-The command prints the selected location and does not replace an existing recovery file or directory.
-Then rerun the same snapshot restore command.
-
-A Deep Agents target created from a custom Dockerfile restores `config.toml` as a whole file because the custom image owns its config schema. On the managed key-level restore path, malformed config, missing managed data, an unsafe link, or an unsafe file replacement fails the restore without falling back to a whole-file copy.
-
-### Validate Before Replacement
-
-Before a Deep Agents rebuild changes the sandbox, NemoClaw verifies the recorded inference route, provider, model, reasoning settings, web search selection, base image, and policy inputs.
-If a late check fails, NemoClaw does not delete the existing sandbox.
-
-</AgentOnly>
-
-## Back Up Every Registered Sandbox
-
-Run `$$nemoclaw backup-all` before broad maintenance such as `$$nemoclaw update`, `$$nemoclaw upgrade-sandboxes`, or an OpenShell gateway migration.
-
-```bash
-$$nemoclaw backup-all
-```
-
-`backup-all` walks the sandboxes registered on the host, creates a snapshot for each eligible running or temporarily started sandbox, and stores the snapshot bundles under `~/.nemoclaw/rebuild-backups/<name>/`. If a registered standard sandbox is stopped, `backup-all` asks OpenShell to start that exact sandbox for the duration of the backup and asks OpenShell to return it to `Stopped` afterward. If either lifecycle transition fails, the backup run fails with the affected sandbox named. Correct the reported OpenShell lifecycle problem, run `$$nemoclaw <name> start` when appropriate, and rerun `$$nemoclaw backup-all`; do not start or stop the provider container directly.
-
-For a stopped sandbox, `backup-all` first asks OpenShell to start it in a separate bounded operation.
-After OpenShell accepts the start, one lifecycle transaction waits for SSH readiness, captures state, and returns the sandbox to `Stopped`.
-It reserves time for the return transition.
-A readiness, backup, or return failure marks that sandbox as failed, and `backup-all` continues with the next sandbox.
-
-When a backup fails, NemoClaw identifies the affected state item and reports `permission denied`, `tar read error`, or `absent after extraction` when available. Use `$$nemoclaw <name> snapshot list` and `$$nemoclaw <name> snapshot restore` to inspect or restore one sandbox's bundles later.
+OpenShell owns the sandbox lifecycle and its native home/workspace storage. Routine stop, start, reconnect, and host gateway restart operations keep that storage in place. NemoClaw does not maintain a per-agent persistence allowlist for those operations.
+
+## What Persists
+
+Everything the agent writes under its OpenShell-provided native home/workspace persists as ordinary sandbox state during routine lifecycle operations. This includes undeclared files as well as configuration, histories, hooks, plugins, packages, cron data, skills, memory, and child-agent state.
+
+OpenShell-owned credential stores and host-only secrets are outside the agent home/workspace. NemoClaw does not copy those stores into agent-visible state. Continue to provision credentials through supported OpenShell providers and bindings.
+
+## Rebuild and Recreation
+
+Most lifecycle operations do not need a backup or restore step. When `$$nemoclaw <name> rebuild` or onboarding must replace a sandbox, NemoClaw performs one bounded migration:
+
+1. Capture the native home/workspace as an opaque private archive, remove machine-local agent authority from the archive copy, and verify that the archive does not contain credential material.
+2. Create the replacement through OpenShell.
+3. Clear the replacement's fresh native home/workspace and restore the complete archive.
+4. Validate the replacement before retiring the temporary handoff.
+
+OpenClaw's `gateway.auth` value and Hermes's `.hermes/.env` `API_SERVER_KEY` are machine-local. NemoClaw leaves both live source files unchanged, omits those values only from the private archive copy, and lets the replacement establish fresh local authority. Existing OpenClaw device and scope approvals do not transfer; approve the replacement's fresh pairing or scope-upgrade request when prompted. NemoClaw also removes credential fields from OpenClaw credential, device, identity, pairing, and pending-state JSON; replaces the archived OpenClaw device identity with a fresh non-secret identity; and removes credential fields from Hermes configuration and configuration backups. An invalid or uninspectable recognized authority file stops the transfer instead of being copied unchanged.
+
+Hermes PID and lock receipts, OpenClaw's post-upgrade doctor marker, warm-up sessions, and transient SQLite write-ahead-log, shared-memory, and rollback-journal companions, and NemoClaw's configuration and blueprint cache are replacement-owned or generation-local. The replacement keeps its fresh copies instead of restoring the retired sandbox's values. NemoClaw sanitizes machine-local authority from the durable OpenClaw database copy and rejects an archive that still contains one of those database companions, because replaying it could restore removed authority. All other unknown agent paths transfer intact, but any credential-bearing or otherwise uninspectable archive content stops the workflow before replacement. A restore failure happens after the replacement is created; NemoClaw retains the backup for manual recovery and does not publish the replacement as successful. Move credentials into supported OpenShell credential storage or bindings, remove them from the native home, and retry.
+
+For an eligible stopped OpenClaw or Deep Agents Code container, NemoClaw captures the provider-owned stopped state without executing in the source sandbox. The operation fails before replacement if that stopped-state authority changes during capture. Stopped Hermes rebuilds instead use the bounded OpenShell start, capture, and return-to-`Stopped` lifecycle described below.
+
+For Hermes, the restored complete home may contain the retired `profiles/dashboard-home` layout from an older release. After restore, NemoClaw runs a one-time migration that moves safe legacy files, including a legacy WhatsApp session, into the shared native Hermes home and removes the retired directory. User-created named profiles remain unchanged. A collision, unsafe link, or other unsafe legacy path fails closed and leaves both copies available for trusted recovery instead of choosing one.
+
+## Backup Before Upgrade
+
+`$$nemoclaw backup-all` remains an installer-facing safety operation. It normally captures the same complete native home/workspace for every eligible registered sandbox before an OpenShell upgrade. A standalone run with `NEMOCLAW_SKIP_UNREACHABLE_SANDBOX_BACKUP=1` can skip a running sandbox whose SSH endpoint is unreachable; changes in that skipped sandbox are absent from the new backup. The installer uses strict pre-upgrade mode, which rejects ordinary skipped or failed sandboxes instead of treating the batch as complete. Refer to [`$$nemoclaw backup-all`](../../reference/commands#$$nemoclaw-backup-all) for the exact skip and strict-mode behavior. It is not a general snapshot create/list/restore interface.
+
+For a stopped sandbox, `backup-all` first asks OpenShell to start it in a separate bounded operation. This path is available only for a registered sandbox whose lifecycle identity resolves to a supported container provider, whose ownership probe finds exactly one attributed container, and whose container state is `exited` or `created`. After OpenShell accepts the start, one lifecycle transaction covers readiness, complete native-home capture, and returning the sandbox to `Stopped`. Other ordinary non-ready sandboxes that do not meet those conditions are skipped; strict pre-upgrade mode rejects the batch when a registered sandbox is skipped this way.
+
+Backups created by older NemoClaw versions from a selective per-agent path inventory are not candidates for automatic rebuild or recreation restore. Recover files from those legacy backup directories manually, then create a current complete native-home backup before replacement.
+
+## Destroy
+
+`$$nemoclaw <name> destroy` removes NemoClaw-owned managed state volumes and, for Deep Agents Code, clears the complete retained `/sandbox` root before asking OpenShell to delete the sandbox. Download files you need before destroy. To replace software while preserving the complete native state, use `$$nemoclaw <name> rebuild`.
 
 ## Related Topics
 
-- [Understand Sandbox State](understand-sandbox-state) for the files each agent persists.
-- [Transfer State Manually](transfer-state-manually) when you need specific files instead of a managed snapshot.
-- [Recover and Rebuild Sandboxes](../operate-sandboxes/recover-and-rebuild-sandboxes) for automatic snapshot-backed rebuilds.
-- [Commands reference](../../reference/commands) for snapshot and backup flags.
+- [Recover and Rebuild Sandboxes](../operate-sandboxes/recover-and-rebuild-sandboxes)
+- [Transfer State Manually](transfer-state-manually)
 
 
 ========================================
@@ -10817,9 +10503,9 @@ nemohermes <name> gateway restart
 nemohermes <name> status
 ```
 
-Hermes user plugins and lazy packages live in declared Hermes state, so they
-survive native restart and state-preserving rebuild or restore without a
-NemoClaw plugin ownership record:
+Hermes user plugins and lazy packages live in the agent's native home, so they
+survive native restart and the complete native-home transfer performed by a
+state-preserving rebuild or restore without a NemoClaw plugin ownership record:
 
 ```bash
 nemohermes <name> rebuild --yes
@@ -11148,7 +10834,7 @@ $$nemoclaw my-sandbox mcp update doordash \
 
 The command changes only the live OpenShell policy. It does not change the agent-native endpoint, credential reference, provider, attachment, or agent adapter. Live policy is the enforcement source of truth; NemoClaw does not retain a second denied-tool intent record.
 
-NemoClaw validates the current source entry and endpoint pins, removes the existing route, and then applies the replacement. This keeps an interrupted stricter update fail-closed. If replacement activation fails, the MCP route remains blocked and the error prints the exact `mcp update` command to retry. Rebuild snapshots and restores the complete live policy, including denied-tool rules, without regenerating it from registry state.
+NemoClaw validates the current source entry and endpoint pins, removes the existing route, and then applies the replacement. This keeps an interrupted stricter update fail-closed. If replacement activation fails, the MCP route remains blocked and the error prints the exact `mcp update` command to retry. Rebuild captures and restores the complete live policy, including denied-tool rules, without regenerating it from registry state.
 
 Clear every denied-tool rule explicitly:
 
@@ -11606,7 +11292,13 @@ title: "Recover and Rebuild Sandboxes"
 sidebar-title: "Recover and Rebuild Sandboxes"
 description: "Recover a stopped agent runtime or rebuild a sandbox while preserving supported state."
 description-agent: "Explains the supported recovery and rebuild paths for OpenClaw, Hermes, and Deep Agents sandboxes. Use when a gateway or terminal runtime is degraded or when a sandbox image must be recreated."
-keywords: ["nemoclaw recover", "nemoclaw rebuild", "gateway restart", "sandbox recovery"]
+keywords:
+  [
+    "nemoclaw recover",
+    "nemoclaw rebuild",
+    "gateway restart",
+    "sandbox recovery",
+  ]
 content:
   type: "how_to"
 skill:
@@ -11619,7 +11311,7 @@ Use the lightest recovery operation that repairs the sandbox while preserving it
 
 Shields has been retired from NemoClaw. The current CLI has no Shields commands, status, timers, or supported locked posture. After an upgrade, NemoClaw prints a retirement notice while it still finds legacy Shields state and identifies the affected sandbox records when possible.
 
-If the sandbox has only an inert legacy state record, create a trusted snapshot or backup. Then rebuild the affected sandbox before running further mutations.
+If the sandbox has only an inert legacy state record, create an independent trusted backup. Then rebuild the affected sandbox before running further mutations.
 
 If NemoClaw blocks an operation because it found an old timer, transition, policy snapshot, authority-bearing runtime-provider recovery artifact, or ambiguous recovery state, do not onboard or mutate any sandbox yet. These files can represent detached mutation authority that the current CLI deliberately does not interpret. A different requested sandbox name does not make onboarding safe.
 
@@ -11634,7 +11326,7 @@ Use the active state directory and exact blocking paths printed in the error as 
 
 If you cannot complete the reboot, backup, or full quarantine, leave every artifact untouched. NemoClaw continues to block ordinary mutations while any listed path remains in active state.
 
-Do not use cross-sandbox snapshot restore from the legacy sandbox because that flow preserves the source image. The current CLI deliberately does not interpret, resume, or delete ambiguous legacy recovery state.
+The current CLI does not expose cross-sandbox recovery-backup restore. It deliberately does not interpret, resume, or delete ambiguous legacy recovery state.
 
 ## Restart a Stopped Sandbox
 
@@ -11654,10 +11346,11 @@ instead.
 Before destructive replacement, run `$$nemoclaw <sandbox-name> status`. If the owning gateway
 reports the registered sandbox missing, NemoClaw leaves any provider container and registry entry
 untouched. Retry after the gateway reconnects. If the sandbox was intentionally deleted, preserve
-any separate snapshot and use `$$nemoclaw <sandbox-name> destroy --yes` to retire the stale entry
-when the command can prove the OpenShell resource absent. Then onboard a clean replacement and
-restore the snapshot if one is available. Rebuild cannot recover a workspace or live OpenShell
-policy that no longer exists.
+any separate backup and use `$$nemoclaw <sandbox-name> destroy --yes` to retire the stale entry
+when the command can prove the OpenShell resource absent. Then onboard a clean replacement and use
+the [manual transfer workflow](../state-and-backups/transfer-state-manually) to copy only reviewed,
+credential-free user data from an independently maintained backup. Rebuild cannot recover a
+workspace or live OpenShell policy that no longer exists.
 
 <AgentOnly variant="openclaw,hermes">
 The `start` command repairs the agent runtime and host-side port forwards.
@@ -11668,10 +11361,11 @@ If a check fails, the command exits nonzero, identifies the failure, and prints 
 ## Recover the Agent Runtime
 
 <AgentOnly variant="openclaw,hermes">
-  `recover` can start an existing stopped standard sandbox before it repairs the agent runtime. It
-  submits that lifecycle mutation through OpenShell and waits for OpenShell to advance the sandbox
-  out of the `Stopped` phase. If OpenShell cannot start the sandbox, recovery reports the failure;
-  it does not fall back to direct provider-container lifecycle actions.
+  `recover` can start an existing stopped standard sandbox before it repairs the
+  agent runtime. It submits that lifecycle mutation through OpenShell and waits
+  for OpenShell to advance the sandbox out of the `Stopped` phase. If OpenShell
+  cannot start the sandbox, recovery reports the failure; it does not fall back
+  to direct provider-container lifecycle actions.
 </AgentOnly>
 
 <AgentOnly variant="openclaw">
@@ -11758,12 +11452,10 @@ The host does not start the in-sandbox processes independently. Refer to [`$$nem
 </AgentOnly>
 
 <AgentOnly variant="openclaw,hermes">
-`recover` verifies the built-in native agent gateway and repairs supported state for a running gateway and host forwards inside the registered sandbox.
-When the sandbox itself is stopped, `start` submits that lifecycle mutation to OpenShell.
-Recovery does not take independent ownership of the provider container.
-If the built-in native agent gateway is stopped, `recover` reports it and does not relaunch it.
-Run `$$nemoclaw <sandbox-name> gateway restart` to request a supported gateway restart.
-For an ordinary process or health failure that persists, correct the cause, then run `$$nemoclaw <sandbox-name> stop` and `$$nemoclaw <sandbox-name> start`.
+Recovery repairs supported agent processes and host forwards inside the registered sandbox. When the
+sandbox itself is stopped, `start` submits that lifecycle mutation to OpenShell; recovery does not
+take independent ownership of the provider container. If the native supervisor remains absent after
+bounded recovery, NemoClaw leaves the sandbox unchanged and directs you to rebuild or re-onboard.
 
 For the lifecycle trust boundary and fail-closed conditions, refer to [Understand Gateway Lifecycle Control](../configure-sandboxes/understand-gateway-lifecycle-control).
 If recovery cannot verify a sandbox that needs current credentials or native lifecycle support, rebuild it.
@@ -11816,13 +11508,7 @@ Refer to the [probe timing reference](../../reference/commands#$$nemoclaw-name-c
 <AgentOnly variant="openclaw,hermes">
 ### Host OpenShell Gateway Versus In-Sandbox Agent Recovery
 
-`recover` and `start` can ask OpenShell to start one stopped named sandbox.
-After the sandbox is ready, they verify supported state for a running agent gateway and repair the host-side port forwards.
-They do not relaunch a stopped built-in native agent gateway.
-`connect --probe-only` waits for that sandbox to become ready, rechecks it on its recorded gateway, and then verifies the same sandbox-scoped processes and repairs supported running gateway state and forwards.
-It reports a stopped built-in native agent gateway and does not relaunch it.
-These commands do not restart, replace, or reap the shared host OpenShell gateway process.
-If the host gateway RPC returns an error while these sandbox-scoped commands run, they surface the error with explicit next-step guidance and exit rather than swapping the shared gateway out from under other sandboxes.
+`recover` and `start` repair the in-sandbox agent gateway and the host-side port forwards for one named sandbox. `connect --probe-only` waits for that sandbox to become ready, rechecks it on its recorded gateway, and then verifies or repairs the same sandbox-scoped processes and forwards. These commands do not restart, replace, or reap the shared host OpenShell gateway process. If the host gateway RPC returns an error while these sandbox-scoped commands run, they surface the error with explicit next-step guidance and exit rather than swapping the shared gateway out from under other sandboxes.
 
 The OpenShell CLI has no command that starts a gateway, and `openshell status` only reports the gateway state. If NemoClaw starts the gateway on your host, run `$$nemoclaw onboard` again to repair the host gateway itself. If a deployment outside NemoClaw owns the gateway process, start the gateway with that deployment, then run `openshell gateway select <gateway>`. NemoClaw prints the applicable recovery guidance when a sandbox-scoped command reports that the host gateway is down. Other workflows, including onboarding, rebuild, and `doctor --fix`, can explicitly recover the named host gateway when their operation requires it. `$$nemoclaw <name> gateway restart` instead restarts only the supported agent gateway inside the named sandbox.
 
@@ -11831,27 +11517,19 @@ The OpenShell CLI has no command that starts a gateway, and `openshell status` o
 ## Rebuild While Preserving State
 
 <AgentOnly variant="openclaw">
-  If you changed the underlying Dockerfile, upgraded OpenClaw, or want to pick up a new base image
-  without losing your sandbox's workspace files, use `rebuild` instead of destroying and recreating.
+  If you changed the underlying Dockerfile, upgraded OpenClaw, or want to pick
+  up a new base image without losing your sandbox's workspace files, use
+  `rebuild` instead of destroying and recreating.
 </AgentOnly>
 <AgentOnly variant="hermes">
-  If you changed the underlying Dockerfile, upgraded Hermes, or want to pick up a new base image
-  without losing your sandbox's state files, use `rebuild` instead of destroying and recreating.
-</AgentOnly>
-<AgentOnly variant="deepagents">
-  If you changed the underlying Dockerfile, upgraded Deep Agents Code, enabled Tavily Search, or
-  want to pick up a new base image without losing manifest-defined Deep Agents state, use `rebuild`
+  If you changed the underlying Dockerfile, upgraded Hermes, or want to pick up
+  a new base image without losing your sandbox's state files, use `rebuild`
   instead of destroying and recreating.
 </AgentOnly>
-
-<AgentOnly variant="openclaw,hermes">
-  <Warning title="Legacy Upgrade Recovery Scope">
-    When the installer offers prepared backup recovery for a legacy sandbox, the recreate restores
-    only the managed state directory recorded in the validated backup manifest, such as
-    `/sandbox/.openclaw` or `/sandbox/.hermes`. It does not preserve files outside that recorded
-    path, including `/sandbox/user-data`. Back up those paths outside the sandbox before you approve
-    legacy recovery.
-  </Warning>
+<AgentOnly variant="deepagents">
+  If you changed the underlying Dockerfile, upgraded Deep Agents Code, enabled
+  Tavily Search, or want to pick up a new base image without losing the complete
+  native home, use `rebuild` instead of destroying and recreating.
 </AgentOnly>
 
 ```bash
@@ -11872,38 +11550,17 @@ If a pull or validation fails, rebuild keeps the existing sandbox and stops befo
 If replacement onboarding returns a nonzero status, rebuild stops before post-create state restoration and preserves the backup and registry recovery state.
 It does not report a successful rebuild.
 
-If the sandbox is stopped, rebuild asks OpenShell to start that exact sandbox for the duration of the pre-recreate state backup and asks OpenShell to return it to `Stopped` afterward, the same lifecycle path `$$nemoclaw backup-all` uses. If OpenShell cannot start the sandbox, or the retried backup still fails, rebuild aborts without recreating the sandbox; it reports an incomplete-snapshot notice only when a partial snapshot was retained. If the backup succeeds but OpenShell cannot return the sandbox to `Stopped`, rebuild also aborts and reports the failed transition.
+When NemoClaw can identify the exact stopped Docker container and prove its immutable runtime authority, rebuild captures the complete native root through the Docker provider without starting or executing inside the source. This recovery path supports stopped OpenClaw and Deep Agents Code sandboxes.
 
-<AgentOnly variant="openclaw,deepagents">
-On OpenShell 0.0.116, `start` cannot restart a sandbox in `Phase: Error`.
-For a managed Docker OpenClaw or Deep Agents Code sandbox whose container is stopped, `rebuild` can capture declared state without starting or executing in that container.
-For Deep Agents Code, it carries only supported managed native MCP entries through a bounded recovery handoff.
-
-It verifies the recorded sandbox and container identities, preserves the live policy, sanitizes the backup, and then creates and verifies a replacement.
-This recovery requires the original container to remain present and unchanged.
-NemoClaw accepts its local managed state volume only when ownership metadata matches and no other container references it.
-It refuses other mounts within or above the agent state directory, unsupported filesystem entries, or a source archive larger than 1 GiB.
-A capture or ownership failure preserves the original sandbox and stops replacement.
-The snapshot records the source as stopped even though the verified replacement runs.
-If temporary capture cleanup fails, the warning names the private directory to remove before retrying.
-
-</AgentOnly>
-
-<AgentOnly variant="deepagents">
-`.deepagents/.env`, authentication state, and user-authored or unsupported `.deepagents/.mcp.json` content are not captured by this path.
-Keep secure host copies and restore them only through their owning supported workflow.
-</AgentOnly>
+When that provider-owned capture is not available, rebuild asks OpenShell to start the exact stopped sandbox for the duration of the pre-recreate state backup and asks OpenShell to return it to `Stopped` afterward, the same lifecycle path `$$nemoclaw backup-all` uses. If OpenShell cannot start the sandbox, or the retried backup still fails, rebuild aborts without recreating the sandbox; it reports an incomplete-backup notice only when a partial backup was retained. If the backup succeeds but OpenShell cannot return the sandbox to `Stopped`, rebuild also aborts and reports the failed transition. If neither path can establish stopped-source authority, repair the OpenShell lifecycle state or recover the data manually before retrying; NemoClaw does not fall back to a selective directory copy.
 
 <AgentOnly variant="openclaw">
-User-managed `.env` and `.mcp.json` files are not captured or restored by this path.
-Keep secure host copies of any needed values or configuration, then re-add those files after recovery.
-OpenClaw's machine identity and gateway pairing state stay outside the backup.
-
+On OpenShell 0.0.116, `start` cannot restart a sandbox in `Phase: Error`.
 </AgentOnly>
 
 If OpenShell still reports the sandbox in `Phase: Error` but its Docker-driver container is missing,
-rebuild cannot back up its live workspace and stops before replacement. Use the clean replacement
-flow described above, then restore a separately created snapshot if one is available.
+rebuild cannot back up its live workspace and stops before replacement. Recover the workspace from
+an independently maintained backup before creating a clean replacement.
 
 <AgentOnly variant="hermes">
 
@@ -11921,13 +11578,8 @@ An unavailable or different version ends the rebuild with a nonzero status inste
 
 <AgentOnly variant="openclaw">
 
-Rebuild restores the complete credential-sanitized native `openclaw.json` file from the pre-rebuild snapshot.
-NemoClaw does not compare that file with a config hash, seal, last-good copy, recovery anchor, baseline, or selected-key registry.
-If the file cannot be restored safely, NemoClaw exits nonzero and does not report a successful rebuild.
-
-If rebuild keeps the source sandbox but cannot release it from backup maintenance, the warning names the retained sandbox and reports whether it verified that the sandbox stopped.
-If stopping is not verified, do not assume that the sandbox is stopped or ready to use.
-Preserve the retained sandbox and backup, and follow the recovery guidance printed with the warning.
+After post-restore writes, rebuild verifies that the final `openclaw.json` and `.config-hash` pair match.
+If verification fails, NemoClaw exits nonzero and does not report a successful rebuild.
 
 </AgentOnly>
 
@@ -11955,27 +11607,35 @@ Use the recovery guidance that matches the reported check:
 - Set the live OpenShell inference route to the sandbox's recorded provider and model when rebuild reports route drift.
 
 <AgentOnly variant="openclaw,hermes">
-  Prepared backup recovery reuses its digest-verified pre-upgrade policy handoff at the deletion
-  boundary. It does not recapture the live policy, and it stops before deletion if the handoff is
-  missing or changed.
+  Prepared backup recovery reuses its digest-verified pre-upgrade policy handoff
+  at the deletion boundary. It does not recapture the live policy, and it stops
+  before deletion if the handoff is missing or changed.
 </AgentOnly>
 
 A gateway that reports no live inference route does not stop the rebuild. Replacement onboarding configures and verifies the recorded route before it recreates the sandbox.
 
 <AgentOnly variant="openclaw">
-  The rebuild command preserves the mounted workspace and carries the complete current OpenShell policy into sandbox recreation.
-  When no host web-search key is staged, rebuild preflight reuses an existing Brave or Tavily credential only when the provider name, type, and credential key match the sandbox's binding on its recorded OpenShell gateway.
-  A missing or mismatched binding stops before recreation and requires the matching host environment variable before you retry.
-  Rebuild also restores the complete credential-sanitized native `openclaw.json` file, so native OpenClaw configuration changes survive sandbox replacement without a selective merge.
-  Rebuild preserves restored OpenClaw session model and provider selections, including selections that differ from the configured default.
+  The rebuild command preserves the mounted workspace and carries the complete
+  current OpenShell policy into sandbox recreation. For that one replacement
+  create, NemoClaw adds baseline fields required by the current replacement
+  image when they are absent from the live policy. Existing values, network
+  keys, and same-name live network entries win, so host changes are not
+  overwritten. NemoClaw does not save a desired-policy copy or enforce that
+  handoff after OpenShell creates the sandbox. When no host web-search key is
+  staged, rebuild preflight reuses an existing Brave or Tavily credential only
+  when the provider name, type, and credential key match the sandbox's binding
+  on its recorded OpenShell gateway. A missing or mismatched binding stops
+  before recreation and requires the matching host environment variable before
+  you retry. After state restoration, NemoClaw clears a session's stale model
+  and provider pin when it still targets the managed `inference` provider but no
+  longer matches the configured default model. The session then follows the
+  current default selected through `inference set`, while sessions pinned to
+  another provider remain unchanged.
 </AgentOnly>
 
 <AgentOnly variant="hermes">
-The rebuild command preserves Hermes state, the complete current OpenShell policy, and managed MCP configuration while recreating the container.
-It also preserves supported configuration values previously written through `nemohermes <name> config set`.
-Before deletion, NemoClaw captures those recorded dotpaths, excluding `gateway` settings, managed inference-route fields, and credential material.
-After state restoration, it merges the captured values into the replacement configuration and verifies them.
-The completion report lists restored and dropped keys.
+The rebuild command transfers the complete Hermes native home, the complete current OpenShell policy, and managed MCP configuration while recreating the container.
+The opaque native-home transfer includes configuration values written through `nemohermes <name> config set`; NemoClaw does not select or merge individual configuration dotpaths.
 A capture failure stops before deletion; a restore or verification failure exits nonzero and preserves recovery state.
 For that one replacement create, NemoClaw adds baseline fields required by the current replacement image when they are absent from the live policy. Existing values, network keys, and same-name live network entries win, so host changes are not overwritten. NemoClaw does not save a desired-policy copy or enforce that handoff after OpenShell creates the sandbox.
 It reuses a messaging provider only when its type, credential keys, and checked-in OpenShell profile contract match the recorded channel binding.
@@ -12022,7 +11682,7 @@ It records the replacement process identity around managed health verification.
 NemoClaw clears the gate only if that same live process completes the final cron validation.
 If an operator already drained the gateway, NemoClaw clears its gate and release recovery record while leaving the operator drain active.
 
-If state restore, operator configuration restoration, managed MCP restoration, gateway replacement, agent-version verification, or cron validation fails after gate acquisition, `rebuild` exits nonzero and preserves the backup.
+If state restore, managed MCP restoration, gateway replacement, agent-version verification, or cron validation fails after gate acquisition, `rebuild` exits nonzero and preserves the backup.
 `rebuild` keeps the NemoClaw gate active after these failures unless release rollback cannot restore the drain marker.
 Failures before gate acquisition do not create a new gate.
 
@@ -12037,16 +11697,17 @@ Do not manually remove the cron restore marker or release recovery record becaus
 </Warning>
 
 If managed MCP restoration failed, correct the reported cause and run `$$nemoclaw <sandbox-name> mcp restart` first.
-Then run `$$nemoclaw <sandbox-name> recover` to verify the running gateway, validate the restored cron tree, and clear NemoClaw-owned recovery state.
+Then run `$$nemoclaw <sandbox-name> recover` to repair the gateway, validate the restored cron tree, and clear NemoClaw-owned recovery state.
 
 When NemoClaw is ready to reopen dispatch and no operator drain remains, its root-owned controller reschedules only enabled one-shot jobs that became due at or after the NemoClaw gate was acquired, have never run, and carry no dispatch or fire claim. It persists that update before removing the gate. If the update fails, rebuild or recovery exits nonzero and leaves the gate active.
 
 </AgentOnly>
 
 <AgentOnly variant="deepagents">
-  The rebuild command preserves manifest-defined Deep Agents state, regenerates `config.toml`,
-  carries the current agent-native `.mcp.json` entries through a bounded in-memory handoff, and
-  passes the complete current OpenShell policy to replacement creation.
+  The rebuild command transfers the complete native home, including
+  `config.toml`, `.mcp.json`, hooks, skills, memories, histories, packages, and
+  unknown files. It also passes the complete current OpenShell policy to
+  replacement creation.
 </AgentOnly>
 
 ### Continue an Interrupted Replacement
@@ -12096,7 +11757,32 @@ openshell status
 $$nemoclaw <sandbox-name> destroy --yes
 ```
 
-Do not use `--force` for this recovery. If deletion is unconfirmed, preserve the local recovery state and restore gateway access. After confirmed deletion, run `$$nemoclaw onboard --name <new-sandbox-name>` and recover any required data from the retained backup. Use a new sandbox name: recovery retirement refuses while the failed sandbox name is still present on its recorded gateway.
+Do not use `--force` for this recovery. If deletion is unconfirmed, preserve the local recovery state and restore gateway access. After confirmed deletion, run `$$nemoclaw onboard --name <new-sandbox-name>`. Use a new sandbox name: recovery retirement refuses while the failed sandbox name is still present on its recorded gateway.
+
+The printed backup path contains a validated `native-home.tar` and its bound `rebuild-manifest.json`. Before uploading any required data, verify that the retained archive still matches the manifest, extract it into a new private host directory, and inspect the paths you intend to recover:
+
+```bash
+BACKUP=<printed-backup-path>
+RECOVERY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/nemoclaw-native-recovery.XXXXXX")"
+chmod 700 "$RECOVERY_DIR"
+EXPECTED_SHA256="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.nativeState.sha256)' "$BACKUP/rebuild-manifest.json")"
+ACTUAL_SHA256="$(node -e 'const c=require("node:crypto"),f=require("node:fs"),h=c.createHash("sha256"),s=f.createReadStream(process.argv[1]); s.on("data",d=>h.update(d)); s.on("end",()=>process.stdout.write(h.digest("hex"))); s.on("error",e=>{console.error(e.message);process.exitCode=1})' "$BACKUP/native-home.tar")"
+test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+tar --no-same-owner -xf "$BACKUP/native-home.tar" -C "$RECOVERY_DIR"
+find "$RECOVERY_DIR" -mindepth 1 -maxdepth 3 -print
+```
+
+Stop if the digest differs, the manifest has no `nativeState.sha256`, or extraction fails. The archive was published only after NemoClaw's credential scan passed; do not copy the adjacent policy handoff, recovery marker, manifest, or any newly added credential material into the replacement. For each reviewed regular file or directory you need—including an unknown benign native-home path—use the validated upload wrapper and preserve its path below `/sandbox`:
+
+```bash
+$$nemoclaw <new-sandbox-name> upload "$RECOVERY_DIR/<relative-path>" "/sandbox/<destination>"
+```
+
+The upload wrapper refuses symbolic links and special files. Preserve the retained backup and ask a NemoClaw maintainer to review those entries instead of bypassing that check. Verify the recovered files in the replacement before continuing. Remove the private extraction only after verification:
+
+```bash
+rm -rf -- "$RECOVERY_DIR"
+```
 
 Only after the old sandbox is confirmed absent and required data recovery is complete, retire the exact failed transaction printed by rebuild:
 
@@ -12131,32 +11817,34 @@ NemoClaw fails closed when the selected gateway, replacement settings, durable s
 
 A same-name recreation started by `$$nemoclaw onboard` uses the same replacement journal. If that recreation is interrupted after the `Journaled replacement` message, rerun the original onboarding command with the same target settings. The active replacement can continue without adding `--resume`. Use `--resume` for interrupted onboarding steps that occur before a replacement journal exists.
 
-If any manifest-declared state directory or state file cannot be archived, NemoClaw reports each failed path and stops before deleting the original sandbox.
-This fail-closed behavior also applies to `rebuild --force`, even when the backup contains other usable entries.
-When an incomplete snapshot contains captured entries, NemoClaw retains it at the printed path but excludes it from `snapshot list` and snapshot restore selection.
-The retained snapshot may contain unsanitized credentials.
-Do not restore, copy, or share it.
-Do not edit its manifest or try to make it selectable.
-Repair access to the original sandbox state, then rerun the rebuild.
-Remove the incomplete host-side snapshot only after you verify that the original sandbox or a later complete snapshot contains every required state item.
+If the complete native home/workspace cannot be archived, NemoClaw reports the transfer failure and stops before deleting the original sandbox.
+This fail-closed behavior also applies to `rebuild --force`; NemoClaw never publishes a partial native-home archive as a restore source.
+NemoClaw removes failed native-state captures when cleanup succeeds instead of retaining them as incomplete recovery archives.
+If that cleanup also fails, NemoClaw reports and retains the incomplete backup path.
+Preserve that path while investigating the reported failure, or remove it only after the failure is resolved and you have confirmed that the original sandbox remains intact.
+Repair source access, free backup-disk space, or remove credential-bearing content identified by the error, then rerun the rebuild while the original sandbox remains intact.
 
 <Warning title="Forced Rebuild Scope">
-  `rebuild --force` skips the confirmation prompt. When the sandbox has MCP servers, NemoClaw must
-  read the agent-native MCP source before any destructive step. `--force` does not bypass an
-  unavailable, unsafe, or conflicting source. NemoClaw rechecks that source-derived bridge snapshot
-  immediately before deletion and stops if the source, target, policy, provider, or recorded gateway
-  changed. The independently captured live OpenShell policy is handed to replacement creation
-  unchanged. NemoClaw sends the delete request and every deletion-confirmation lookup to the
-  sandbox's exact recorded gateway. Across every rebuild path, NemoClaw does not attempt to stop the
-  local NVIDIA NIM through the delete attempt. Cleanup is attempted on a best-effort basis only
-  after deletion is positively confirmed. After a nonzero delete, an explicit missing result
-  converges as deleted. A `Ready` or `Running` result triggers an attempt to restore prepared MCP
-  state. NemoClaw reports any MCP restoration failure and does not present the operation as a
-  successful rollback. Any partial or unreachable result remains ambiguous. NemoClaw preserves the
-  bounded MCP handoff and rebuild-recovery record, does not attempt to stop NIM, and does not claim
-  that the original sandbox is intact. Inspect the live sandbox and gateway state before retrying
-  recovery. This recovery also stops for incomplete MCP adds or ambiguous ownership. An error after
-  a successful no-op does not fall back to the host-side path.
+  `rebuild --force` skips the confirmation prompt. When the sandbox has MCP
+  servers, NemoClaw must read the agent-native MCP source before any destructive
+  step. `--force` does not bypass an unavailable, unsafe, or conflicting source.
+  NemoClaw rechecks that source-derived bridge snapshot immediately before
+  deletion and stops if the source, target, policy, provider, or recorded
+  gateway changed. The independently captured live OpenShell policy is handed to
+  replacement creation unchanged. NemoClaw sends the delete request and every
+  deletion-confirmation lookup to the sandbox's exact recorded gateway. Across
+  every rebuild path, NemoClaw does not attempt to stop the local NVIDIA NIM
+  through the delete attempt. Cleanup is attempted on a best-effort basis only
+  after deletion is positively confirmed. After a nonzero delete, an explicit
+  missing result converges as deleted. A `Ready` or `Running` result triggers an
+  attempt to restore prepared MCP state. NemoClaw reports any MCP restoration
+  failure and does not present the operation as a successful rollback. Any
+  partial or unreachable result remains ambiguous. NemoClaw preserves the
+  bounded MCP handoff and rebuild-recovery record, does not attempt to stop NIM,
+  and does not claim that the original sandbox is intact. Inspect the live
+  sandbox and gateway state before retrying recovery. This recovery also stops
+  for incomplete MCP adds or ambiguous ownership. An error after a successful
+  no-op does not fall back to the host-side path.
 </Warning>
 
 Refer to [`$$nemoclaw <name> rebuild`](../../reference/commands#$$nemoclaw-name-rebuild) for flag details.
@@ -12174,7 +11862,7 @@ Refer to [`$$nemoclaw <name> rebuild`](../../reference/commands#$$nemoclaw-name-
 
 ## Related Topics
 
-- [Create and Restore Snapshots](../state-and-backups/create-and-restore-snapshots) for the state-preservation contract.
+- [Persist Sandbox State](../state-and-backups/create-and-restore-snapshots) for the state-preservation contract.
 - [Troubleshooting](../../reference/troubleshooting) for `privileged control unavailable`, stopped sandboxes, and failed rebuilds.
 
 
@@ -12371,7 +12059,7 @@ The managed launchers disable the following mutable or unsupported behavior:
 
 Interactive sessions retain Deep Agents Code's native local behavior for shell allowlists, startup commands, interpreter and programmatic-tool settings, and user hooks.
 These processes run as the sandbox user inside OpenShell and receive the supported secret-free runtime environment.
-NemoClaw snapshots and restores `hooks.json` plus the supported interpreter and startup-mode keys in `config.toml` during a managed rebuild.
+OpenShell preserves the complete native home, and managed rebuild transfers it without interpreting `hooks.json` or selected `config.toml` keys.
 
 The managed model constructor accepts only Deep Agents Code's `openai` provider path and reads its endpoint from a root-owned image file.
 It supplies the non-secret gateway placeholder key and ignores mutable provider classes, credentials, endpoints, and constructor parameters in Deep Agents Code config.
@@ -12490,8 +12178,14 @@ Re-onboard the named sandbox to change its managed provider or model selection.
 title: "Run and Manage Pi"
 sidebar-title: "Run and Manage Pi"
 description: "Operate Pi interactively or headlessly and manage its sandbox lifecycle and persistent state."
-description-agent: "Covers Pi terminal commands, lifecycle operations, state, snapshots, rebuild, recovery, and troubleshooting."
-keywords: ["run pi agent", "pi headless mode", "pi sandbox rebuild", "pi session backup"]
+description-agent: "Covers Pi terminal commands, lifecycle operations, native-state persistence, rebuild, recovery, and troubleshooting."
+keywords:
+  [
+    "run pi agent",
+    "pi headless mode",
+    "pi sandbox rebuild",
+    "pi session backup",
+  ]
 topics: ["manage-sandboxes", "terminal-runtime", "pi"]
 tags: ["pi", "lifecycle", "backup", "recovery"]
 difficulty: "intermediate"
@@ -12501,11 +12195,13 @@ content:
   type: "how_to"
 agent-variants: ["pi"]
 ---
+
 Use NemoClaw for host-side lifecycle operations and Pi for work inside the sandbox.
 
 <Note>
-Pi remains unavailable to normal installations until final release activation.
-Candidate qualification uses these lifecycle commands; internal qualification settings are not a user setup path.
+  Pi remains unavailable to normal installations until final release activation.
+  Candidate qualification uses these lifecycle commands; internal qualification
+  settings are not a user setup path.
 </Note>
 
 ## Connect and Run Pi
@@ -12552,40 +12248,24 @@ nemoclaw list
 
 Pi stores runtime state under `/sandbox/.pi/agent`:
 
-| Path | Ownership | Snapshot behaviour |
-|---|---|---|
-| `sessions/` | Confidential user state | Preserved |
-| `prompts/` | Read-only user resources | Preserved |
-| `themes/` | Read-only user resources | Preserved |
-| `tools/` | Executable resource state | Reconstructed, not restored |
-| `bin/` | Executable resource state | Reconstructed, not restored |
-| `settings.json` | User preferences and global trust default | Preserved after credential sanitization |
-| `trust.json` | Per-path project-trust decisions | Excluded |
-| `models.json` | Managed inference configuration | Reconstructed, not restored |
+| Path            | Ownership                  | Native-state persistence           |
+| --------------- | -------------------------- | ---------------------------------- |
+| `sessions/`     | Confidential user state    | Preserved                          |
+| `prompts/`      | Read-only user resources   | Preserved                          |
+| `themes/`       | Read-only user resources   | Preserved                          |
+| `tools/`        | Executable resource state  | Preserved                          |
+| `bin/`          | Executable resource state  | Persists in the native home        |
+| `settings.json` | User preferences           | Persists without a key allowlist   |
+| `models.json`   | Native model configuration | Persists with the rest of Pi state |
 
-NemoClaw restores the native `settings.json` file without filtering Pi setting names. Before restore, the snapshot credential sanitizer removes or replaces credential-shaped content, so preservation applies to the resulting sanitized file. Pi's global `defaultProjectTrust` setting is part of that file; a value of `"always"` remains the fallback for paths without a saved decision. Per-path decisions live in `trust.json` and are not backed up.
+## Native State Persistence
 
-## Create and Restore Snapshots
-
-Finish active Pi tasks before creating a snapshot.
-
-```bash
-nemoclaw <sandbox-name> snapshot create --name before-change
-nemoclaw <sandbox-name> snapshot list
-```
-
-Snapshots preserve declared user state. They do not preserve `auth.json`, managed route credentials, generated model configuration, `trust.json` per-path decisions, or executable tool and extension state.
-
-Restore replaces sandbox state from a selector returned by `snapshot list`: a version such as `v3`, a snapshot name, or a timestamp. Review the target and retain any newer state before continuing.
-
-```bash
-nemoclaw <sandbox-name> snapshot restore <version-or-name-or-timestamp>
-```
+OpenShell preserves Pi's complete native home and workspace across stop, start, and reconnect. Finish active Pi tasks before rebuilding. When a replacement sandbox is unavoidable, NemoClaw transfers the complete native state without interpreting individual settings or paths.
 
 ## Rebuild and Recover
 
 Rebuild validates the recorded workload authority and selects the immutable Pi image authorised by the protected qualification receipt.
-It preserves declared Pi state and replays the recorded context window, maximum output-token count, and reasoning flag.
+It preserves complete Pi state and replays the recorded context window, maximum output-token count, and reasoning flag.
 
 ```bash
 nemoclaw <sandbox-name> rebuild --yes
@@ -12600,10 +12280,9 @@ nemoclaw <sandbox-name> status
 
 Pi has no long-running agent gateway or host forward. `recover` re-enters the shared sandbox readiness path; it does not restart a Pi process. Rebuild when the Pi entrypoint, managed configuration, or image is inconsistent.
 
-Pi has no runtime `inference set` path. To change the provider, model, context window, output limit, or reasoning flag, create a snapshot, set the new selection, and run a fresh replacement.
+Pi has no runtime `inference set` path. To change the provider, model, context window, output limit, or reasoning flag, keep an independent copy if needed, set the new selection, and run a fresh replacement.
 
 ```bash
-nemoclaw <sandbox-name> snapshot create --name before-model-change
 nemoclaw onboard --agent pi --name <sandbox-name> --fresh --recreate-sandbox
 ```
 
@@ -12626,12 +12305,11 @@ Pi runtime self-update and package auto-update remain unsupported.
 
 ## Stop, Start, and Destroy
 
-Destroy removes the registered sandbox and its managed runtime resources. It does not remove gateway-held provider credentials. Create a snapshot before destroy when you need declared user state, and reset a provider credential separately after every dependent sandbox is gone.
+Destroy removes the registered sandbox, its native state, and its managed runtime resources. It does not remove gateway-held provider credentials. Copy any state you need first, and reset a provider credential separately after every dependent sandbox is gone.
 
 ```bash
 nemoclaw <sandbox-name> stop
 nemoclaw <sandbox-name> start
-nemoclaw <sandbox-name> snapshot create --name before-destroy
 nemoclaw <sandbox-name> destroy --yes
 nemoclaw credentials reset <provider> --yes
 ```
@@ -12660,7 +12338,7 @@ Run `nemoclaw <sandbox-name> status` and `nemoclaw <sandbox-name> doctor`. Confi
 
 ### Load a Project Resource
 
-Headless `--no-approve` intentionally ignores project-local skills, extensions, prompts, and packages. Interactive Pi uses a saved per-path decision from `trust.json` when one exists and otherwise falls back to `defaultProjectTrust` from `settings.json`. Snapshots do not transfer per-path decisions, but a restored global default of `"always"` can trust a path with no saved decision.
+Headless `--no-approve` intentionally ignores project-local skills, extensions, prompts, and packages. Use an interactive session to make an explicit Pi project-trust decision. A restored backup never raises project trust automatically.
 
 ### Diagnose Direct Internet Access
 
@@ -12733,7 +12411,7 @@ When creating a Hermes sandbox, if another sandbox or a host listener already ho
 If you intentionally run separate OpenShell gateways on the same host, set a different `NEMOCLAW_GATEWAY_PORT` before each onboarding run.
 NemoClaw isolates the gateway name and local state by port so one port-specific gateway does not replace another.
 Sandbox-scoped commands, including `exec`, `status`, `start`, and `stop`, address the sandbox through its recorded gateway binding. `NEMOCLAW_GATEWAY_PORT` selects the gateway for onboarding and new gateway-scoped setup; it does not redirect an existing sandbox command.
-A non-default `NEMOCLAW_GATEWAY_PORT` also gets its own host state root at `~/.nemoclaw/gateways/<port>/`, with a separate sandbox registry, snapshots, and legacy credential-migration files, so gateway-scoped state stays segregated while shared host-level files remain under `~/.nemoclaw/`.
+A non-default `NEMOCLAW_GATEWAY_PORT` also gets its own host state root at `~/.nemoclaw/gateways/<port>/`, with a separate sandbox registry, rebuild backups, and legacy credential-migration files, so gateway-scoped state stays segregated while shared host-level files remain under `~/.nemoclaw/`.
 On first use after upgrading, NemoClaw moves legacy rows and related state only when their recorded gateway identity matches the selected port; ambiguous state is left untouched with remediation.
 Provider credentials remain in the OpenShell gateway store.
 The default port keeps the shared `~/.nemoclaw/` location.
@@ -12757,7 +12435,7 @@ Hermes also retains or restores its registered OpenAI-compatible API forward usi
 If you intentionally run separate OpenShell gateways on the same host, set a different `NEMOCLAW_GATEWAY_PORT` before each onboarding run.
 NemoClaw isolates the gateway name and local state by port so one port-specific gateway does not replace another.
 Sandbox-scoped commands, including `exec`, `status`, `start`, and `stop`, address the sandbox through its recorded gateway binding. `NEMOCLAW_GATEWAY_PORT` selects the gateway for onboarding and new gateway-scoped setup; it does not redirect an existing sandbox command.
-A non-default `NEMOCLAW_GATEWAY_PORT` also gets its own host state root at `~/.nemoclaw/gateways/<port>/`, with a separate sandbox registry, snapshots, and legacy credential-migration files, so gateway-scoped state stays segregated while shared host-level files remain under `~/.nemoclaw/`.
+A non-default `NEMOCLAW_GATEWAY_PORT` also gets its own host state root at `~/.nemoclaw/gateways/<port>/`, with a separate sandbox registry, rebuild backups, and legacy credential-migration files, so gateway-scoped state stays segregated while shared host-level files remain under `~/.nemoclaw/`.
 On first use after upgrading, NemoClaw moves legacy rows and related state only when their recorded gateway identity matches the selected port; ambiguous state is left untouched with remediation.
 Provider credentials remain in the OpenShell gateway store.
 The default port keeps the shared `~/.nemoclaw/` location.
@@ -12836,12 +12514,14 @@ Use [`$$nemoclaw <name> destroy`](../../reference/commands#$$nemoclaw-name-destr
 When the host has `cloudflared`, `$$nemoclaw tunnel start` starts a Cloudflare tunnel.
 The tunnel can expose the dashboard with a public URL.
 Set `CLOUDFLARE_TUNNEL_TOKEN` before running the command when you want to use a Cloudflare named tunnel instead of a generated quick-tunnel URL.
+If a live recorded PID cannot be inspected, NemoClaw refuses to create a second tunnel. Restore process-inspection access, then retry; [`$$nemoclaw tunnel status`](../../reference/commands#$$nemoclaw-tunnel-status) reports this recovery state.
 
 ```bash
 $$nemoclaw tunnel start
 ```
 
 `$$nemoclaw tunnel stop` stops the tunnel and asks NemoClaw to stop the in-sandbox gateway for the selected or default sandbox.
+If NemoClaw reports incomplete tunnel cleanup, independently verify and stop the recorded cloudflared process with the host process manager, keep the PID record until that process exits, then retry the command.
 The older `$$nemoclaw start` now prints migration guidance and exits successfully without starting
 a sandbox or tunnel. Use `$$nemoclaw <name> start` or `$$nemoclaw tunnel start` explicitly.
 </AgentOnly>
@@ -12852,12 +12532,14 @@ a sandbox or tunnel. Use `$$nemoclaw <name> start` or `$$nemoclaw tunnel start` 
 When the host has `cloudflared`, `$$nemoclaw tunnel start` starts a Cloudflare tunnel.
 The tunnel can expose the forwarded Hermes endpoint with a public URL.
 Set `CLOUDFLARE_TUNNEL_TOKEN` before running the command when you want to use a Cloudflare named tunnel instead of a generated quick-tunnel URL.
+If a live recorded PID cannot be inspected, NemoClaw refuses to create a second tunnel. Restore process-inspection access, then retry; [`$$nemoclaw tunnel status`](../../reference/commands#$$nemoclaw-tunnel-status) reports this recovery state.
 
 ```bash
 $$nemoclaw tunnel start
 ```
 
 `$$nemoclaw tunnel stop` stops the tunnel but leaves the supervisor-owned in-sandbox gateway and agent-owned host forwards running for the selected or default sandbox.
+If NemoClaw reports incomplete tunnel cleanup, independently verify and stop the recorded cloudflared process with the host process manager, keep the PID record until that process exits, then retry the command.
 </AgentOnly>
 
 ## Related Topics
@@ -12936,18 +12618,18 @@ Choosing a different provider or model follows the existing recreation flow: int
 If the recorded selection is missing or unreadable, NemoClaw does not use native configuration edits as a reason to recreate the sandbox.
 
 Restart and reconnect preserve the current native configuration.
-Rebuild restores the credential-sanitized configuration captured immediately before rebuild.
-Snapshot restore reapplies only the credential-sanitized configuration present when that snapshot was created.
-These operations replace the complete native file instead of reconstructing selected keys.
+Rebuild restores the complete native configuration captured immediately before rebuild.
+It replaces the complete native file instead of reconstructing selected keys.
 During rebuild, NemoClaw then reapplies the entries owned by the current host-side messaging plan, so restored native channel values do not replace that plan.
-Restore does not change OpenShell policy, credential bindings, or the host-side inference route.
+Rebuild does not change OpenShell policy, credential bindings, or the host-side inference route.
 After restoring configuration that depends on different host resources, reconcile those resources with the matching NemoClaw commands and restart the gateway when OpenClaw requires it.
 The host command `$$nemoclaw <name> config set` is not available for OpenClaw.
 It remains available for Hermes.
 
 OpenClaw configuration cannot widen the OpenShell network policy or create an OpenShell credential binding.
 Keep provider credentials in OpenShell and use credential placeholders in `openclaw.json`.
-If you put a credential directly in native OpenClaw configuration, the sandbox can read it and snapshot sanitization can remove it during backup.
+If you put a credential directly in the native OpenClaw home, the sandbox can read it and rebuild aborts before replacement when the private archive copy fails credential scanning.
+Move credentials into supported OpenShell credential storage or bindings, remove them from the native home, and retry.
 
 `gateway restart` invokes OpenClaw's native safe restart command in the selected OpenShell sandbox.
 The native runtime owns restart admission and gateway replacement.
@@ -13006,7 +12688,7 @@ Use host commands only when a change also requires OpenShell policy, credential,
 For Hermes, direct changes to valid mutable configuration do not block restart. Lifecycle validation can still refuse raw secrets, unsafe paths, raced snapshots, or missing or malformed transaction metadata.
 Use supported host commands for settings that also require host-side route or OpenShell changes. Hermes-owned native configuration remains authoritative for direct runtime edits.
 
-NemoClaw serializes host-side gateway recovery, config and inference writes, snapshots, policy updates, channel updates, and sandbox destruction for each sandbox.
+NemoClaw serializes host-side gateway recovery, config and inference writes, backups, policy updates, channel updates, and sandbox destruction for each sandbox.
 This mutation lock prevents concurrent host operations from racing on the same registered sandbox.
 
 ## Related Topics
@@ -13146,6 +12828,7 @@ nemoclaw my-assistant channels remove googlechat
 Replace `my-assistant` with your sandbox name.
 The command attempts endpoint teardown even when interrupted enrollment left no Google Chat registry record.
 If the command reports that it could not stop the tunnel, correct the host service and run the command again before retrying enrollment.
+On any host where NemoClaw cannot inspect the recorded cloudflared process or signal it through an identity-bound operating-system API, independently verify and stop that process with the host process manager, keep the PID record until that process exits, then rerun the removal command.
 A removal that completes without cleanup warnings stops the dedicated tunnel and webhook proxy, removes any partial bridge provider and policy preset, and removes Google Chat from the durable messaging plan.
 
 If `GOOGLECHAT_AUDIENCE` already contains the public webhook URL, NemoClaw uses it and does not start or change cloudflared.
@@ -13780,7 +13463,7 @@ Continue with [Enable Channels During Onboarding](enable-channels-during-onboard
 # SPDX-License-Identifier: Apache-2.0
 title: "Transfer State Manually"
 sidebar-title: "Transfer State Manually"
-description: "Download and upload selected sandbox state files when a managed snapshot is not the right transfer path."
+description: "Download and upload selected sandbox state files when you need an independent or targeted transfer."
 description-agent: "Explains safe manual download and upload paths for OpenClaw workspace files, Hermes state, and Deep Agents state. Use when inspecting or transferring specific files."
 keywords: ["nemoclaw download", "nemoclaw upload", "manual sandbox backup", "workspace transfer"]
 content:
@@ -13789,7 +13472,7 @@ skill:
   priority: 30
 ---
 Use manual transfer when you need to inspect or move specific state files.
-Use [Create and Restore Snapshots](create-and-restore-snapshots) for normal backup, rebuild, and restore workflows.
+OpenShell preserves the native home/workspace during routine lifecycle operations, and NemoClaw transfers the complete tree during rebuild. Use manual transfer for an independent backup or a targeted cross-sandbox move.
 
 ## Download State
 
@@ -13825,7 +13508,7 @@ Download it for reference only, and do not upload a saved copy. See [Explain Net
 </AgentOnly>
 <AgentOnly variant="hermes">
 
-For Hermes, prefer [Create and Restore Snapshots](create-and-restore-snapshots) for a faithful `state.db` restore.
+For Hermes, prefer [Persist Sandbox State](create-and-restore-snapshots) for normal lifecycle preservation of `state.db`.
 Use manual download and upload only when you need to inspect or transfer a specific file.
 
 ```bash
@@ -13862,9 +13545,9 @@ $$nemoclaw "$SANDBOX" download /sandbox/.deepagents/agent/skills/ "$BACKUP_DIR/a
 
 Do not recursively download `/sandbox/.deepagents/.state/`.
 That directory can contain upstream credential state such as `auth.json` and `chatgpt-auth.json`, which can copy secrets to the host and restore state that the managed launcher refuses.
-Use `$$nemoclaw <name> snapshot create` when you need NemoClaw's built-in sanitizer for Deep Agents runtime state.
+Review every downloaded path and exclude credential state from manual copies.
 
-Do not manually transfer `/sandbox/.deepagents/.mcp.json`. Entries in that shared native file have entry-level ownership: user-authored credential-free entries belong to the workspace, while NemoClaw-managed entries contain OpenShell provider and policy bindings that are valid only for their source sandbox. Use a NemoClaw snapshot or the managed rebuild flow to preserve both classes safely. Run `$$nemoclaw <name> mcp migrate --apply` first if the sandbox still has legacy MCP state.
+Do not manually transfer `/sandbox/.deepagents/.mcp.json`. Entries in that shared native file have entry-level ownership: user-authored credential-free entries belong to the workspace, while NemoClaw-managed entries contain OpenShell provider and policy bindings that are valid only for their source sandbox. Use the managed rebuild flow when native MCP entries must move with the complete native state. Run `$$nemoclaw <name> mcp migrate --apply` first if the sandbox still has legacy MCP state.
 
 </AgentOnly>
 
@@ -13896,7 +13579,7 @@ $$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/memory/" /sandbox/.openclaw/workspace/
 </AgentOnly>
 <AgentOnly variant="hermes">
 
-For Hermes, prefer [Create and Restore Snapshots](create-and-restore-snapshots) for a faithful `state.db` restore.
+For Hermes, prefer [Persist Sandbox State](create-and-restore-snapshots) for normal lifecycle preservation of `state.db`.
 Use manual download and upload only when you need to inspect or transfer a specific file.
 
 ```bash
@@ -13921,7 +13604,7 @@ $$nemoclaw "$SANDBOX" upload "$BACKUP_DIR/agent-skills/" /sandbox/.deepagents/ag
 ```
 
 Do not upload saved `.deepagents/.state` or `.deepagents/.mcp.json` contents during manual restore.
-Restore only the safe files listed above. Use a NemoClaw snapshot or managed rebuild when native MCP entries must survive replacement, so NemoClaw can preserve user-owned entries and reconnect managed entries to live OpenShell policy and provider state.
+Restore only the safe files listed above. Use managed rebuild when native MCP entries must survive replacement, so the complete native state moves with the live OpenShell policy and provider state.
 
 Treat downloaded `config.toml` as inspection context.
 Do not upload an old `config.toml` over a rebuilt sandbox unless you are intentionally replacing NemoClaw's generated route metadata.
@@ -13934,7 +13617,7 @@ Do not upload an old `config.toml` over a rebuilt sandbox unless you are intenti
 
 <Note title="Source-tree helper script">
 The [`scripts/backup-workspace.sh`](https://github.com/NVIDIA/NemoClaw/blob/main/scripts/backup-workspace.sh) helper exists only in the NemoClaw source repository for engineering workflows.
-It is not installed by the standard installer, so host installs should use `nemoclaw backup-all` or the snapshot commands.
+It is not installed by the standard installer. Host installs can use `nemoclaw backup-all` for the installer safety backup, or `nemoclaw <name> download` for an independent file copy.
 </Note>
 
 Run the contributor setup from the NemoClaw source repository root before you create a backup:
@@ -14003,7 +13686,7 @@ memory/
 ## Related Topics
 
 - [Understand Sandbox State](understand-sandbox-state) for agent-specific paths and persistence rules.
-- [Create and Restore Snapshots](create-and-restore-snapshots) for managed restore and clone operations.
+- [Persist Sandbox State](create-and-restore-snapshots) for OpenShell persistence and whole-home rebuild transfer.
 - [CLI Selection Guide](../../reference/cli-selection-guide) for NemoClaw and OpenShell command boundaries.
 
 
@@ -14030,7 +13713,7 @@ Use the built-in uninstall command when the installed CLI is available.
 $$nemoclaw uninstall
 ```
 
-Within each gateway pass, uninstall creates a fresh host-side snapshot for each eligible registered sandbox before it deletes that pass's OpenShell sandboxes.
+Within each gateway pass, uninstall creates a fresh host-side backup for each eligible registered sandbox before it deletes that pass's OpenShell sandboxes.
 It uses the same state contract as `$$nemoclaw backup-all`, including temporarily starting an eligible stopped Docker sandbox.
 If any current sandbox cannot be backed up, that gateway pass exits nonzero before sandbox deletion.
 During `--all-gateway-ports`, the sweep continues with later ports and reports the aggregate failure.
@@ -14066,7 +13749,7 @@ Uninstall preserves an unrelated process that uses the same port.
 <AgentOnly variant="hermes">
 <Warning>
 For a Docker Hermes sandbox that uses the NemoClaw-managed image, uninstall removes its managed state volume even without `--destroy-user-data`.
-Default uninstall snapshots required Hermes state first.
+Default uninstall backs up required Hermes state first.
 When using `--destroy-user-data`, back up required state separately before uninstall.
 NemoClaw removes only a volume with exact ownership labels; inspection or removal failure exits nonzero and preserves registry state for retry.
 </Warning>
@@ -14310,7 +13993,7 @@ Do not add `sandbox_namespace` manually to a live gateway configuration because 
 In this section, `<selected-state-root>` is `~/.nemoclaw/` for the default gateway or `~/.nemoclaw/gateways/<port>/` for a non-default gateway.
 For the default gateway, the uninstall command preserves `~/.nemoclaw/rebuild-backups/`, `~/.nemoclaw/backups/`, and `~/.nemoclaw/sandboxes.json` by default.
 A non-default gateway uses the corresponding entries under `~/.nemoclaw/gateways/<port>/`.
-Before deleting a registered sandbox, the default path writes a fresh snapshot under that gateway's `rebuild-backups/` directory.
+Before deleting a registered sandbox, the default path writes a fresh backup under that gateway's `rebuild-backups/` directory.
 The whole-host sweep applies this gate separately to each selected gateway port.
 If a backup fails or any registered sandbox is skipped, uninstall stops that gateway pass before OpenShell resource cleanup.
 A registry entry confirmed absent from both the selected gateway and Docker is exempt because no sandbox state remains to capture.
@@ -14390,7 +14073,7 @@ curl -fsSL https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/uni
 
 - [Host Files and State](../../reference/host-files-and-state) for the complete host-side file and preservation reference.
 - [`$$nemoclaw uninstall`](../../reference/commands#$$nemoclaw-uninstall) for the full command contract and hosted-script comparison.
-- [Create and Restore Snapshots](../state-and-backups/create-and-restore-snapshots) before removing state you may need later.
+- [Transfer State Manually](../state-and-backups/transfer-state-manually) before removing state you may need later.
 
 
 ========================================
@@ -14418,7 +14101,7 @@ The standard installer follows the admin-promoted `lkg` release tag by default.
 NemoClaw pins the selected agent version into the sandbox image at build time rather than updating it at runtime.
 Existing sandboxes do not auto-upgrade when a newer NemoClaw release ships a newer agent version.
 Run `$$nemoclaw <name> status` to see the agent version currently running in a sandbox.
-After updating the host CLI, run `$$nemoclaw <name> rebuild` to recreate the sandbox with the newer pin while preserving the agent state that NemoClaw manages.
+After updating the host CLI, run `$$nemoclaw <name> rebuild` to recreate the sandbox with the newer pin while transferring the complete OpenShell-provided native home and workspace, apart from the documented credential and control-plane exclusions.
 
 <AgentOnly variant="openclaw">
 
@@ -14567,11 +14250,7 @@ Legacy managed-image confirmation never overrides recorded custom-image evidence
 </AgentOnly>
 
 <AgentOnly variant="openclaw">
-OpenClaw's native plugin and package state is restored with the rest of its declared state; NemoClaw does not require separate plugin ownership metadata.
-Before native startup or post-upgrade doctor, NemoClaw removes the zero-byte `exec-approvals.json` placeholder that older images, including v0.0.123, created.
-It removes only an unchanged, regular file with a single link.
-Nonempty approval files remain unchanged for OpenClaw to process, including malformed files.
-An unsafe file type or a changed file stops startup instead of deleting unverified state.
+OpenClaw's native plugin and package state transfers with the complete native home; NemoClaw does not require separate plugin ownership metadata.
 </AgentOnly>
 
 The installer attempts every eligible recovery and exits with a nonzero status if any recovery fails.
@@ -14614,10 +14293,9 @@ A local-only forced cleanup does not confirm that the OpenShell sandbox was dele
 
 ### Use the Manual Update Flow
 
-Create a snapshot before a manual update.
+Keep an independent host copy before a manual update when you need an extra recovery point.
 
 ```bash
-$$nemoclaw <sandbox-name> snapshot create --name pre-upgrade
 $$nemoclaw update --yes
 $$nemoclaw upgrade-sandboxes --check
 ```
@@ -14627,7 +14305,7 @@ The command exits nonzero when it reports stale state, an unknown version, a bac
 Inspect each diagnostic before you select a remediation or automate the next action.
 When all your registered sandboxes resolve to one recorded gateway, the command queries that gateway instead of the gateway for your current `NEMOCLAW_GATEWAY_PORT`.
 
-Each rebuild destroys the old container and creates a new one while preserving the manifest-defined workspace or agent state that NemoClaw knows how to snapshot.
+Each rebuild destroys the old container and creates a new one while transferring the complete OpenShell-provided native home/workspace.
 `upgrade-sandboxes --check` can report a sandbox as stale because the running agent version is behind, because the managed NemoClaw image fingerprint differs from the current CLI, or both.
 
 Sandboxes created with `--from-image` remain pinned to their publisher-managed image digest.
@@ -14635,11 +14313,11 @@ Sandboxes created with `--from-image` remain pinned to their publisher-managed i
 After you update NemoClaw, run `$$nemoclaw <sandbox-name> rebuild` to revalidate the external image and recreate the sandbox from its recorded digest.
 
 Custom-image sandboxes created with `--from <Dockerfile>` are not marked stale solely by image fingerprint, so an upgrade check does not accidentally replace them with the default image.
-Runtime changes outside the manifest-defined state paths, such as packages installed manually in the running container, are not preserved.
+Paths outside the native home/workspace, such as packages installed into the container image's system directories, are not preserved. Packages and other files installed under the native home are preserved.
 
 ## Related Topics
 
-- [Create and Restore Snapshots](../state-and-backups/create-and-restore-snapshots) for the preservation contract.
+- [Persist Sandbox State](../state-and-backups/create-and-restore-snapshots) for the preservation contract.
 - [Recover and Rebuild Sandboxes](recover-and-rebuild-sandboxes) for manual recreation.
 - [`$$nemoclaw update`](../../reference/commands#$$nemoclaw-update) and [`$$nemoclaw upgrade-sandboxes`](../../reference/commands#$$nemoclaw-upgrade-sandboxes) for command flags.
 
@@ -14654,7 +14332,7 @@ Runtime changes outside the manifest-defined state paths, such as packages insta
 title: "Understand Sandbox State"
 sidebar-title: "Understand Sandbox State"
 description: "What agent workspace, sandbox state, and read-only host mounts are, where they live, and how they persist."
-description-agent: "Explains OpenClaw workspace files, Hermes state, Deep Agents state, and read-only host mounts. Use when preparing to edit, mount, snapshot, or transfer sandbox state."
+description-agent: "Explains OpenClaw workspace files, Hermes state, Deep Agents state, and read-only host mounts. Use when preparing to edit, mount, rebuild, or transfer sandbox state."
 keywords: ["nemoclaw workspace files", "deepagents state", "soul.md", "agents.md", "sandbox persistence", "read-only host mount"]
 content:
   type: "concept"
@@ -14789,7 +14467,7 @@ All workspace files reside inside the sandbox filesystem:
 <Warning>
 Inside an OpenClaw sandbox, `~` expands to `/sandbox`, not to the OpenClaw workspace.
 Do not create workspace files as `~/USER.md` or `~/SOUL.md`.
-Those paths resolve to `/sandbox/USER.md` and `/sandbox/SOUL.md`, which are outside OpenClaw's managed state and are not included in snapshots.
+Those paths resolve to `/sandbox/USER.md` and `/sandbox/SOUL.md`. They are part of the OpenShell-provided native home and transfer with the rest of that tree during rebuild.
 Use `$OPENCLAW_WORKSPACE_DIR/USER.md` and `$OPENCLAW_WORKSPACE_DIR/SOUL.md` instead.
 </Warning>
 
@@ -14814,9 +14492,9 @@ OpenClaw creates `MEMORY.md` and `memory/` separately in each workspace when tha
 Files are per-agent.
 Changes in `workspace-main/AGENTS.md` are not visible to `workspace-support/`.
 
-NemoClaw handles persistence and snapshots automatically for per-agent workspaces.
+OpenShell handles persistence automatically for per-agent workspaces.
 The sandbox entrypoint provisions each `workspace-<name>/` directly under the writable `.openclaw/` tree so state survives sandbox restart.
-`$$nemoclaw <name> snapshot create` discovers every `workspace-<name>/` directory and includes it in the snapshot bundle alongside the default `workspace/`.
+An unavoidable rebuild transfers the complete native home, including every `workspace-<name>/` directory and the default `workspace/`.
 
 <Note>
 Files that operators typically want consistent across every agent workspace, such as `AGENTS.md`, shared skills, and common templates, are not synced automatically.
@@ -14831,7 +14509,7 @@ They survive normal container restarts, but NemoClaw deletes them when you destr
 
 OpenShell-managed OpenClaw uses its home, `/sandbox`, for user configuration in `~/.config` and `~/.gitconfig`, and application data in `~/.local/share` and `~/.local/state`.
 npm `--global` and Python `--user` installations use `~/.local`, with commands available through `~/.local/bin` on the agent's `PATH`.
-These settings and tools survive restarts of the same sandbox, but are excluded from rebuilds, upgrades, and snapshots, which preserve only declared agent state.
+These settings and tools survive restarts and are included in the complete native-state transfer used by rebuilds and upgrades.
 The direct Docker topology’s separate gateway process retains `/tmp/.gitconfig` because it cannot create files in the sandbox-owned home.
 Connect sessions and one-shot commands use native Git configuration.
 Existing files in the old `/tmp` locations remain untouched.
@@ -14843,19 +14521,19 @@ Do not copy authentication stores or raw credentials.
 Sandbox restarts preserve workspace files because the persistent state volume outlives individual container restarts.
 
 The `$$nemoclaw <name> rebuild` command and the sandbox upgrade flow also preserve workspace state.
-Before replacing the container, NemoClaw snapshots the workspace state directories and restores them into the rebuilt sandbox.
+Before replacing the sandbox, NemoClaw transfers the complete native home and workspace into the replacement.
 
-If NemoClaw cannot archive any requested state file or directory, it reports the backup failure and stops before replacing the sandbox.
+If NemoClaw cannot archive the complete native state, it reports the failure and stops before replacing the sandbox.
 It does not continue with a partial backup.
 
 ### Deleted During Sandbox Destroy
 
 Running `$$nemoclaw <name> destroy` deletes the sandbox and its persistent state volume.
-NemoClaw removes workspace files from the sandbox unless you created a snapshot or backup first.
+OpenShell removes the native home and workspace with the sandbox.
 
 <Warning>
 Back up your workspace files before running `$$nemoclaw <name> destroy`.
-Refer to [Create and Restore Snapshots](create-and-restore-snapshots) for instructions.
+Refer to [Persist Sandbox State](create-and-restore-snapshots) for the supported boundaries.
 </Warning>
 
 ## Editing Workspace Files
@@ -14869,7 +14547,7 @@ You can edit them in two ways:
 ## Next Steps
 
 - [Set Up Task-Specific Sub-Agents](../../configure-agents/set-up-sub-agent)
-- [Create and Restore Snapshots](create-and-restore-snapshots)
+- [Persist Sandbox State](create-and-restore-snapshots)
 - [Commands reference](../../reference/commands)
 
 </AgentOnly>
@@ -14888,20 +14566,20 @@ Runtime state, such as logs, memory, platform sessions, and the SQLite state dat
 | `/sandbox/.hermes/config.yaml` | NemoClaw-generated Hermes runtime configuration. |
 | `/sandbox/.hermes/.env` | NemoClaw-generated environment and messaging placeholders. |
 | `/sandbox/.hermes/state.db` | Hermes SQLite state database. |
-| `/sandbox/.hermes/kanban.db` | Default Hermes kanban board database. NemoClaw snapshots preserve only this default board. |
+| `/sandbox/.hermes/kanban.db` | Default Hermes kanban board database. It persists as part of the complete native home. |
 | `/sandbox/.hermes/profiles/` | User-created named Hermes profiles. The Web Dashboard uses the shared native Hermes home instead of a separate profile. |
 | `/sandbox/.hermes/platforms/` | Messaging platform state, including QR-paired sessions such as WhatsApp. |
 | `/sandbox/.hermes/logs/` | Hermes runtime logs. |
-| `/sandbox/SOUL.md` | Durable top-level Hermes persona file preserved by NemoClaw snapshots. |
+| `/sandbox/SOUL.md` | Durable top-level Hermes persona file preserved by OpenShell storage. |
 
 ## Persistence Behavior
 
 Hermes state lives in the sandbox's persistent state volume, not in the container image alone.
 Normal restarts preserve that state.
-Rebuilds and upgrades use NemoClaw's snapshot flow to preserve manifest-defined Hermes state, including `SOUL.md`, user-created named profiles, the SQLite database behind `.hermes/state.db`, and the default kanban board in `.hermes/kanban.db`.
+Rebuilds and upgrades transfer the complete OpenShell-provided native home, including `SOUL.md`, user-created named profiles, the SQLite database behind `.hermes/state.db`, and the default kanban board in `.hermes/kanban.db`.
+Named boards, attachments, worker logs, and scratch workspaces under `.hermes/kanban/` are included because they are under the native home. External directory or worktree targets are included only when they are also under the OpenShell-provided native home/workspace.
 Rebuild restore treats `.hermes/profiles/` as native agent-owned state and preserves user-created named profiles.
 Startup consumes an older reserved `.hermes/profiles/dashboard-home/` as a one-time migration source, moves safe contents into the shared native home, and removes the retired profile.
-Named boards, attachments, worker logs, scratch workspaces under `.hermes/kanban/`, and external directory or worktree targets are not included in the kanban backup.
 
 Running `$$nemoclaw <name> destroy` deletes the sandbox and its persistent state volume.
 Back up important state before destroying a Hermes sandbox.
@@ -14915,7 +14593,7 @@ Use `$$nemoclaw <name> download` for manual host downloads, or use `openshell sa
 
 ## Next Steps
 
-- [Create and Restore Snapshots](create-and-restore-snapshots)
+- [Persist Sandbox State](create-and-restore-snapshots)
 - [Commands reference](../../reference/commands)
 
 </AgentOnly>
@@ -14938,55 +14616,37 @@ Deep Agents Code normally creates the `/sandbox/.deepagents/agent/` paths below 
 | `/sandbox/.deepagents/agent/AGENTS.md` | Global memory file for the default Deep Agents Code agent, loaded at session start. |
 | `/sandbox/.deepagents/agent/memories/` | Topic-specific markdown memories that Deep Agents Code can read and update across sessions. |
 | `/sandbox/.deepagents/skills/` | Legacy NemoClaw skill-upload state. Deep Agents Code does not load skills from this path, and `$$nemoclaw <name> skill install` leaves it untouched. |
-| `/sandbox/.deepagents/agent/skills/` | Canonical writable user-skill root declared by the Deep Agents Code integration. The agent owns discovery and activation; NemoClaw preserves this agent state in snapshots. |
-| `/sandbox/.deepagents/hooks.json` | User-authored native hook configuration. NemoClaw preserves it in snapshots; review its executable commands before restoring it into another workspace. |
-| `/sandbox/.deepagents/.mcp.json` | Agent-native MCP configuration. NemoClaw-managed entries contain OpenShell credential placeholders and are read directly during status, migration, and rebuild. The snapshot flow treats this file as credential-bearing and restores managed entries through its bounded handoff rather than the general state archive. |
+| `/sandbox/.deepagents/agent/skills/` | Canonical writable user-skill root declared by the Deep Agents Code integration. The agent owns discovery and activation; OpenShell preserves this agent state. |
+| `/sandbox/.deepagents/hooks.json` | User-authored native hook configuration. It persists with the native home; review its executable commands before transferring it into another workspace. |
+| `/sandbox/.deepagents/.mcp.json` | Agent-native MCP configuration. NemoClaw-managed entries contain OpenShell credential placeholders and are read directly during status, migration, and rebuild. The file persists as part of the complete native home. |
 | `/sandbox/.deepagents/.state/auth.json` | Upstream auth state. The managed launchers refuse to start when this file contains credentials. |
 | `/sandbox/.deepagents/.state/chatgpt-auth.json` | Upstream ChatGPT auth state. The managed launchers refuse to start when this file exists. |
-| `/sandbox/.deepagents/.env` | User-managed Deep Agents Code environment file. NemoClaw treats it as credential-bearing and does not snapshot it. |
+| `/sandbox/.deepagents/.env` | User-managed Deep Agents Code environment file. It persists as agent-written native-home state; do not place raw credentials here when an OpenShell credential binding is available. |
 
 Project-level Deep Agents files can also exist inside the working repository, such as `.deepagents/AGENTS.md`, `.deepagents/skills/`, and `.deepagents/.mcp.json`.
 Those files are ordinary project files.
-They persist when they live under your sandbox workspace, but NemoClaw's Deep Agents manifest only declares `/sandbox/.deepagents` state for the managed agent home.
+They persist when they live under your sandbox workspace because the entire native home/workspace is OpenShell-owned storage.
 
 ## Persistence Behavior
 
 Deep Agents state lives in the sandbox's persistent state volume, not in the container image alone.
 Normal restarts preserve that state.
-Rebuilds and upgrades use NemoClaw's snapshot flow to preserve the manifest-defined Deep Agents state tree.
-
-The Deep Agents manifest declares these durable directories:
-
-```text
-/sandbox/.deepagents/.state/
-/sandbox/.deepagents/agent/skills/
-```
-
-It also declares `/sandbox/.deepagents/config.toml` and `/sandbox/.deepagents/hooks.json` as durable top-level state files.
-`config.toml` uses key-level ownership, while `hooks.json` is restored byte-for-byte after the snapshot safety checks.
-The target sandbox's current Deep Agents manifest defines this ownership policy, so a snapshot cannot weaken it.
-
-NemoClaw keeps the newly generated inference route headers and the `models` and `update` tables authoritative during rebuild.
-On a NemoClaw-managed image, the allowlisted UI and thread preferences, validated native interpreter settings, and native `startup.mode` can be restored from the previous file.
-
-Runtime-controlled, unknown, executable, and security-sensitive backup keys are dropped on that managed path.
-A Deep Agents target created from a custom Dockerfile restores `config.toml` as a whole file because the custom image owns its config schema.
-
-On the managed key-level restore path, if config validation or safe atomic replacement fails, NemoClaw marks the restore as failed instead of falling back to a whole-file copy.
-Credential-bearing files such as `.deepagents/.env` and user-authored `.deepagents/.mcp.json` are intentionally omitted from snapshots.
+Rebuilds and upgrades transfer the complete native home/workspace as one opaque archive.
+NemoClaw does not apply a Deep Agents path or config-key allowlist during that transfer, so unknown files, `config.toml`, hooks, skills, memories, histories, packages, and project state all move together.
+OpenShell-managed credential material remains under OpenShell ownership rather than entering the archive.
 
 Managed MCP state is rebuilt from the agent-native file and current OpenShell policy, provider, and attachment state. NemoClaw keeps no host-side MCP desired state.
 Memory files such as `/sandbox/.deepagents/agent/AGENTS.md` and `/sandbox/.deepagents/agent/memories/` are upstream Deep Agents Code files.
 
-If you rely on them before they are manifest-backed in your release, copy them manually with `$$nemoclaw <name> download` before destroying the sandbox.
+They transfer with the complete native home during rebuild. Copy them manually with `$$nemoclaw <name> download` before destroying the sandbox when you also need an independent backup.
 
-Running `$$nemoclaw <name> destroy` deletes the sandbox and its persistent state volume.
+Running `$$nemoclaw <name> destroy` clears the complete Deep Agents `/sandbox` persistence root before it asks OpenShell to delete the sandbox. If NemoClaw cannot prove that cleanup completed, it preserves the registry entry and stops before deletion so you can retry safely.
 Back up important Deep Agents state before destroying the sandbox.
 
 ## Editing State
 
 Prefer NemoClaw host commands for generated configuration such as model, provider, managed MCP, and policy settings.
-Direct edits to NemoClaw-owned or non-allowlisted keys in `/sandbox/.deepagents/config.toml` can be overwritten by rebuilds.
+Direct edits to `/sandbox/.deepagents/config.toml` persist through rebuild. A later explicit configuration command can still change fields it owns.
 
 Use `$$nemoclaw <name> connect` when you need to inspect runtime files interactively.
 Use `$$nemoclaw <name> download` for manual host downloads, or use `openshell sandbox upload` when you intentionally need the raw OpenShell upload path.
@@ -14994,7 +14654,7 @@ Use `$$nemoclaw <name> download` for manual host downloads, or use `openshell sa
 Use Deep Agents Code commands for upstream-managed memories and skills.
 For example, run `dcode skills create <name>` inside the sandbox to create a user skill, or use `/remember` inside an interactive `dcode` session to update memory.
 
-NemoClaw preserves the manifest-declared agent state directories, but it does not maintain a skill inventory or infer which skills are visible or active. Use `$$nemoclaw <name> skill list` for the selected agent's native view.
+OpenShell preserves the complete native home, but NemoClaw does not maintain a skill inventory or infer which skills are visible or active. Use `$$nemoclaw <name> skill list` for the selected agent's native view.
 
 ## Python Environment
 
@@ -15006,7 +14666,7 @@ Create project-specific virtual environments under `/sandbox` when a task needs 
 
 ## Next Steps
 
-- [Create and Restore Snapshots](create-and-restore-snapshots) explains the managed snapshot workflow.
+- [Persist Sandbox State](create-and-restore-snapshots) explains OpenShell persistence and whole-home rebuild transfer.
 - [Add an MCP Server](../mcp-servers/add-an-mcp-server) explains the NemoClaw-managed MCP path for Deep Agents sandboxes.
 - [Deep Agents Code memory and skills](https://docs.langchain.com/oss/python/deepagents/code/memory-and-skills) explains upstream memory, `AGENTS.md`, and skill behavior.
 
@@ -15072,7 +14732,7 @@ nemo-deepagents "$SANDBOX_NAME" rebuild --no-observability --yes
 ```
 
 Finish active `dcode` tasks before running the rebuild.
-NemoClaw preserves declared agent state, managed MCP providers, and adapter state.
+NemoClaw transfers the complete native home and workspace, managed MCP providers, and adapter state.
 
 ## Remove or Reconfigure the Collector
 
@@ -15283,7 +14943,7 @@ Resume and rebuild operations preserve the choice.
 
 To enable tracing on an existing sandbox, use the transactional rebuild opt-in.
 Finish active `dcode` tasks because Deep Agents Code backup refuses to capture state while a task is running.
-The transaction preserves declared agent state, managed MCP providers, and adapter state while it recreates the sandbox.
+The transaction transfers the complete native home and workspace, managed MCP providers, and adapter state while it recreates the sandbox.
 
 ```bash
 export SANDBOX_NAME=my-dcode
