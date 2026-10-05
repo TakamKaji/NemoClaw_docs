@@ -5724,10 +5724,17 @@ Use this path when you operate `llama-server` and want NemoClaw to register its 
 The server must satisfy all of these requirements:
 
 - Listen over HTTP on `127.0.0.1:8081` and expose its OpenAI-compatible API under `/v1`.
+- Make that authenticated API reachable from the sandbox network at `host.openshell.internal:8081`.
 - Require the same native bearer key supplied through `NEMOCLAW_LLAMACPP_LOCAL_TOKEN`.
 - Expose bounded native llama.cpp evidence through `/v1/models`, `/health`, `/props`, and either `/metrics` or the native metrics-not-supported response.
 - Report a stable, non-path served model alias.
 - Return native llama.cpp model metadata without conflicting model entries.
+
+On native Docker, publishing only `-p 127.0.0.1:8081:8081` can leave the sandbox route unreachable.
+Keep the loopback publication and also publish `-p <Docker-gateway-IP>:8081:8081` for the OpenShell network.
+For a host process, configure its listener or forwarding so both addresses work.
+Retain native API-key authentication and restrict non-loopback access to the sandbox network.
+Onboarding stops when the existing network probe confirms that the attached server cannot be reached.
 
 Configure the server with its own supported mechanism before you run NemoClaw.
 Start the server with an explicit served model alias.
@@ -8784,7 +8791,10 @@ $$nemoclaw inference set \
 NemoClaw validates the endpoint before it changes the route.
 For an HTTPS IP-literal or DNS-pinned HTTP endpoint, NemoClaw registers and verifies an absent provider before selecting the route.
 If OpenShell still reports the provider as absent, NemoClaw retries the switch once.
-If provider verification or route selection fails, NemoClaw leaves the inference selection unchanged and removes the provider only when it can verify the revision created by this switch.
+If provider verification fails or OpenShell confirms that it did not apply the route, NemoClaw leaves the inference selection unchanged.
+If OpenShell cannot confirm whether it changed the route, NemoClaw stops and reports an unknown result.
+Run `$$nemoclaw <name> inference get` to inspect the selected sandbox's gateway before you use the route or retry.
+NemoClaw removes the provider only when it can verify the revision created by this switch.
 If removal was not attempted or could not be confirmed, rerun onboarding before using that provider route or retrying the switch.
 For a DNS-backed HTTPS endpoint, NemoClaw registers the HTTPS Pin Runtime provider before the first route attempt.
 
