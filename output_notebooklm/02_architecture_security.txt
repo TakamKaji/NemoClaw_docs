@@ -3692,7 +3692,21 @@ Exports never contain credential values. They include credential environment-var
 With `--json` and file output, the version 1 result includes `sourceSandbox`, `outputPath`, `documentDigest`, and `specDigest`.
 
 Export validates retained corporate certificate authority (CA) state but omits the CA bundle and digest from YAML.
-Configure destination CA trust separately during onboarding; export does not change the source sandbox's trust.
+When retained CA state is present, a successful export reports that omission on standard error.
+Export does not change the source sandbox's trust.
+
+Before deploying the YAML, prepare the destination:
+
+- Supply values for `credential.env` references through the destination command's environment.
+  Keep credential values out of YAML.
+  Unset exported credentials after the destination command finishes.
+- If `network.proxy` is present, ensure its host and port are reachable from the destination sandbox.
+  Export does not install the proxy.
+- Review destination CA trust requirements before deployment.
+
+The exporter refuses sources that require host proxy credential replay.
+Experimental runtime identity is not supported by this export command.
+For its separate OpenClaw workflow, refer to [Configure Experimental Runtime Identity](/user-guide/openclaw/reference/configure-runtime-identity).
 
 The v0 command projects verified source state into the pre-release v1alpha1 YAML shape.
 Managed OpenClaw and Hermes exports omit `image` so v1 applies its managed image default.
@@ -3712,6 +3726,11 @@ Deep Agents export requires hosted OpenAI Completions inference and explicitly d
 It emits the immutable image as `image.ref`, the `deepagents` harness, and one `agent`.
 The command rejects other Deep Agents settings instead of omitting them.
 When a managed OpenClaw sandbox uses Brave Search, the export includes its `webSearch` integration and the `BRAVE_API_KEY` environment-variable reference, never the key.
+Managed OpenClaw and Hermes sources can also export Tavily with a `tavily-search` integration, the `TAVILY_API_KEY` reference, and a grant for the primary agent.
+Export verifies the source's provider and profile binding, including the Hermes-specific `tavily-hermes-v1` profile.
+Missing or mismatched search evidence prevents publication.
+Disabled search remains ungranted.
+Hermes with Brave and search-enabled Deep Agents sources remain unsupported.
 When retained managed proxy settings differ from the default, the export includes the validated host and port under `network.proxy`.
 For hosted OpenClaw inference, the export preserves context-window, maximum-token, reasoning, and reasoning-effort settings when omitting them would change the target's effective behavior.
 It preserves nondefault agent timeout and heartbeat settings under `execution`.
@@ -11158,19 +11177,27 @@ Unknown service query errors remain fatal. The installer also stops for malforme
 
 ### Sandbox build fails during OpenClaw plugin install
 
-During sandbox creation, the OpenClaw image setup can install managed plugins for selected features such as web search or diagnostics. If the build reaches `openclaw plugins install` and the npm registry or ClawHub is blocked, NemoClaw classifies that narrow failure and prints a policy hint instead of only generic resume guidance. Brave Search uses an external OpenClaw plugin and can reach this install path. Tavily ships with the pinned OpenClaw runtime, so NemoClaw verifies the bundled extension instead of installing a separate Tavily package. The neutral managed image does not declare `plugins.entries.tavily`; onboarding adds that entry only when you select Tavily Search.
+Managed OpenClaw images preinstall the reviewed Brave and Tavily plugins from pinned archives.
+The image build verifies archive integrity before installing each plugin offline.
+Both search plugins remain disabled in the neutral image; onboarding enables only the selected provider and supplies its OpenShell credential reference.
 
-Check that the active policy and host network allow the npm registry and ClawHub endpoints needed by the plugin, or disable the feature that requested the plugin. For example, if the plugin is for web search, disable that feature and resume onboarding:
+An `integrity mismatch` or `has no committed npm integrity pin` error stops the build before the affected plugin is installed.
+If `openclaw plugins install` fails, the build stops before running `openclaw doctor` for that provider.
+Preserve the complete error, plugin name, and NemoClaw revision, then report the failed archive verification or native installation to a maintainer.
+Do not change the package pins or bypass verification to continue.
+Widening sandbox network policy or disabling web search does not repair these offline build failures.
 
-```bash
-NEMOCLAW_WEB_SEARCH_PROVIDER=none $$nemoclaw onboard --resume
-```
+Archive downloads occur before the offline installation step.
+For a failed download, check the host network or proxy that fetches the archive; sandbox egress policy does not control that download.
 
-If you want the feature, fix the network or policy path first, then resume onboarding:
+After the reviewed build inputs or native installation failure are corrected, rerun the original onboarding or rebuild command.
+For a resumable onboarding session, run:
 
 ```bash
 $$nemoclaw onboard --resume
 ```
+
+Confirm that archive verification and plugin installation complete without errors.
 
 </AgentOnly>
 
