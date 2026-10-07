@@ -435,22 +435,35 @@ agent-variants: ["openclaw"]
 ---
 
 NemoClaw configures safeguard compaction for OpenClaw sandboxes that use its managed `inference.local` route, except for Local Ollama routes.
-The safeguard bounds each compaction attempt while leaving summarization behavior under OpenClaw's control.
+The safeguard configures a timeout for each built-in summarization request while leaving summarization behavior under OpenClaw's control.
 
 ## Compaction Attempt Limit
 
-Each automatic or explicitly requested compaction attempt is limited to 120 seconds by default.
-The N1x managed vLLM profile allows 300 seconds because compaction with its 32,768-token context window can take longer than 120 seconds.
+NemoClaw sets OpenClaw's compaction timeout to 120 seconds by default.
+The N1x managed vLLM profile uses 300 seconds because compaction with its 32,768-token context window can take longer than 120 seconds.
+OpenClaw applies this timeout to each built-in summarization request.
+An attempt that uses multiple requests can take longer than this limit.
 OpenClaw reports progress while the attempt runs.
 
 After a successful attempt, OpenClaw rotates the active transcript while preserving the most recent turn.
 
 ## Compaction Results
 
-The time limit prevents an individual attempt from running indefinitely.
+The time limit bounds each summarization request.
 It does not guarantee that compaction succeeds or reduces the active context.
 
 OpenClaw owns the summarization behavior and decides whether the compacted transcript satisfies its requirements.
+
+## N1x Summary Retry
+
+The N1x managed vLLM profile keeps OpenClaw's summary quality guard enabled and allows one corrective retry after an audit rejection.
+OpenClaw gives the model feedback about the failed checks, then audits the replacement summary.
+Other profiles configured by NemoClaw to use this safeguard keep zero corrective retries.
+
+The audit checks required summary sections, extracted identifiers, and the latest user request.
+If the replacement fails the audit, OpenClaw cancels compaction and preserves the existing conversation history.
+A generation error or caller cancellation can also stop compaction.
+The retry does not guarantee that the model produces an acceptable summary or reduces the active context.
 
 ## When the Setting Applies
 
@@ -1056,6 +1069,10 @@ An HTTPS endpoint requires the external gateway's mTLS client files under the de
 | `stateDir/tls/client/tls.key` | Client private key used for mTLS. |
 
 All three paths must be readable regular files.
+For SDK-backed commands, including `config export`, NemoClaw reads the mTLS bundle from the declared `stateDir`.
+That directory must be a real, current-user-owned directory with mode `0700`, and each parent must be current-user- or root-owned without group or world write access.
+It does not require the NemoClaw-managed state marker for an externally supervised directory.
+If `NEMOCLAW_OPENSHELL_GATEWAY_STATE_DIR` is set, it must resolve to the same directory or NemoClaw stops before it connects.
 NemoClaw uses this bundle for the mTLS gRPC health request at the declared endpoint path `/openshell.v1.OpenShell/Health`.
 For an HTTP endpoint, NemoClaw sends the readiness request to the declared origin.
 
@@ -1475,7 +1492,7 @@ Completion requires successful bounded activation and post-response verification
 OpenClaw and Hermes start without a configured inference route or model.
 They cannot make an inference request until you configure a managed route.
 After a managed inference provider is available, use `$$nemoclaw inference set --provider <provider> --model <model> --sandbox component-sandbox`.
-Refer to [Switch Inference Providers](../inference/switch-providers) for the route requirements and verification behavior.
+Refer to [Switch Inference Providers](../inference/manage-inference/switch-providers) for the route requirements and verification behavior.
 
 Providerless onboarding without a registered component retains its existing behavior.
 
@@ -2507,7 +2524,7 @@ Use these details when your first-run path needs more control.
 
   <Accordion title="Use Portable Ollama">
     Hermes Portable uses a current-user rootless Podman container for the selected Ollama model.
-    Before onboarding, complete the [Portable Ollama prerequisites](../inference/set-up-ollama#use-portable-ollama-with-hermes), including the required Podman version check.
+    Before onboarding, complete the [Portable Ollama prerequisites](../inference/local-inference/set-up-ollama#use-portable-ollama-with-hermes), including the required Podman version check.
     This path also requires the Portable preflight to accept the current user's Podman and NVIDIA GPU authority.
     Start fresh onboarding with an explicit Ollama model:
 
@@ -4004,8 +4021,8 @@ This default avoids local backends that accept Responses requests but drop syste
 
 <AgentOnly variant="openclaw">
 
-For GPT-5 and the `o1`, `o3`, and `o4` model families, NemoClaw configures OpenClaw to send the maximum reply token limit as `max_completion_tokens` instead of the legacy `max_tokens`.
-This automatic compatibility handling recognizes provider-prefixed and suffixed model IDs, such as `azure/gpt-5.4`, `gpt-5.4-turbo`, and `openai/o3-mini`.
+For GPT-5, GPT-6, and the `o1`, `o3`, and `o4` model families, NemoClaw configures OpenClaw to send the maximum reply token limit as `max_completion_tokens` instead of the legacy `max_tokens`.
+This automatic compatibility handling recognizes provider-prefixed and suffixed model IDs, such as `azure/gpt-5.4`, `gpt-6-astra`, and `openai/o3-mini`.
 
 </AgentOnly>
 
@@ -8184,6 +8201,7 @@ DGX Spark automatically selects its Qwen recipe from the detected unified-memory
 | At least 64 GB | 262,144 | 4 | 8,192 | 0.4 |
 
 The smaller recipe admits a nominal 64 GB DGX Spark that reports about 61.6 GB of usable unified memory.
+It loads weights with vLLM's lazy `safetensors` strategy instead of `fastsafetensors`.
 It remains Experimental with software validation; physical 64 GB Spark qualification is pending.
 Unknown capacity or less than 60 GB does not qualify for either Qwen recipe.
 Before installation, NemoClaw displays the selected hardware profile and context limit.
@@ -8679,7 +8697,8 @@ $$nemoclaw credentials list
 ```
 
 `inference set` also accepts installer-facing provider names such as `anthropicCompatible`, `build`, `custom`, and `llama-cpp`.
-NemoClaw normalizes an accepted alias to its canonical OpenShell provider ID and records the canonical name in the sandbox registry.
+It accepts recognized underscore spellings of canonical provider IDs and hyphenated aliases, such as `ollama_local`, `nvidia_prod`, and `open_router`.
+NemoClaw normalizes an accepted alias or underscore spelling to its canonical OpenShell provider ID and records the canonical name in the sandbox registry.
 
 If the requested provider is unsupported, NemoClaw lists selectable supported provider IDs registered on the selected gateway.
 If it cannot read the gateway list, it lists every supported provider ID instead.
@@ -8701,6 +8720,10 @@ Target a non-default sandbox by name.
 ```bash
 $$nemoclaw inference set --provider <provider> --model <model> --sandbox <name>
 ```
+
+For `openrouter-api`, NemoClaw verifies the selected model through the sandbox before it commits agent configuration.
+It skips the host-side provider probe because the OpenRouter adapter uses the sandbox-only `host.openshell.internal` route.
+If sandbox verification fails, NemoClaw tries to restore the previous inference selection and does not commit the agent configuration.
 
 </AgentOnly>
 
@@ -9499,7 +9522,8 @@ The row reports `healthy` only when the route returns a structurally valid resul
 An empty body, malformed JSON, provider-error envelope, or wrong response shape reports `unhealthy`, even with a 2xx status.
 Status diagnostics do not include the response body.
 An ordinary HTTP `404` from `/v1/models` reports an unhealthy route because the model catalog is absent.
-Deep Agents Code on OpenRouter is the exception: its models route returns `404` by design, and `status` requires a successful inference request.
+The recorded `openrouter-api` provider uses NemoClaw's Chat Completions-only OpenRouter adapter.
+Its models route returns `404` by design, so `status` requires a successful inference request before it reports the route as healthy.
 When the models route responds and `status` sends an inference request, a failing row names the endpoint that request used.
 When the models route itself does not respond, the row names the models route.
 An HTTP `401` or `403` response reports `unauthorized`.
@@ -9511,7 +9535,7 @@ It reads `reachable` for a 2xx models route and reports the status the models ro
 The provider, model, and endpoint appear with the rest of the sandbox state.
 This path includes the OpenShell proxy and its authentication rewrite.
 When onboarding prints a dashboard summary, use it to verify that NemoClaw ran the same route-reachability probe from inside the sandbox.
-Treat an unreachable route, an ordinary models-route HTTP 404, or HTTP 5xx as a failed readiness check: onboarding marks the sandbox not ready and exits non-zero.
+Treat an unreachable route, an unsupported models-route HTTP 404, or HTTP 5xx as a failed readiness check: onboarding marks the sandbox not ready and exits non-zero.
 Restore the configured endpoint or proxy, run `$$nemoclaw onboard --resume` to complete the retained onboarding session, then rerun the status command.
 
 ## Understand Local Provider Post-Ready Checks
@@ -9536,8 +9560,9 @@ Each attempt allows 2 seconds for the route to return an HTTP response.
 <AgentOnly variant="openclaw">
 For OpenClaw, this leaves time for client overhead before its 2.5-second provider preflight stops.
 </AgentOnly>
-A transport failure, an ordinary models-route HTTP 404, or HTTP 5xx leaves the onboarding session retryable at final verification.
-Onboarding retries an ordinary 404 within its startup budget, then reports the missing model catalog and exits nonzero if the failure persists.
+A transport failure, an unsupported models-route HTTP 404, or HTTP 5xx leaves the onboarding session retryable at final verification.
+For a supported OpenRouter agent, onboarding accepts the adapter's catalog 404 only after a bounded inference request validates the selected model.
+Onboarding retries any other 404 within its startup budget, then reports the missing model catalog and exits nonzero if the failure persists.
 Confirm the provider and model configuration and restore the endpoint's `/v1/models` route.
 Run `$$nemoclaw onboard --resume` to verify the retained session again without rebuilding a healthy sandbox.
 
@@ -11269,7 +11294,7 @@ Refer to [Set Up Google Chat](set-up-google-chat) for topic publishing, pull sub
 
 <AgentOnly variant="openclaw">
 Use host-side `$$nemoclaw <sandbox> channels` commands.
-OpenClaw owns `/sandbox/.openclaw/openclaw.json`, and NemoClaw restores the complete credential-sanitized native config across rebuilds.
+OpenClaw owns `/sandbox/.openclaw/openclaw.json`, and NemoClaw transfers the complete native home and workspace across rebuilds.
 OpenShell credential bindings and policy remain host-owned.
 Use the host-side channel commands because an in-sandbox config change cannot create the matching OpenShell credential binding or policy.
 </AgentOnly>
@@ -11485,7 +11510,7 @@ A successful complete preflight for `$$nemoclaw launch <sandbox-name>` can publi
 During the lease, `launch` still verifies the owning OpenShell gateway, exact live sandbox identity, registry and agent configuration, effective policy, inference route, required forwards, and semantic runtime health.
 
 <AgentOnly variant="openclaw,hermes">
-Configured inference must return HTTP 2xx from the semantic `inference.local` probe, which is stricter than the HTTP 200–499 reachability diagnostic used by ordinary `connect`.
+Every configured route must serve a valid response to a bounded request for the recorded model before NemoClaw accepts or publishes launch readiness. The models probe must return HTTP 2xx, except that `openrouter-api` can return HTTP 404 for `GET /v1/models`. A failed model request rejects launch readiness. This is stricter than the HTTP 200–499 reachability diagnostic used by ordinary `connect`.
 </AgentOnly>
 <AgentOnly variant="deepagents">
 Every configured route must serve a valid response to a bounded request for the recorded model before NemoClaw accepts or publishes launch readiness.
@@ -12524,7 +12549,7 @@ Use [`$$nemoclaw <name> destroy`](../../reference/commands#$$nemoclaw-name-destr
 When the host has `cloudflared`, `$$nemoclaw tunnel start` starts a Cloudflare tunnel.
 The tunnel can expose the dashboard with a public URL.
 Set `CLOUDFLARE_TUNNEL_TOKEN` before running the command when you want to use a Cloudflare named tunnel instead of a generated quick-tunnel URL.
-If a live recorded PID cannot be inspected, NemoClaw refuses to create a second tunnel. Restore process-inspection access, then retry; [`$$nemoclaw tunnel status`](../../reference/commands#$$nemoclaw-tunnel-status) reports this recovery state.
+If command-line inspection is unavailable, Windows can still verify and stop a recorded `cloudflared.exe` through an identity-bound process handle. Other platforms require process inspection before signaling. If NemoClaw cannot verify the process identity or stop it safely, it refuses to create a second tunnel; restore inspection access or independently verify and stop the process before retrying. [`$$nemoclaw tunnel status`](../../reference/commands#$$nemoclaw-tunnel-status) reports this recovery state.
 
 ```bash
 $$nemoclaw tunnel start
@@ -12542,7 +12567,7 @@ a sandbox or tunnel. Use `$$nemoclaw <name> start` or `$$nemoclaw tunnel start` 
 When the host has `cloudflared`, `$$nemoclaw tunnel start` starts a Cloudflare tunnel.
 The tunnel can expose the forwarded Hermes endpoint with a public URL.
 Set `CLOUDFLARE_TUNNEL_TOKEN` before running the command when you want to use a Cloudflare named tunnel instead of a generated quick-tunnel URL.
-If a live recorded PID cannot be inspected, NemoClaw refuses to create a second tunnel. Restore process-inspection access, then retry; [`$$nemoclaw tunnel status`](../../reference/commands#$$nemoclaw-tunnel-status) reports this recovery state.
+If command-line inspection is unavailable, Windows can still verify and stop a recorded `cloudflared.exe` through an identity-bound process handle. Other platforms require process inspection before signaling. If NemoClaw cannot verify the process identity or stop it safely, it refuses to create a second tunnel; restore inspection access or independently verify and stop the process before retrying. [`$$nemoclaw tunnel status`](../../reference/commands#$$nemoclaw-tunnel-status) reports this recovery state.
 
 ```bash
 $$nemoclaw tunnel start
@@ -12838,7 +12863,7 @@ nemoclaw my-assistant channels remove googlechat
 Replace `my-assistant` with your sandbox name.
 The command attempts endpoint teardown even when interrupted enrollment left no Google Chat registry record.
 If the command reports that it could not stop the tunnel, correct the host service and run the command again before retrying enrollment.
-On any host where NemoClaw cannot inspect the recorded cloudflared process or signal it through an identity-bound operating-system API, independently verify and stop that process with the host process manager, keep the PID record until that process exits, then rerun the removal command.
+If NemoClaw cannot verify the recorded process identity or stop the process safely, independently verify and stop it with the host process manager, keep the PID record until that process exits, then rerun the removal command.
 A removal that completes without cleanup warnings stops the dedicated tunnel and webhook proxy, removes any partial bridge provider and policy preset, and removes Google Chat from the durable messaging plan.
 
 If `GOOGLECHAT_AUDIENCE` already contains the public webhook URL, NemoClaw uses it and does not start or change cloudflared.
