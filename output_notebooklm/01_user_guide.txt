@@ -3503,6 +3503,7 @@ Use these details when your first-run path needs more control.
     It retires the running gateway before replacing OpenShell only when that version is outside the supported range; an unknown installed version or an invalid or missing range stops the update without retiring the gateway, while any retirement failure stops the update with the sandbox backups preserved.
     After the host upgrade, it runs `nemoclaw upgrade-sandboxes --auto` before generic host admission.
     Confirmed recovery rebuilds stale sandboxes and restores validated backups for registered sandboxes that are not Ready.
+    Recovery also includes confirmed pre-fingerprint OpenClaw sandboxes that report Ready when their live agent-version probe fails.
     The installer skips generic onboarding when no Station reconciliation remains necessary.
     Required Station reconciliation still passes through host preflight.
     If recovery exits 0 but the installer cannot inspect its output, it reports unconfirmed recovery and skips generic onboarding.
@@ -12488,12 +12489,21 @@ When you create another Deep Agents sandbox, choose a distinct sandbox name in t
 </AgentOnly>
 
 <AgentOnly variant="openclaw">
-When the default port is already held by another sandbox, `$$nemoclaw onboard` scans ports `18789` through `18799` and uses the next free port.
+When the default port is already held by another sandbox, `$$nemoclaw onboard` scans ports `18789` through `18799` and uses the next verified available port.
 </AgentOnly>
 
 <AgentOnly variant="hermes">
 Each Hermes sandbox also needs its own OpenAI-compatible API port.
-When creating a Hermes sandbox, if another sandbox or a host listener already holds the default API port `8642`, `$$nemoclaw onboard` scans ports `8642` through `8652`, uses the next free port, and records it for the sandbox.
+When creating a Hermes sandbox, if another sandbox or a host listener already holds the default API port `8642`, `$$nemoclaw onboard` scans ports `8642` through `8652`, uses the next verified available port, and records it for the sandbox.
+</AgentOnly>
+
+<AgentOnly variant="openclaw,hermes">
+When allocating ports for a new sandbox, NemoClaw skips candidates whose OpenShell forward ownership cannot be verified.
+It can select a later candidate only when that port is verified available.
+If no candidate is available, the error lists each blocked port, including a preferred dashboard port outside the default range.
+When every candidate has unverified ownership, inspect ownership before rerunning onboarding.
+For mixed failures, the error includes both verification recovery and the existing occupied-port remedies.
+Refer to [Port already in use](../../reference/troubleshooting#port-already-in-use) for those recovery actions.
 </AgentOnly>
 
 <AgentOnly variant="openclaw,hermes">
@@ -12513,7 +12523,7 @@ A later onboarding run that uses a different `NEMOCLAW_GATEWAY_PORT` or `--contr
 <AgentOnly variant="openclaw,hermes">
 Repeated onboarding and resume keep the sandbox's registered dashboard port and restore a missing forward on that port.
 If the port is already bound, NemoClaw verifies that the listener is the exact OpenShell forward for that sandbox and reuses it without restarting the sandbox.
-Ports registered to another sandbox, foreign listeners, or unverified ownership stop onboarding with a port conflict error.
+For that registered port, another sandbox's registration, a foreign listener, or unverified ownership still stops onboarding with a port conflict error.
 </AgentOnly>
 
 <AgentOnly variant="hermes">
@@ -12535,8 +12545,8 @@ Gateway cleanup is scoped by sandbox name and port.
 <AgentOnly variant="openclaw,hermes">
 
 ```bash
-$$nemoclaw onboard                                      # first sandbox uses 18789
-$$nemoclaw onboard                                      # second sandbox uses the next free port, such as 18790
+$$nemoclaw onboard                                      # first sandbox uses 18789 when verified available
+$$nemoclaw onboard                                      # second sandbox uses the next verified available port, such as 18790
 ```
 
 To choose a specific port, pass `--control-ui-port`:
@@ -14344,7 +14354,7 @@ Outside these forced paths, an in-range source checkout preserves an existing Op
 
 After the host CLI and OpenShell update, the installer runs `$$nemoclaw upgrade-sandboxes --auto` to reconcile the existing sandboxes.
 
-During installer-driven recovery, each stale or non-Ready sandbox requires a validated latest backup.
+During installer-driven recovery, every sandbox selected for recovery requires a validated latest backup.
 The backup's sandbox and agent identities must match the registry.
 <AgentOnly variant="deepagents">
 The registry must also contain positive evidence that NemoClaw managed the sandbox image.
@@ -14354,6 +14364,12 @@ The registry must contain positive evidence that NemoClaw managed the sandbox im
 </AgentOnly>
 If the replacement gateway reports a stale sandbox as Ready or Running, the installer reuses the validated pre-upgrade backup.
 It does not attempt another backup from the replaced legacy runtime.
+
+<AgentOnly variant="openclaw">
+The installer also selects a Ready legacy OpenClaw sandbox when its agent-version probe fails and its registry has no managed-image fingerprint.
+This recovery requires the installer's explicit managed-image confirmation for that sandbox name and the validated latest backup.
+The sandbox must belong to the selected gateway and have no recorded custom-image evidence.
+</AgentOnly>
 
 <AgentOnly variant="openclaw,hermes">
 For a listed pre-fingerprint OpenClaw or Hermes registry entry, the installer's explicit managed-image confirmation is the only exception to the registry evidence requirement.
