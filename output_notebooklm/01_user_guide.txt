@@ -1085,12 +1085,20 @@ The process identity must remain stable while NemoClaw reads `/proc` evidence an
 The process must belong to the unit's cgroup under the declared systemd manager scope, and its executable must match `execPath`.
 The endpoint must answer its health check.
 
-After validation, NemoClaw registers the endpoint under the canonical gateway name and selects it as the active OpenShell gateway.
-Immediately before registration, NemoClaw reloads the authority and rejects any change from the authority bound to the run.
+After validation, NemoClaw inspects the canonical gateway registration before changing it.
+When no registration exists, NemoClaw registers the declared endpoint.
+When a registration exists, its normalized scheme, host, and port must match the declared endpoint.
+If another gateway is active, NemoClaw selects the matching registration.
+NemoClaw reuses the registration only after post-selection verification confirms that it is active and healthy.
+A conflicting, malformed, or post-selection unhealthy retained registration stops onboarding and remains available for inspection.
+Immediately before attachment, NemoClaw reloads the authority and rejects any change from the authority bound to the run.
 Port `8080` uses the name `nemoclaw`, and another port uses `nemoclaw-<port>`.
 NemoClaw verifies the named and active registrations before advancing to provider selection.
 It then repeats the health, supervisor, listener, executable, cgroup, and process identity checks and compares them with the initial evidence.
-If registration, selection, or repeated validation fails, NemoClaw removes the attempted registration and stops before provider selection.
+If registration, selection, or repeated validation fails, NemoClaw removes only a registration created by the current attempt while the same authority still authorizes cleanup, and stops before provider selection.
+If authority changes after registration, NemoClaw retains the registration and reports its name.
+Confirm the gateway authority and inspect the named registration with `openshell gateway list -o json` before rerunning onboarding.
+A reused registration remains available for inspection.
 
 Onboarding fails when any of the following conditions applies:
 
@@ -1105,6 +1113,7 @@ Onboarding fails when any of the following conditions applies:
 - The listener does not belong to the declared systemd unit.
 - The listener executable does not match `execPath`.
 - The endpoint does not answer the required health check.
+- A retained canonical registration does not exactly match the declared endpoint.
 - The authority differs from the authority already bound to this run or checkpoint.
 
 ## Preserve authority across resume
@@ -9602,6 +9611,11 @@ For OpenClaw, this leaves time for client overhead before its 2.5-second provide
 </AgentOnly>
 A transport failure, an unsupported models-route HTTP 404, or HTTP 5xx leaves the onboarding session retryable at final verification.
 For a supported OpenRouter agent, onboarding accepts the adapter's catalog 404 only after a bounded inference request validates the selected model.
+<AgentOnly variant="deepagents">
+When Deep Agents Code onboarding resumes with OpenRouter, NemoClaw restarts a stopped adapter and requires a successful bounded inference request.
+If adapter recovery or inference validation fails, onboarding remains incomplete.
+Correct the reported adapter or route error, then rerun `$$nemoclaw onboard --resume`.
+</AgentOnly>
 Onboarding retries any other 404 within its startup budget, then reports the missing model catalog and exits nonzero if the failure persists.
 Confirm the provider and model configuration and restore the endpoint's `/v1/models` route.
 Run `$$nemoclaw onboard --resume` to verify the retained session again without rebuilding a healthy sandbox.
@@ -11669,7 +11683,9 @@ An unavailable or different version ends the rebuild with a nonzero status inste
 <AgentOnly variant="openclaw">
 
 After post-restore writes, rebuild verifies that the final `openclaw.json` and `.config-hash` pair match.
-If verification fails, NemoClaw exits nonzero and does not report a successful rebuild.
+When the selected provider is **Other OpenAI-compatible endpoint**, rebuild starts the restored OpenClaw configuration and verifies the selected inference route.
+If either verification fails, NemoClaw exits nonzero, preserves the backup, and does not report a successful rebuild.
+Correct the reported configuration or route error, then rerun `$$nemoclaw <sandbox-name> rebuild --yes`.
 
 </AgentOnly>
 
@@ -11682,10 +11698,21 @@ For these providers, a provider that no longer exposes the recorded credential k
 A provider that exposes the recorded credential key without an expiration entry is treated as non-expiring. That credential or one with a future expiration continues through the remaining preflight checks.
 Hermes Provider uses its separate authentication and credential-binding checks; this expiration-metadata guard does not apply to it.
 
+For remote providers other than Hermes Provider and Amazon Bedrock, preflight validates a nonempty API key supplied through the host environment.
+NemoClaw checks that key against the provider endpoint before replacement-image preparation or backup.
+It validates the key again immediately before sandbox deletion.
+When validation fails, rebuild stops without deleting the existing sandbox, including with `--force`.
+A valid credential stored in OpenShell does not bypass validation of a supplied host key.
+
 Use the recovery guidance that matches the reported check:
 
 - Verify the sandbox name when its registry entry is missing.
 - Follow the printed OpenShell gateway recovery steps when the gateway schema is incompatible.
+- Correct the exported API key when rebuild reports `the host inference credential could not be validated`.
+  To reuse a credential already stored in OpenShell, unset its host environment variable instead.
+  For NVIDIA Endpoints, this variable is `NVIDIA_INFERENCE_API_KEY`.
+  Confirm that the provider endpoint is reachable.
+  Then retry `rebuild`.
 - Refresh the named OpenShell credential or rerun `$$nemoclaw onboard` when rebuild reports an expired provider credential.
 - Re-register the provider or rerun `$$nemoclaw onboard` with the correct credential when the provider no longer exposes the recorded credential key, then retry `rebuild`.
 - Restore gateway connectivity and authentication when rebuild cannot verify the recorded provider.
@@ -12732,13 +12759,20 @@ After first launch, OpenClaw owns this file and can add providers, tools, plugin
 The NemoClaw plugin reads the current native inference configuration for the `/nemoclaw status` and `/nemoclaw onboard` views.
 It registers a provider only when the native primary model selects `inference` and that provider is configured.
 Other provider registrations remain owned by OpenClaw.
-Onboarding metadata does not override the native provider, model, endpoint, or credential reference.
+Reading onboarding metadata does not change the native provider, model, endpoint, or credential reference.
 
 When you rerun onboarding with the same sandbox name, NemoClaw compares your requested inference provider and model with the recorded onboarding selection, not the native model in `openclaw.json`.
 If that selection matches and no other setting requires recreation, onboarding reuses the ready sandbox and preserves native configuration edits.
 Reuse preserves native web-search settings, including when no web-search provider is selected during onboarding.
 Choosing a different provider or model follows the existing recreation flow: interactive onboarding asks for confirmation, while non-interactive onboarding recreates automatically when the recorded selection is readable and differs.
 If the recorded selection is missing or unreadable, NemoClaw does not use native configuration edits as a reason to recreate the sandbox.
+
+For managed OpenClaw sandboxes, NemoClaw records a verified provider or model change before recreation.
+After restoring the backup, it applies that recorded selection to native inference configuration before restarting the gateway.
+Resuming the same recreation also applies the selection when its recreation record already authorizes this update.
+It preserves unrelated native configuration.
+This update excludes forced recreation and custom images.
+It does not infer a selection change from a backup or an older recreation record.
 
 Restart and reconnect preserve the current native configuration.
 Rebuild restores the complete native configuration captured immediately before rebuild.
@@ -14117,6 +14151,8 @@ In this section, `<selected-state-root>` is `~/.nemoclaw/` for the default gatew
 For the default gateway, the uninstall command preserves `~/.nemoclaw/rebuild-backups/`, `~/.nemoclaw/backups/`, and `~/.nemoclaw/sandboxes.json` by default.
 A non-default gateway uses the corresponding entries under `~/.nemoclaw/gateways/<port>/`.
 Before deleting a registered sandbox, the default path writes a fresh backup under that gateway's `rebuild-backups/` directory.
+When the backup contains native agent state, successful uninstall prints the path to its `native-home.tar` archive.
+Deep Agents Code files are inside that archive, not separate loose files.
 The whole-host sweep applies this gate separately to each selected gateway port.
 If a backup fails or any registered sandbox is skipped, uninstall stops that gateway pass before OpenShell resource cleanup.
 A registry entry confirmed absent from both the selected gateway and Docker is exempt because no sandbox state remains to capture.
