@@ -3014,7 +3014,7 @@ If registry or catalog availability prevents resolution, stock onboarding stops 
 Available catalog evidence that is incomplete, mixed, mutable, wrong-platform, or identity-inconsistent fails closed before sandbox creation.
 An explicit `--from <Dockerfile>` remains a separate complete custom-image path.
 Native Podman is selected with `NEMOCLAW_GATEWAY_RUNTIME=podman`, consumes the registered Podman provider bundle, and accepts exact managed-image receipts plus digest-pinned OpenClaw and Hermes external-image receipts.
-Legacy and custom Dockerfile builds remain disabled for that provider.
+Native Podman does not select generated or user-supplied Dockerfile sources. Its managed-image onboarding does not build an image locally.
 <AgentOnly variant="openclaw">
 The direct blueprint runner still carries a pinned OpenShell Community OpenClaw image for legacy `openshell sandbox create --from` compatibility.
 </AgentOnly>
@@ -3899,6 +3899,10 @@ $$nemoclaw onboard --profile llama-cpp.dgx-spark-gb10.single.muse-glimmer-30b
 
 If you omit `--profile`, onboarding uses the same provider and model defaults as an installation without this feature.
 The onboarding review screen identifies the resolved profile, recipe, declared model, served model alias, runtime image, support state, and download estimates before confirmation.
+A managed vLLM or managed llama.cpp profile installs during provider selection, before that screen.
+Its installer declares the selected profile ID, recipe, runtime image, model, and pinned model download size before acquisition.
+Managed vLLM also declares the pinned image download size when the image is not cached on the host.
+The managed vLLM confirmation prompt follows that declaration.
 
 When onboarding reuses a running vLLM server, its `/v1/models` response must match the requested profile's served alias or declared model root.
 Otherwise, onboarding stops before it records a route that the profile does not declare.
@@ -3948,7 +3952,12 @@ NemoClaw records onboarding progress so interrupted runs can continue. Use `--re
 
 <AgentOnly variant="openclaw">
 
-OpenClaw onboarding does not enter the `complete` state until NemoClaw proves that the local CLI operator pairing is settled. Onboarding first observes the canonical local CLI device. If the device is pairing-only, the host runs one bounded request producer on the owning gateway. The in-sandbox watcher is the only component that approves the onboarding upgrade. The host observes through any same-device pending state and verifies the final settled state without sending an approval.
+OpenClaw onboarding does not enter the `complete` state until NemoClaw proves that the local CLI operator pairing is settled.
+Onboarding first observes the canonical local CLI device.
+If the verified device has pairing-only or pairing/read permissions and needs write access, the host runs one bounded request producer on the owning gateway.
+This includes a matching CLI device whose connection metadata was refreshed by a probe.
+The in-sandbox watcher is the only component that approves the onboarding upgrade.
+The host observes through any same-device pending state and verifies the final settled state without sending an approval.
 
 </AgentOnly>
 
@@ -4251,6 +4260,7 @@ Use `llama-cpp.muse-glimmer-30b.spark-single.v1` to select the Meta Muse Glimmer
 
 On a qualifying Windows WSL N1x or Station GB300 host, Windows Express leaves provider selection to onboarding.
 During Windows Express, onboarding accepts one proof-backed N1x GPU identity or a bounded Station GB300 Windows product observation whose reconciled proof includes an `NVIDIA GB300` device, verifies the remaining readiness requirements, and automatically selects the Experimental managed Qwen 3.6 recipe.
+The managed Station recipe requires exactly one proved GB300 GPU UUID.
 The Windows chassis product name does not participate in N1x selection.
 Before onboarding, unset `DOCKER_HOST` and select Docker's `default` context.
 Onboarding also requires local Docker Desktop, Arm64, at least 48,000 MiB of Docker and GPU memory, driver version `580.65.06` or later, NVIDIA integration, and successful Docker Desktop GPU passthrough.
@@ -4444,10 +4454,10 @@ Catalog evidence that is incomplete, mixed, mutable, wrong-platform, or identity
 Build the sandbox image from a custom Dockerfile instead of the stock NemoClaw image. The supplied Dockerfile defines the complete sandbox image, and NemoClaw does not layer it on top of the stock managed runtime. The entire parent directory of the specified file is used as the Docker build context, so any files your Dockerfile references (scripts, config, etc.) must live alongside it. When the supplied path is the selected agent's own managed Dockerfile (for example, `agents/hermes/Dockerfile` in the NemoClaw checkout the CLI runs from), NemoClaw applies one exception and stages the repository root as the build context, exactly as the managed build does, because that Dockerfile copies repository-root paths. This lets you edit the managed Dockerfile in place (for example to add Python packages) and rebuild from it with `--from`. For this managed exception, onboarding applies the `.dockerignore` from the repository root. For every other `--from` path, onboarding applies a `.dockerignore` from the Dockerfile's parent directory while calculating the context size and staging files for Docker. NemoClaw also applies additional secret-safety exclusions that override `.dockerignore` negation rules: credential-style files and directories such as `.env*`, `.ssh/`, `.aws/`, `.netrc`, `.npmrc`, `secrets/`, `*.pem`, and `*.key` are still skipped even if `.dockerignore` tries to include them. Without a `.dockerignore`, onboarding still skips common large or local-only directories (`node_modules`, `.git`, `.venv`, and `__pycache__`) while staging this context. Other build outputs such as `dist/`, `target/`, or `build/` are included unless your `.dockerignore` excludes them. If the staged context is larger than 100 MB, onboarding prints a warning before the Docker build starts. Move the Dockerfile into a smaller dedicated directory or add `.dockerignore` entries for generated artifacts to shrink the context. If the directory contains unreadable files (for example, Windows system files visible in WSL), onboarding exits with an error suggesting you move the Dockerfile to a dedicated directory.
 
 <Note>
-  NemoClaw builds user-supplied `--from` contexts with the OpenShell gateway builder. The host-side
-  local BuildKit prebuild is limited to build contexts generated entirely by NemoClaw. On a local
-  Docker-driver gateway, a `Local BuildKit build skipped` notice is expected and onboarding
-  continues with the custom image.
+  With a local Docker gateway, NemoClaw builds the staged custom context with BuildKit in the
+  gateway's Docker engine. It checks that the image is available, then passes its image reference to
+  OpenShell. A build failure stops before sandbox creation. A remote gateway without image
+  distribution cannot use `--from`. The native Podman provider does not admit custom Dockerfiles.
 </Note>
 
 ```bash
@@ -4542,7 +4552,7 @@ The flag wins over `NEMOCLAW_SANDBOX_NAME`. When prompting is possible, `NEMOCLA
 
 ### `$$nemoclaw onboard --from`
 
-Use a custom Dockerfile for the sandbox image. This variant of `$$nemoclaw onboard` accepts a `--from <Dockerfile>` argument to build the sandbox from a user-supplied Dockerfile instead of the default NemoClaw image. The user-supplied context uses the OpenShell gateway builder instead of NemoClaw's host-side local BuildKit prebuild.
+Use a custom Dockerfile for the sandbox image. This variant of `$$nemoclaw onboard` accepts a `--from <Dockerfile>` argument to build the sandbox from a user-supplied Dockerfile instead of the default NemoClaw image. NemoClaw builds the staged context in the selected local Docker engine and checks the image before sandbox creation.
 
 ```bash
 $$nemoclaw onboard --from ./Dockerfile.custom
@@ -6546,6 +6556,8 @@ Other failures use a different nonzero status.
 The command downloads to a fresh private temporary directory on the host, verifies that OpenShell wrote an artifact, publishes the artifact to your destination, and removes the temporary directory.
 An existing destination directory is resolved to its canonical path before publication.
 The command refuses an existing file destination that is a symbolic link and a new destination below a symbolic-link parent.
+It checks every component of the destination parent, so it refuses the destination whether or not the directories below the symbolic link already exist.
+Pass the canonical path, or an existing destination directory, to publish below a symbolic link on purpose.
 Regular files are published through a private temporary entry and atomically replace an existing regular file.
 Relative host destinations resolve against the caller's working directory.
 Absolute host destinations do not use caller-working-directory resolution.
@@ -9688,7 +9700,7 @@ For install requirements and the shorter setup-oriented platform view, refer to 
 | macOS (Apple Silicon) | Colima, Docker Desktop | Tested with limitations | P0 | Yes | Start the container runtime (Colima or Docker Desktop) before installing; NemoClaw verifies the pinned official OpenShell formula and grants formula-scoped trust only around each Homebrew install, inspection, start, or stop operation, requires a legacy or changed formula to be repaired by rerunning the pinned installer, uses the standalone gateway only when Homebrew is absent or both the staged formula and installed keg are absent, requires Homebrew Colima users to install both Colima and the Docker CLI (`brew install colima docker`) before `docker info` can work, and recommends Xcode Command Line Tools (`xcode-select --install`) for Node native modules. |
 | N1x Linux | Docker | Deferred | Unset | No | The accepted Deferred N1x Express preview selects one-host managed vLLM with `nvidia/Qwen3.6-35B-A3B-NVFP4`. It does not activate DGX Spark cluster discovery, the fixed catalog path, managed llama.cpp, or NVIDIA NIM. Host identity requires native Linux `arm64` and NVIDIA vendor ID `10de` on a display-class PCI device. The legacy path requires a regular `/etc/fastos-release` file of 1 through 4,096 bytes, owned by UID and GID 0, not linked or group- or world-writable, with exactly one `NAME="N1x FASTOS"` line. If the marker is absent, a display device recognized by the [N1x PCI policy](https://github.com/NVIDIA/NemoClaw/blob/main/bin/lib/n1x-pci-policy.json) provides an inferred identity. The policy distinguishes documented N1x variants from QA-observed prototypes. Invalid, linked, or unreadable markers do not enable inference. [QA confirmation](https://github.com/NVIDIA/NemoClaw/issues/12737#issuecomment-6130441611) at PR #12768 commit `caf6f19` reported that Deferred Express was offered and onboarding completed on one Concept ISO 1.0.2 host with prototype PCI device `2e2a`. Generic DMI values are supplemental and FastOS version is not pinned. Physical CUDA and CDI checks passed on one N1x host, but full NemoClaw Express E2E validation and dedicated CI coverage are pending. `host.platform.supported` remains absent. After identity qualifies, accepting Express can waive only the pending-validation finding. Declining or disabling Express can apply the same waiver when no provider is preselected or the explicit provider is recognized and is not Local NVIDIA NIM. An invalid or Local NVIDIA NIM provider remains blocked. Existing provider requirements still apply, and this waiver does not promote N1x. Do not claim N1x as supported until validation passes and this row is promoted. |
 | NVIDIA RTX (consumer and Pro workstation GPUs) | Docker | Deferred | P1 | No | The PRD marks this platform as P1. Covers RTX consumer cards and RTX Pro workstation cards on Linux hosts that meet the generic-Linux-GPU requirements (NVIDIA Container Toolkit + CDI present). The provider menu emits managed vLLM behind `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm` for this host class today; the end-to-end onboard path on this hardware is not yet validated in CI. |
-| Windows WSL2 | Docker Desktop (WSL backend), Qualified rootless Podman | Tested with limitations | P1 | No | Windows Express acceptance or the required non-interactive third-party software acceptance is the explicit opt-in to this Experimental surface. Windows Express and non-interactive onboarding automatically select managed llama.cpp when no provider is requested or recorded and `NEMOCLAW_MODEL` is unset. With `NEMOCLAW_LLAMACPP_RECIPE` unset, onboarding selects Qwen 3.6; a compatible explicit recipe selects that managed recipe. Selection requires Linux ARM64 WSL, the active local-default Docker authority, at least 48,000 MiB of Docker and GPU memory, driver version `580.65.06` or later, NVIDIA integration, and a passing Docker Desktop GPU-passthrough proof. N1x qualification requires the bounded CUDA proof to validate one GPU whose normalized identity is `NVIDIA RTX Spark N1X`, `NVIDIA RTX Spark N1X (5120-core Blackwell RTX GPU)`, or `NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)`; the Windows chassis model does not participate in N1x selection. Station GB300 qualification instead requires a bounded Windows product observation and a reconciled proof that verifies every reported GPU and includes an `NVIDIA GB300` device. Ordinary interactive onboarding can select another listed provider. Other Windows WSL Express installs use WSL-local Ollama, which can use Docker Desktop or the qualified rootless Podman provider. On Windows WSL N1x and Station GB300, the selected provider runs the same bounded CUDA workload and capacity query before the Ollama installed-model ranking can select qwen3.6:35b when at least 30,000 MiB is available. Generic multi-GPU and Podman Station hosts remain compute-constrained. Windows-host Ollama remains Docker Desktop-only. Dedicated N1x and Station GB300 WSL CI and physical end-to-end validation are pending. |
+| Windows WSL2 | Docker Desktop (WSL backend), Qualified rootless Podman | Tested with limitations | P1 | No | Windows Express acceptance or the required non-interactive third-party software acceptance is the explicit opt-in to this Experimental surface. Windows Express and non-interactive onboarding automatically select managed llama.cpp when no provider is requested or recorded and `NEMOCLAW_MODEL` is unset. With `NEMOCLAW_LLAMACPP_RECIPE` unset, onboarding selects Qwen 3.6; a compatible explicit recipe selects that managed recipe. Selection requires Linux ARM64 WSL, the active local-default Docker authority, at least 48,000 MiB of Docker and GPU memory, driver version `580.65.06` or later, NVIDIA integration, and a passing Docker Desktop GPU-passthrough proof. N1x qualification requires the bounded CUDA proof to validate one GPU whose normalized identity is `NVIDIA RTX Spark N1X`, `NVIDIA RTX Spark N1X (5120-core Blackwell RTX GPU)`, or `NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)`; the Windows chassis model does not participate in N1x selection. Station GB300 qualification instead requires a bounded Windows product observation and a reconciled proof that verifies every reported GPU and includes an `NVIDIA GB300` device. Managed llama.cpp additionally requires exactly one proved GB300 GPU UUID. Ordinary interactive onboarding can select another listed provider. Other Windows WSL Express installs use WSL-local Ollama, which can use Docker Desktop or the qualified rootless Podman provider. On Windows WSL N1x and Station GB300, the selected provider runs the same bounded CUDA workload and capacity query before the Ollama installed-model ranking can select qwen3.6:35b when at least 30,000 MiB is available. Generic multi-GPU and Podman Station hosts remain compute-constrained. Windows-host Ollama remains Docker Desktop-only. Dedicated N1x and Station GB300 WSL CI and physical end-to-end validation are pending. |
 {/* platform-matrix-full:end */}
 
 ## Inference Providers
@@ -9993,7 +10005,7 @@ The Windows chassis model is bounded diagnostic evidence only and does not estab
 
 The `host.platform.station_gb300_wsl` qualification requires a bounded Windows product observation that identifies Station GB300 and a successful selected-provider CUDA proof that reconciles every reported GPU and includes an `NVIDIA GB300` device.
 It is `qualified` only for Linux ARM64 WSL with an available NVIDIA GPU.
-Managed llama.cpp admission additionally requires Docker Desktop, its local `default` context, and the preset's driver and memory requirements.
+Managed llama.cpp admission additionally requires Docker Desktop, its local `default` context, exactly one proved GB300 GPU UUID, and the preset's driver and memory requirements.
 This qualification does not establish support for generic multi-GPU hosts or other Station products.
 
 DGX Station qualification separates hardware identity from software and runtime handling.
@@ -11078,6 +11090,8 @@ Repeated onboarding and resume keep registered ports; they stop if ownership of 
    ```
 
    A listener listing or empty output alone does not prove OpenShell ownership.
+   On Linux, NemoClaw treats known `lsof` mount warnings as harmless when `lsof` finds no listener.
+   Other `lsof` errors or unexpected output leave ownership unverified.
    NemoClaw also checks the listener's process identity and whether that identity remains stable.
    Do not stop a process or delete forwarding state whose owner you cannot verify.
 
@@ -11674,20 +11688,26 @@ On Docker Desktop, raise CPU and memory limits in _Settings → Resources_, then
 
 To silence the warning when the host is intentionally small, set `NEMOCLAW_IGNORE_RUNTIME_RESOURCES=1` before running `$$nemoclaw onboard`.
 
-<AgentOnly variant="openclaw,hermes">
+<AgentOnly variant="openclaw,hermes,deepagents">
 
-### Managed Sandbox Image Build Requires Local BuildKit
+### Generated Sandbox Image Build Requires the Selected Local Engine
 
-On a local Docker-driver gateway, NemoClaw builds each generated OpenClaw or Hermes sandbox image with host-side BuildKit. The generated Dockerfiles include BuildKit-only file-mode, per-step network, and mount controls. NemoClaw stops before sandbox creation in these cases:
+On a local Docker gateway, NemoClaw builds each generated OpenClaw, Hermes, or Deep Agents Code sandbox image with host-side BuildKit.
+NemoClaw stops before sandbox creation in these cases:
 
 - The local build is disabled.
 - The staged build context fails trust validation.
-- Docker cannot start the build.
+- The selected engine cannot start the build.
 - The build exits with an error.
+- The local build exceeds 20 minutes.
+- On the Docker path, `DOCKER_HOST` names an unsupported endpoint instead of an absolute local `unix://` socket.
+- On the Docker path, a non-default Docker context is selected while `DOCKER_HOST` is unset.
 
 It does not send that generated Dockerfile to the OpenShell gateway's classic Docker API builder because that builder cannot enforce the same instructions.
 
-Keep the local prebuild enabled, and verify that the host Docker installation provides BuildKit:
+On the Docker path, use an absolute local `unix://` socket in `DOCKER_HOST`, or unset an unsupported value.
+Keep the local prebuild enabled.
+Verify that the host Docker installation provides BuildKit:
 
 ```bash
 unset NEMOCLAW_SANDBOX_PREBUILD
@@ -11701,9 +11721,14 @@ Repair Docker access or the Docker Buildx plugin when either Docker command fail
 $$nemoclaw onboard --resume
 ```
 
-A passing recovery completes the local BuildKit build before sandbox creation starts. If NemoClaw rejects the staged build context trust boundary, do not change its permissions or move its Dockerfile. Rerun the command so NemoClaw creates a new private staged context. If the new context is also rejected, preserve the complete error and stop instead of forcing the gateway builder.
+A passing Docker recovery completes the local BuildKit build before sandbox creation starts. If NemoClaw rejects the staged build context trust boundary, do not change its permissions or move its Dockerfile. Rerun the command so NemoClaw creates a new private staged context. If the new context is also rejected, preserve the complete error and stop instead of forcing the gateway builder.
 
-This requirement does not change user-supplied `--from` contexts, which continue to use the OpenShell gateway builder. It also preserves the gateway fallback when a generated LangChain Deep Agents Code image does not complete its local prebuild.
+The same build and image check applies to a user-supplied `--from` context on a local Docker gateway.
+NemoClaw does not send a Dockerfile to the gateway builder after a local build failure.
+
+</AgentOnly>
+
+<AgentOnly variant="openclaw,hermes">
 
 ### Re-onboard fails because port 18789 is held by SSH
 
@@ -14553,6 +14578,7 @@ A qualifying Windows WSL N1x or Station GB300 host uses managed llama.cpp throug
 The installer leaves provider and recipe selection to onboarding.
 When no provider is requested or recorded and `NEMOCLAW_MODEL` is unset, onboarding selects managed llama.cpp; an optional compatible `NEMOCLAW_LLAMACPP_RECIPE` value makes the managed recipe explicit.
 Onboarding accepts one proof-backed N1x GPU identity or a bounded Station GB300 Windows product observation whose reconciled proof includes an `NVIDIA GB300` device; the Windows chassis product name does not participate in N1x selection.
+The managed Station recipe requires exactly one proved GB300 GPU UUID.
 Qualification also requires Linux Arm64 WSL, local Docker Desktop on the default local Docker context, at least 48,000 MiB of Docker and GPU memory, driver version `580.65.06` or later, Docker storage and runtime readiness, NVIDIA GPU integration, and a successful Docker Desktop GPU passthrough proof.
 If neither readiness contract matches before managed selection starts, Windows Express selects WSL-local Ollama.
 If a required check fails after managed selection starts, onboarding stops before installation.

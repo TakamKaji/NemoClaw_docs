@@ -32,24 +32,24 @@ For capabilities, architecture, security controls, and the full feature list, se
 
 Use the starter prompt when you want Cursor, Claude Code, Codex, Copilot, or another local coding agent to install NemoClaw with you.
 
-**[Copy the NemoClaw starter prompt](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/home.html#from-your-coding-agent)**.
+**[Copy the NemoClaw starter prompt](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/home#from-your-coding-agent)**.
 
 The prompt tells your agent to use NemoClaw docs and skills, ask one question at a time, run commands only with your approval, and keep secrets out of chat.
 
 ### Install Using the Installer in Your Terminal
 
-Review [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html) before installing.
+Review [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/get-started/prerequisites) before installing.
 On a supported DGX or Windows Subsystem for Linux (WSL) host, press Enter at the `Run express install with these settings? [Y/n]:` prompt to use the recommended preset settings for that platform.
 Express install mode installs OpenClaw by default.
-If you accept, refer to [NemoClaw Quickstart with OpenClaw](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart.html).
+If you accept, refer to [NemoClaw Quickstart with OpenClaw](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/get-started/quickstart).
 Enter `n` if you want to choose Hermes or LangChain Deep Agents Code, a sandbox name, an inference provider, and a model interactively.
 When connecting to a Hermes sandbox from a light terminal, NemoClaw may install a managed `nemoclaw-light` Hermes skin for readable assistant text; it removes that managed skin state again when the terminal no longer needs it and preserves any user-selected Hermes skin.
 
 | Agent | Guide |
 |-------|-------|
-| OpenClaw (default) | [Quickstart with OpenClaw](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart.html) |
-| Hermes | [Quickstart with Hermes](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart-hermes.html) |
-| LangChain Deep Agents Code | [Quickstart with LangChain Deep Agents Code](https://docs.nvidia.com/nemoclaw/latest/user-guide/deepagents/get-started/quickstart.html) |
+| OpenClaw (default) | [Quickstart with OpenClaw](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/get-started/quickstart) |
+| Hermes | [Quickstart with Hermes](https://docs.nvidia.com/nemoclaw/latest/user-guide/hermes/get-started/quickstart) |
+| LangChain Deep Agents Code | [Quickstart with LangChain Deep Agents Code](https://docs.nvidia.com/nemoclaw/latest/user-guide/deepagents/get-started/quickstart) |
 
 ## Documentation
 
@@ -57,18 +57,18 @@ Refer to the following pages on the official documentation website for more info
 
 | Page | Description |
 |------|-------------|
-| [Overview](https://docs.nvidia.com/nemoclaw/latest/about/overview.html) | What NemoClaw does and how it fits together. |
-| [Architecture Overview](https://docs.nvidia.com/nemoclaw/latest/about/how-it-works.html) | High-level overview of the host CLI, agent integration layer, blueprint, sandbox lifecycle, and protection layers. |
-| [Ecosystem](https://docs.nvidia.com/nemoclaw/latest/about/ecosystem.html) | How OpenClaw, OpenShell, and NemoClaw form a stack and when to use NemoClaw versus OpenShell alone. |
-| [Architecture Details](https://docs.nvidia.com/nemoclaw/latest/reference/architecture.html) | Detailed description of agent integration structure, blueprint lifecycle, sandbox environment, and host-side state. |
-| [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html) | Hardware, software, and supported platforms, with any platform-specific pre-setup. |
+| [Overview](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/about/overview) | What NemoClaw does and how it fits together. |
+| [Architecture Overview](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/about/how-it-works) | High-level overview of the host CLI, agent integration layer, blueprint, sandbox lifecycle, and protection layers. |
+| [Ecosystem](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/about/ecosystem) | How OpenClaw, OpenShell, and NemoClaw form a stack and when to use NemoClaw versus OpenShell alone. |
+| [Architecture Details](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/reference/architecture) | Detailed description of agent integration structure, blueprint lifecycle, sandbox environment, and host-side state. |
+| [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/get-started/prerequisites) | Hardware, software, and supported platforms, with any platform-specific pre-setup. |
 | [Choose an Inference Provider](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/inference/learn-and-choose/choose-inference-provider) | Supported providers, validation, and routed inference configuration. |
-| [Network Policies](https://docs.nvidia.com/nemoclaw/latest/reference/network-policies.html) | Baseline rules, operator approval flow, and egress control. |
-| [Customize Network Policy](https://docs.nvidia.com/nemoclaw/latest/network-policy/customize-network-policy.html) | Static and dynamic policy changes, presets. |
-| [Security Best Practices](https://docs.nvidia.com/nemoclaw/latest/security/best-practices.html) | Controls reference, risk framework, and posture profiles for sandbox security. |
+| [Network Policies](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/reference/network-policies) | Baseline rules, operator approval flow, and egress control. |
+| [Customize Network Policy](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/network-policy/customize-network-policy) | Static and dynamic policy changes, presets. |
+| [Security Best Practices](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/security/best-practices) | Controls reference, risk framework, and posture profiles for sandbox security. |
 | [Sandbox Hardening](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/manage-sandboxes/configure-sandboxes/review-sandbox-hardening) | Container security measures, capability drops, process limits. |
-| [CLI Commands](https://docs.nvidia.com/nemoclaw/latest/reference/commands.html) | Full NemoClaw CLI command reference. |
-| [Troubleshooting](https://docs.nvidia.com/nemoclaw/latest/reference/troubleshooting.html) | Common issues and resolution steps. |
+| [CLI Commands](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/reference/commands) | Full NemoClaw CLI command reference. |
+| [Troubleshooting](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/reference/troubleshooting) | Common issues and resolution steps. |
 
 ## Community
 
@@ -3311,9 +3311,11 @@ Review the [Prerequisites](prerequisites) before you begin.
     Wait for the ready summary, then check the sandbox state.
     Before it prints this summary, ordinary fresh OpenClaw onboarding waits for exactly one matching local CLI operator device.
     The in-sandbox auto-pair watcher is the only component that approves this device's baseline scope upgrade.
-    The host runs one bounded warm-up only when the canonical device is pairing-only, then observes the same device without sending another approval.
+    The host runs one bounded warm-up when the verified canonical device has pairing-only or pairing/read permissions and needs write access.
+    This includes a matching CLI device whose connection metadata was refreshed by a probe.
+    The host then observes the same device without sending another approval.
     Onboarding verifies the exact paired and token scopes and confirms that no same-device request remains pending.
-    Onboarding reports whether settlement failed because of an unavailable pairing, failed warm-up, missing request, persistent pending request, stopped watcher, policy rejection, approval timeout, or approval failure.
+    Onboarding reports whether settlement failed because of an unavailable or incompatible pairing, failed warm-up, missing request, persistent pending request, stopped watcher, policy rejection, approval timeout, or approval failure.
     The failure message omits device identifiers, request identifiers, public keys, tokens, and child command output.
     If this bounded readiness check does not settle, NemoClaw keeps onboarding resumable.
     Run `nemoclaw onboard --resume` after you correct the reported condition.
@@ -3932,6 +3934,7 @@ The installer leaves inference selection to onboarding.
 Onboarding requires Linux ARM64 WSL, the default local Docker context, at least 48,000 MiB of Docker and GPU memory, driver version `580.65.06` or later, Docker storage and runtime readiness, NVIDIA GPU integration, and a successful Docker Desktop GPU passthrough proof.
 N1x qualification also requires one GPU whose normalized identity is `NVIDIA RTX Spark N1X`, `NVIDIA RTX Spark N1X (5120-core Blackwell RTX GPU)`, or `NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)`.
 Station GB300 qualification instead requires a bounded matching Windows product observation and a proof that reconciles every reported GPU and includes an `NVIDIA GB300` device.
+Managed llama.cpp requires that proof to identify exactly one GB300 GPU UUID.
 For N1x, the Windows chassis model does not participate in managed llama.cpp selection.
 If neither platform's readiness matches before managed selection starts, Windows Express selects WSL-local Ollama.
 If a required check fails after managed selection starts, onboarding stops before installation.
@@ -5903,7 +5906,7 @@ For Windows WSL N1x, also confirm these requirements:
 For Windows WSL Station GB300, also confirm these requirements:
 
 - Use Arm64 WSL on a Windows product identified as Station GB300.
-- Require the Docker Desktop proof to reconcile every reported GPU and include an `NVIDIA GB300` device.
+- Require the Docker Desktop proof to reconcile every reported GPU and identify exactly one proved `NVIDIA GB300` GPU UUID.
 - Use the default local Docker Desktop context with at least 48,000 MiB of Docker memory.
 - Unset `DOCKER_HOST` and select Docker's `default` context before you select the managed recipe.
 - Provide at least 48,000 MiB of aggregate GPU memory.
@@ -6107,8 +6110,10 @@ The installed runtime remains bound to the repository YAML authority recorded du
 Do not edit the ownership, receipt, or recipe-digest state to force a migration.
 
 If an updated NemoClaw release changes that authority, resume fails closed and preserves the existing state.
-NemoClaw does not currently define a managed llama.cpp migration procedure for that case.
-Follow release-specific migration guidance when it becomes available.
+For an earlier Station GB300 runtime with no recorded GPU UUID, NemoClaw also refuses startup because the old one-GPU request can select another card.
+After a qualified GB300 image is pinned in the recipe, save any sandbox files you need, run `$$nemoclaw <sandbox-name> destroy --yes`, confirm the sandbox is absent with `$$nemoclaw list`, and onboard again.
+The destroy command verifies and removes the exact owned runtime; do not edit the owner file or remove a same-name Docker resource by hand.
+Other managed llama.cpp recipe changes need release-specific migration guidance.
 
 ## Remove the Managed Runtime
 
@@ -6832,7 +6837,7 @@ The chassis model qualifies only this Ollama model selection; it does not establ
 The proof runs one pinned CUDA workload and capacity query through the provider abstraction; Docker supplies its GPU flag and Podman supplies its NVIDIA CDI device without a separate model-selection path.
 On a WSL Station GB300, the Docker proof can also qualify the host for `qwen3.6:35b`.
 The bounded Windows chassis model must report Station GB300, the proof must match every reported GPU, and at least one proved device must report an `NVIDIA GB300` name.
-The Station GB300 Ollama qualification does not apply to Podman, managed vLLM, or generic multi-GPU hosts. Managed llama.cpp uses a separate Docker Desktop-only Station GB300 readiness qualification with the same bounded product and reconciled GPU proof.
+The Station GB300 Ollama qualification does not apply to Podman, managed vLLM, or generic multi-GPU hosts. Managed llama.cpp uses a separate Docker Desktop-only Station GB300 readiness qualification. It also requires the bounded product observation, a proof that reconciles every reported GPU, and exactly one proved GB300 GPU UUID for Docker device binding.
 Missing, malformed, mismatched, or insufficient proof capacity retains the `qwen3.5:9b` fallback.
 This safeguard only changes automatic selection.
 
@@ -10326,6 +10331,11 @@ Most lifecycle operations do not need a backup or restore step. When `$$nemoclaw
 OpenClaw's `gateway.auth` value and Hermes's `.hermes/.env` `API_SERVER_KEY` are machine-local. NemoClaw leaves both live source files unchanged, omits those values only from the private archive copy, and lets the replacement establish fresh local authority. Existing OpenClaw device and scope approvals do not transfer; approve the replacement's fresh pairing or scope-upgrade request when prompted. NemoClaw also removes credential fields from OpenClaw credential, device, identity, pairing, and pending-state JSON; replaces the archived OpenClaw device identity with a fresh non-secret identity; and removes credential fields from Hermes configuration and configuration backups. An invalid or uninspectable recognized authority file stops the transfer instead of being copied unchanged.
 
 Hermes PID and lock receipts, OpenClaw's post-upgrade doctor marker, warm-up sessions, and transient SQLite write-ahead-log, shared-memory, and rollback-journal companions, and NemoClaw's configuration and blueprint cache are replacement-owned or generation-local. The replacement keeps its fresh copies instead of restoring the retired sandbox's values. NemoClaw sanitizes machine-local authority from the durable OpenClaw database copy and rejects an archive that still contains one of those database companions, because replaying it could restore removed authority. All other unknown agent paths transfer intact, but any credential-bearing or otherwise uninspectable archive content stops the workflow before replacement. A restore failure happens after the replacement is created; NemoClaw retains the backup for manual recovery and does not publish the replacement as successful. Move credentials into supported OpenShell credential storage or bindings, remove them from the native home, and retry.
+
+Credential sanitization can increase the size of a structured configuration.
+NemoClaw expands only the private archive copy and leaves the live configuration unchanged.
+If the expansion exceeds the backup-space limit or deadline, NemoClaw stops and attempts to remove the new backup.
+If cleanup fails, the error identifies the retained incomplete backup for inspection.
 
 For an eligible stopped OpenClaw or Deep Agents Code container, NemoClaw captures the provider-owned stopped state without executing in the source sandbox. The operation fails before replacement if that stopped-state authority changes during capture. Stopped Hermes rebuilds instead use the bounded OpenShell start, capture, and return-to-`Stopped` lifecycle described below.
 
