@@ -2775,7 +2775,7 @@ Use these details when your first-run path needs more control.
     NemoHermes is ready
 
     Sandbox:  my-hermes
-    Model:    nvidia/nemotron-3-super-120b-a12b (NVIDIA Endpoints)
+    Model:    nvidia/nemotron-3.5-super-vl-120b-a12b (NVIDIA Endpoints)
 
     Access
 
@@ -3048,7 +3048,7 @@ Deep Agents Code has no runtime `inference set` path, so re-onboard the sandbox 
 When you use NVIDIA Endpoints without selecting another model, new Deep Agents Code sandboxes default to `nvidia/nemotron-3-ultra-550b-a55b`.
 For this model, the managed image maps the OpenAI-compatible route to Deep Agents `0.7.15`'s native Nemotron 3 Ultra harness profile, including model-specific tool-calling, filesystem, retry, context, and final-answer safeguards.
 Rebuild existing Deep Agents Code sandboxes after upgrading NemoClaw so their image includes the pinned runtime and profile.
-This agent-specific default does not change the shared Nemotron 3 Super default for OpenClaw and Hermes.
+This agent-specific default does not change the shared Nemotron 3.5 Super VL default for OpenClaw and Hermes.
 The image launcher normalizes the runtime proxy environment for interactive, login-shell, and direct-exec paths and removes inherited proxy credentials and bypass entries before `dcode` starts.
 Managed interactive sessions pre-complete Deep Agents Code's optional first-run onboarding, skip its dependency and model selection screens, then open the TUI with the model selected during NemoClaw onboarding.
 The image includes `ripgrep` and `dos2unix`, and ordinary sessions suppress the optional Tavily warning unless web search is configured or invoked.
@@ -4248,7 +4248,7 @@ Use this status table to distinguish validated provider integrations from adapte
 | Local Ollama | Tested with limitations | Local Ollama API | Available when Ollama is installed or running on the host. Validated default models: `qwen3.6:35b` (high VRAM), `nemotron-3-nano:30b` (medium VRAM), `qwen3.5:9b` (low VRAM fallback). |
 | Local llama.cpp (already running) | Experimental | Local OpenAI-compatible | Attaches only to an authenticated operator-managed server on loopback port `8081` that passes cooperative native llama.cpp fingerprinting. NemoClaw does not own its server, model, or lifecycle. |
 | Local llama.cpp (managed) | Experimental | Local OpenAI-compatible | Uses repository-owned YAML recipes and exact GGUF verification. The selected runtime-provider boundary owns lifecycle; all currently qualified profiles require Docker. Qualified DGX Spark hosts offer NVIDIA Nemotron 3 Nano 30B-A3B. Qualifying Windows WSL N1x and Station GB300 hosts automatically use managed llama.cpp during Windows Express or non-interactive onboarding when no provider is requested or recorded and `NEMOCLAW_MODEL` is unset. An unset recipe selects Qwen 3.6 35B-A3B; a compatible explicit recipe selects that managed recipe. The WSL profiles remain pending physical agent qualification. |
-| Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag. Onboarding filters the validated image list by usable memory. In non-interactive mode, onboarding selects the first compatible model unless the operator sets `NEMOCLAW_MODEL`. Model selection uses detected free GPU memory. If free memory is unavailable, NemoClaw uses total GPU memory. On DGX Spark, NemoClaw caps usable memory at 50 percent of total memory to match NIM's reported unified-memory limit. The Nemotron 3 Super catalog minimum includes NIM's reported runtime allocation. Local NVIDIA NIM is unavailable on N1x. NemoClaw omits the provider from onboarding and rejects `NEMOCLAW_PROVIDER=nim-local` on N1x. Select another standard provider or use the Deferred managed-vLLM preview on N1x. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Validated images referenced in `src/lib/inference/config.ts` and `nemoclaw/src/index.ts`: `nvidia/nemotron-3-super-120b-a12b` (default cloud model), `nvidia/nemotron-3-nano-30b-a3b`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`. |
+| Local NVIDIA NIM | Experimental | Local OpenAI-compatible | Requires `NEMOCLAW_EXPERIMENTAL=1` and a NIM-capable NVIDIA GPU. Host must have the NVIDIA Container Toolkit installed and a healthy CDI spec. Onboarding evaluates the canonical `host.gpu.nvidia_available`, `host.gpu.container_toolkit_available`, and `host.gpu.cdi_healthy` readiness capabilities before gateway, image, or sandbox lifecycle effects. NIM images pull from `nvcr.io` and require NGC registry login. NemoClaw gates this path behind the experimental flag. Onboarding filters the validated image list by usable memory. In non-interactive mode, onboarding selects the first compatible model unless the operator sets `NEMOCLAW_MODEL`. Model selection uses detected free GPU memory. If free memory is unavailable, NemoClaw uses total GPU memory. On DGX Spark, NemoClaw caps usable memory at 50 percent of total memory to match NIM's reported unified-memory limit. The Nemotron 3 Super catalog minimum includes NIM's reported runtime allocation. Local NVIDIA NIM is unavailable on N1x. NemoClaw omits the provider from onboarding and rejects `NEMOCLAW_PROVIDER=nim-local` on N1x. Select another standard provider or use the Deferred managed-vLLM preview on N1x. On Linux arm64 DGX Spark and DGX Station hosts, onboarding warns that some NIM images may not publish a `linux/arm64` manifest; the warning is advisory, and the selected image pull can still fail when the registry has no matching platform manifest. Managed vLLM has host-specific default models and is not gated on the same boxes. Catalogued Local NIM images in `bin/lib/nim-images.json` include `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3-nano-30b-a3b`, and `nvidia/llama-3.3-nemotron-super-49b-v1`. |
 | Local vLLM (already running) | Tested with limitations | Local OpenAI-compatible | On a qualified N1x host, this route requires explicit standard-onboarding intent and remains unvalidated. On other hosts, no explicit intent is required. It appears in the onboarding menu when NemoClaw detects a server on `localhost:${NEMOCLAW_VLLM_PORT:-8000}`. The model is whatever the existing server serves. |
 | Local vLLM (managed install/start) | Tested with limitations | Local OpenAI-compatible | Managed install/start requires Docker on `PATH`; attaching an already-running local vLLM server is a separate path. Appears by default on DGX Spark and qualifying DGX Station GB300 hosts. A labeled Deferred preview appears on hosts that match the N1x identity requirements; N1x remains Deferred until a physical NemoClaw Express E2E test passes. DGX Station is Tested with limitations across qualified profiles on one physical DGX Station GB300. Full Station Express end-to-end qualification for the accepted no-OTA DGX OS `7.6.x` profile is pending. Dual-Station configurations are not yet validated, and dedicated CI coverage is not available. For canonical Station qualification and host preparation, see the Additional Setup page for [OpenClaw](/user-guide/openclaw/get-started/additional-setup/dgx-station-preparation), [Hermes](/user-guide/hermes/get-started/additional-setup/dgx-station-preparation), or [Deep Agents](/user-guide/deepagents/get-started/additional-setup/dgx-station-preparation). Generic Linux NVIDIA GPU hosts require `NEMOCLAW_EXPERIMENTAL=1` or `NEMOCLAW_PROVIDER=install-vllm`, NVIDIA Container Toolkit, and CDI. NemoClaw pins runtime images to immutable digests. New single-Station Express installs default to the experimental `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4`; a qualified trusted pair selects distributed Ultra, and `--station-deepseek` selects `deepseek-ai/DeepSeek-V4-Flash`. Direct managed-vLLM defaults are `nvidia/Qwen3.6-35B-A3B-NVFP4` on DGX Spark and the Deferred N1x preview, `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4` on DGX Station, and `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on generic Linux NVIDIA GPU hosts. Image pulls from `nvcr.io` require NGC registry login. |
 {/* provider-status:end */}
@@ -4570,7 +4570,8 @@ OpenRouter uses the same catalog-backed picker flow and source catalog, with its
 NVIDIA Endpoints excludes NVIDIA-retired or unsafe choices and corrects known catalog lag before displaying the result.
 
 If the catalog is unavailable, malformed, or contains no safe model IDs, the wizard warns you and uses its bundled fallback list.
-Nemotron 3 Super remains the shared default for OpenClaw and Hermes when it is present.
+Nemotron 3.5 Super VL is the shared default for OpenClaw and Hermes when it is present.
+NVIDIA Endpoints uses `nvidia/nemotron-3.5-super-vl-120b-a12b`; OpenRouter uses `nvidia/nemotron-3.5-super-vl`.
 LangChain Deep Agents Code uses Nemotron 3 Ultra as its NVIDIA Endpoints default.
 If an agent's default is unavailable, the first live featured model becomes the interactive default.
 
@@ -4588,7 +4589,8 @@ The relative labels compare models within the curated onboarding choices rather 
 | Model | Best for | Relative latency | Tool use | Context fit | Relative cost |
 |---|---|---|---|---|---|
 | `nvidia/nemotron-3-ultra-550b-a55b` | Quality-sensitive reasoning, careful synthesis, and complex reviews | Higher | Strong for complex tool plans | Large agent context | Higher |
-| `nvidia/nemotron-3-super-120b-a12b` | Hosted agent work, multi-step planning, and tool-heavy shell workflows | Medium | Strong default for OpenClaw tool loops | Large agent context | Medium |
+| `nvidia/nemotron-3-super-120b-a12b` | Hosted agent work, multi-step planning, and tool-heavy shell workflows | Medium | Strong for OpenClaw tool loops | Large agent context | Medium |
+| `nvidia/nemotron-3.5-super-vl-120b-a12b` | Hosted agent work with text and image inputs | Refer to provider catalog | Validate the selected route | Refer to provider catalog | Refer to provider pricing |
 | `gpt-5.4` | General OpenAI-backed agent work and high-quality reasoning | Medium | Strong | Large agent context | Medium to high |
 | `gpt-5.4-mini` | Latency-sensitive routine automation and repeated helper calls | Low | Good | Medium to large context | Low |
 | `gpt-5.4-nano` | Classification, routing, extraction, and small helper tasks | Very low | Basic to good for simple tool loops | Medium context | Very low |
@@ -9589,6 +9591,7 @@ The bundled fallback choices include these models.
 
 - `nvidia/nemotron-3-ultra-550b-a55b`.
 - `nvidia/nemotron-3-super-120b-a12b`.
+- `nvidia/nemotron-3.5-super-vl-120b-a12b`.
 
 Interactive onboarding loads NVIDIA's public featured model catalog and can show additional live models.
 You can also choose **Other** and enter a model ID from the catalog.
@@ -12618,6 +12621,9 @@ nemo-deepagents <sandbox-name> rebuild --dcode-auto-approval thread-opt-in --yes
 
 The `thread-opt-in` setting grants permission to use Deep Agents Code's native approval modes, but it does not activate one by itself.
 Use `dcode -y` or **Enable Auto for this thread** for classifier-backed Auto mode.
+The generated configuration selects the managed provider and model for the separate classifier request.
+It uses the same OpenShell credential placeholder and endpoint as the agent.
+If classification fails, DCode retains its native denial and fallback to human approval.
 Use the native `--yolo` or `/yolo` path for unrestricted approval after its warning and acknowledgement.
 The TUI shows the upstream active-state indicator for the selected mode.
 
@@ -14482,6 +14488,11 @@ If marked Linux unit cleanup fails, uninstall exits nonzero before it scans for 
 OpenShell resource and Linux unit cleanup can partially complete before either failure.
 After selected sandbox cleanup succeeds, uninstall removes those entries from `sandboxes.json` before gateway registration and Linux unit cleanup.
 If a later step fails, the retry skips the completed sandbox deletions and resumes the remaining cleanup.
+After managed gateway cleanup and gateway-state removal succeed, uninstall removes that gateway's native-provider authority records from the preserved registry.
+This lets onboarding on the same port create its native provider again.
+If gateway cleanup or state removal fails, uninstall retains those records for recovery.
+It also retains them with `--keep-openshell` or if the selected registry state changes concurrently.
+Sibling gateway authority records remain unchanged.
 Resolve the reported error.
 Inspect the remaining gateways with `openshell gateway list`.
 Rerun `NEMOCLAW_GATEWAY_PORT=<port> $$nemoclaw uninstall` with the gateway port from the failed uninstall.
@@ -14575,6 +14586,7 @@ This preservation also applies when you pass `--destroy-user-data`.
 If the OpenShell command is unavailable or its gateway list cannot be read, uninstall cannot confirm that the selected gateway is the last one, so it uses the same scoped path and preserves the shared resources.
 When the command itself is unavailable, uninstall exits nonzero before OpenShell cleanup so you can restore the command and retry.
 The preserved `rebuild-backups/`, `backups/`, and `sandboxes.json` entries stay unless you pass `--destroy-user-data`.
+Preserving `sandboxes.json` preserves the file, but successful cleanup still removes the selected gateway's native-provider authority records as described above.
 That flag does not override gateway-scoped preservation of the managed runtime receipt, copied SSH bindings, or temporary discovery claims.
 
 Interactive runs prompt before they skip eligible fresh backups and remove the preserved entries, and the default answer keeps them.

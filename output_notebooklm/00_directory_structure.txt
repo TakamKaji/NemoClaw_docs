@@ -2,7 +2,8 @@
 ├── .agents
 │   ├── references
 │   │   ├── development.md
-│   │   └── e2e-authoring.md
+│   │   ├── e2e-authoring.md
+│   │   └── provider-profile-inventory.md
 │   └── skills
 │       ├── _shared
 │       │   ├── code-change-considerations.md
@@ -546,6 +547,7 @@
 │   │   ├── 2026-10-13.mdx
 │   │   ├── 2026-10-15.mdx
 │   │   ├── 2026-10-19.mdx
+│   │   ├── 2026-10-20.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3391,4 +3393,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-296 directories, 3096 files
+296 directories, 3098 files
