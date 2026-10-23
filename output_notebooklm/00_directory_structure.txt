@@ -548,6 +548,7 @@
 │   │   ├── 2026-10-15.mdx
 │   │   ├── 2026-10-19.mdx
 │   │   ├── 2026-10-20.mdx
+│   │   ├── 2026-10-22.mdx
 │   │   └── overview.mdx
 │   ├── configure-agents
 │   │   ├── configure-agent-heartbeats.mdx
@@ -3393,4 +3394,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-296 directories, 3098 files
+296 directories, 3099 files

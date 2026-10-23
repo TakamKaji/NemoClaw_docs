@@ -6719,7 +6719,7 @@ If the published runner later stops, use `$$nemoclaw <name> recover` or `$$nemoc
 Ordinary `connect` also resumes it when the recorded inference route is unavailable.
 When `launch` runs its complete preflight, it uses the same recovery path before it starts the agent.
 A launch that accepts existing launch-readiness evidence skips that preflight.
-Follow [Recover Portable Published Ollama](../../manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes#recover-portable-published-ollama) for the authority checks, route proof, and failure procedure.
+Follow [Recover Portable Published Ollama](/user-guide/hermes/manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes#recover-portable-published-ollama) for the authority checks, route proof, and failure procedure.
 
 <Warning title="Portable Cleanup Boundary">
 Run `$$nemoclaw uninstall` for full cleanup of a receipt-owned Portable Ollama runner.
@@ -6745,7 +6745,9 @@ The wizard checks `ollama --version` and `/api/version` on port `11434` independ
 If NemoClaw detects an installed CLI or local running daemon but cannot read its version, onboarding uses the upgrade path instead of reusing it.
 
 On macOS, the wizard uses `brew upgrade ollama` for the platform upgrade path.
-On Linux, the wizard uses the official `https://ollama.com/install.sh` path and asks it for `0.32.9` by name when the installed binary is stale, because the version the installer calls latest is below the minimum on some hosts.
+On Linux, the wizard downloads a pinned snapshot of the official Ollama installer and verifies its SHA-256 digest before execution.
+If the download cannot be verified, onboarding stops without running it.
+When the installed binary is stale, the verified installer asks for `0.32.9` by name because the version it calls latest is below the minimum on some hosts.
 If the installed binary is already at or above the minimum and only the daemon is stale, the wizard restarts the daemon without running the installer or replacing the newer binary.
 Linux upgrades use the sudo-driven system path because a user-local fallback would leave an existing system daemon serving the stale binary.
 If sudo is unavailable in a non-interactive run, rerun interactively or upgrade Ollama manually.
@@ -11988,6 +11990,23 @@ Deep Agents uses a terminal runtime without an in-sandbox agent gateway or host-
 The OpenShell ownership and local endpoint reachability prerequisites for an active port forward do not apply.
 Use `nemo-deepagents <sandbox-name> status`, `logs`, `connect`, and `rebuild` for recovery.
 If the terminal runtime reports degraded health, rebuild the sandbox instead of using `recover` or `gateway restart`.
+</AgentOnly>
+
+<AgentOnly variant="hermes">
+
+### Recover Portable Published Ollama
+
+If a Hermes Portable Ollama runner stops after onboarding, run `$$nemoclaw <sandbox-name> recover` or `$$nemoclaw <sandbox-name> connect --probe-only`.
+For Hermes Portable, `recover` performs the same probe-only inference recovery as `connect --probe-only`.
+Ordinary `connect` also attempts recovery when the recorded inference route is unavailable.
+The command checks the sandbox's recorded lifecycle and inference authority, resumes only its exact receipt-owned runner, and verifies the inference route before accepting it.
+If the recorded provider, runner, network, socket, or private state identity has changed, recovery exits nonzero without replacing that state.
+Preserve the private inference state and exact redacted error after an authority-drift failure.
+Run `$$nemoclaw <sandbox-name> doctor` to inspect the recorded lifecycle state.
+Do not edit or delete the private inference state or retry recovery.
+[File a NemoClaw issue](https://github.com/NVIDIA/NemoClaw/issues/new) with the redacted doctor report and recovery error for maintainer review.
+If an unrelated host service holds a required published address, stop that service and rerun the same recovery command.
+
 </AgentOnly>
 
 ### Understand Launch Readiness Leases
