@@ -10828,9 +10828,9 @@ Use `channels remove` for an explicit, durable removal of its selection, OpenShe
 $$nemoclaw <sandbox> channels remove <channel>
 ```
 
-Accept the rebuild to remove the channel configuration and its network policy preset from the replacement sandbox.
-When onboarding runs without a terminal on stdin or with `NEMOCLAW_NON_INTERACTIVE=1`, NemoClaw queues the removal.
-Run `$$nemoclaw <sandbox> rebuild` to apply it.
+When removal changes configuration, accept the rebuild to apply that change.
+Without a terminal on stdin or with `NEMOCLAW_NON_INTERACTIVE=1`, NemoClaw queues any required rebuild.
+Run `$$nemoclaw <sandbox> rebuild` to apply the queued change.
 
 Clearing a channel's host environment variables is not a removal signal when its recorded OpenShell gateway provider still matches the channel's credential contract.
 Onboarding preserves the channel selection and matching network policy preset because interactive inputs normally disappear between runs.
@@ -10838,8 +10838,8 @@ When reusing a Ready sandbox, onboarding stops if a required gateway provider is
 The running sandbox, durable messaging plan, and network policy remain unchanged.
 Restore the provider or use `channels remove` for explicit removal before retrying.
 
-For an in-sandbox QR-paired channel such as WhatsApp, only `channels remove` clears its session or pairing state before teardown.
-Refer to [Manage Messaging Channels](manage-messaging-channels) for channel-specific removal effects and recovery guidance.
+For in-sandbox QR-paired channels such as WhatsApp, `channels remove` clears session state only when the [cleanup prerequisites](manage-messaging-channels#remove-a-channel) hold.
+Refer to that procedure for absent-channel behavior and recovery guidance.
 
 ## Verify the Result
 
@@ -11559,7 +11559,10 @@ If endpoint teardown fails, the command exits nonzero without changing the chann
   project, subscription, sender allowlist, and runtime adapter configuration.
 </AgentOnly>
 
-For in-sandbox QR-paired channels such as WhatsApp, `channels remove` destructively clears the session directory before rebuild so stale auth files do not reconnect the channel.
+For in-sandbox QR-paired channels such as WhatsApp, session cleanup requires a configured entry in the messaging plan or an applied channel policy preset.
+When that condition holds, `channels remove` clears the session directory before rebuild so stale credentials do not reconnect the channel.
+If removal reports that WhatsApp is not configured, it does not clear session files or queue a rebuild.
+Refer to the [channel removal reference](../../reference/commands) for the no-op conditions and policy-inspection failure guidance.
 
 <AgentOnly variant="openclaw">
 The cleanup targets `/sandbox/.openclaw/<channel>/`.
@@ -11581,10 +11584,12 @@ If the registry entry is missing, the provider does not support stopped-state cl
 Removal proceeds only when that command exits successfully and returns its completion sentinel.
 </AgentOnly>
 
-If the messaging plan or current OpenShell policy still records the channel and NemoClaw cannot confirm cleanup, the command exits nonzero with recovery guidance.
+If a configured entry in the messaging plan or current OpenShell policy still records the channel and NemoClaw cannot confirm cleanup, the command exits nonzero with recovery guidance.
 It leaves the bridge provider, credentials, registry, and current OpenShell policy unchanged so you can fix the reported condition and retry removal.
 
-`channels remove whatsapp` clears the client-side Baileys session but cannot deregister the linked device with WhatsApp's servers after the local connection is gone. The phone continues to list the sandbox as a Linked Device until you remove it manually or WhatsApp's 14-day inactivity timeout expires.
+This cleanup clears the client-side Baileys session.
+It cannot deregister the linked device with WhatsApp's servers after the local connection is gone.
+The phone continues to list the sandbox as a Linked Device until you remove it manually or WhatsApp's 14-day inactivity timeout expires.
 
 Remove the phone entry before pairing the same account with another sandbox.
 
@@ -13970,14 +13975,23 @@ After scanning a dashboard QR code, run `$$nemoclaw <sandbox> channels status --
 
 Current managed images migrate a safe legacy `profiles/dashboard-home` session into the shared native path during startup.
 If `channels status` still reports credentials only under the legacy path, the sandbox is running an older image or migration could not complete.
-Clear every WhatsApp session path first with the supported removal command, then re-add the channel:
+This recovery requires a configured WhatsApp entry in the messaging plan or an applied WhatsApp policy preset.
+An entry awaiting removal alone does not meet this prerequisite.
+If removal reports that WhatsApp is not configured, stop before adding the channel again.
+In that case, removal does not clear session files or confirm a fresh pairing state.
+First remove the channel:
 
 ```bash
 $$nemoclaw <sandbox> channels remove whatsapp
+```
+
+After removal succeeds and reports that it removed WhatsApp, add the channel again:
+
+```bash
 $$nemoclaw <sandbox> channels add whatsapp
 ```
 
-`channels remove` clears `/sandbox/.hermes/platforms/whatsapp` and compatibility sessions left by older images at `/sandbox/.hermes/profiles/dashboard-home/platforms/whatsapp/session` and `/sandbox/.hermes/dashboard-home/platforms/whatsapp/session`.
+When the configured plan entry or applied policy preset exists, `channels remove` clears `/sandbox/.hermes/platforms/whatsapp` and compatibility sessions left by older images at `/sandbox/.hermes/profiles/dashboard-home/platforms/whatsapp/session` and `/sandbox/.hermes/dashboard-home/platforms/whatsapp/session`.
 The sandbox must be running for that cleanup to succeed; `channels remove` refuses to proceed when it cannot reach the sandbox.
 Pair again from the dashboard so the credentials are written to `/sandbox/.hermes/platforms/whatsapp/session`.
 Rerun `$$nemoclaw <sandbox> channels status --channel whatsapp` and confirm that the gateway session path holds the credentials and that the report no longer lists a `profiles/dashboard-home` session.
@@ -13995,7 +14009,7 @@ The credentials survive rebuilds without re-pairing.
 <AgentOnly variant="hermes">
 Rebuild preserves the shared `platforms/whatsapp` session and user-created native Hermes profiles.
 An older `profiles/dashboard-home` session is migrated into the shared path during startup and the retired profile is removed.
-Use `$$nemoclaw <sandbox> channels remove whatsapp` to clear every compatibility session path before pairing again when migration reports a conflict.
+When migration reports a conflict, follow the removal procedure in [Pair the Sandbox](#pair-the-sandbox).
 </AgentOnly>
 This is the runtime tradeoff of enabling WhatsApp without a host bridge: a paired sandbox can use that WhatsApp account until you unpair it or clear the durable state.
 
