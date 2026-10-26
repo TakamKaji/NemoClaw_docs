@@ -700,7 +700,15 @@ $$nemoclaw headless-agent status
 $$nemoclaw headless-agent connect --probe-only
 ```
 
-`$$nemoclaw headless-agent status` exits nonzero when the sandbox, gateway, local container, or authoritative inference route is not verified. Its main `Inference` line probes the selected provider path from inside the sandbox. Shared providers use `https://inference.local/v1/models`, then send an inference request over the same route when that probe reports the route reachable. NVIDIA Endpoints, supported fixed hosted providers, new hosted compatible endpoints outside the Personal tier, and qualified new local selections verify the recorded sandbox-attached OpenShell provider with an inference request. A fresh Personal-tier hosted compatible selection verifies the shared route and has no native attachment. Status repeats inference requests up to three total attempts when they return a transient gateway status; refer to the [CLI commands reference](../reference/commands) for the retried statuses and their token cost. The line reports `healthy` when the route served the request, `unauthorized` when the route rejected it with HTTP `401` or `403`, and `unhealthy` after a final failure or after all transient attempts fail.
+`$$nemoclaw headless-agent status` exits nonzero when the sandbox, gateway, local container, or authoritative inference route is not verified. Its main `Inference` line probes the selected provider path from inside the sandbox. Shared providers use `https://inference.local/v1/models`, then send an inference request over the same route when that probe reports the route reachable. NVIDIA Endpoints, supported fixed hosted providers, new hosted compatible endpoints outside the Personal tier, and qualified new local selections verify the recorded sandbox-attached OpenShell provider with an inference request. A fresh Personal-tier hosted compatible selection verifies the shared route and has no native attachment. Status repeats inference requests up to three total attempts when they return a transient gateway status; refer to the [CLI commands reference](../reference/commands) for the retried statuses and their token cost. For provider-path results, the line reports `healthy` when the route served the request, `unauthorized` when the route rejected it with HTTP `401` or `403`, and `unhealthy` after a final failure or after all transient attempts fail.
+
+<AgentOnly variant="hermes">
+
+Hermes native NVIDIA routes also require a verified managed credential reference.
+If verification fails, `status` exits nonzero and reports the agent credential as `not probed`; follow its recovery guidance.
+Refer to the [status reference](../reference/commands#$$nemoclaw-name-status) for the JSON result and recovery check.
+
+</AgentOnly>
 
 <AgentOnly variant="openclaw,hermes">
 
@@ -2249,6 +2257,9 @@ During image push, the selected container runtime, k3s, and the OpenShell gatewa
 The pipeline buffers decompressed layers in memory.
 On machines with less than 8 GB of RAM, this combined usage can trigger the OOM killer.
 If you cannot add memory, configure at least 8 GB of swap to work around the issue at the cost of slower performance.
+
+Local inference has separate model and memory requirements.
+For a nominal 64 GB DGX Spark, refer to [Set Up vLLM](../inference/local-inference/set-up-vllm) for the Qwen profile, detected-capacity limits, and automatic serving-profile selection.
 
 ## Software
 
@@ -8537,10 +8548,15 @@ DGX Spark automatically selects its Qwen recipe from the detected unified-memory
 | At least 64 GB | 262,144 | 4 | 8,192 | 0.4 |
 
 The smaller recipe admits a nominal 64 GB DGX Spark that reports about 61.6 GB of usable unified memory.
+The admission floor uses detected total unified-memory capacity, not currently available memory.
+The separate GPU-memory preflight still checks available memory when `nvidia-smi` reports numeric values.
 It loads weights with vLLM's lazy `safetensors` strategy instead of `fastsafetensors`.
-It remains Experimental with software validation; physical 64 GB Spark qualification is pending.
 Unknown capacity or less than 60 GB does not qualify for either Qwen recipe.
 Before installation, NemoClaw displays the selected hardware profile and context limit.
+
+For Express installation on a nominal 64 GB DGX Spark, keep automatic serving-profile selection (option 1).
+The fixed profile (option 2) retains its 64 GB detected-capacity floor.
+
 The Deferred N1x profile uses `--gpu-memory-utilization 0.6`, a `32768`-token context window, `2` concurrent sequences, and a `4096`-token batch limit.
 The two-sequence limit permits vLLM to schedule a compaction summary while an agent response uses the other sequence.
 Both profiles retain chunked prefill, prefix caching, and their registered parsers and acceleration backends.
@@ -12229,7 +12245,7 @@ nemohermes <sandbox-name> gateway-token --quiet
 ```
 
 Before post-restore repairs, NemoClaw verifies that the recreated sandbox still identifies as Hermes and exits nonzero if its identity does not match the rebuild target.
-For a native local selection, NemoClaw refreshes only the managed credential references after restore and before restart, preserving restored model and provider settings.
+For a native local or native NVIDIA selection, NemoClaw refreshes only the managed credential references after restore and before restart, preserving restored model and provider settings.
 The refresh validates the replacement sandbox identity and recorded route. An unsafe or changed configuration stops activation and preserves the backup and any acquired cron gate.
 A legacy local sandbox without a valid Hermes attachment must be backed up and recreated before native local resume or rebuild. Use `nemohermes onboard --fresh --name <sandbox-name> --recreate-sandbox` after preserving required data.
 Live qualification of the Hermes native local lifecycle is pending.
