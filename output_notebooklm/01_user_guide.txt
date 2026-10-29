@@ -10720,7 +10720,7 @@ OpenClaw's `gateway.auth` value and Hermes's `.hermes/.env` `API_SERVER_KEY` are
 
 For OpenClaw NVIDIA Endpoints, NemoClaw preserves `${NVIDIA_INFERENCE_API_KEY}` only in the generated `inference` provider entry for `https://integrate.api.nvidia.com/v1`. This reference is not a raw credential. A different provider, endpoint, or value stops the transfer.
 
-Hermes PID and lock receipts, OpenClaw's post-upgrade doctor marker, warm-up sessions, and transient SQLite write-ahead-log, shared-memory, and rollback-journal companions, and NemoClaw's configuration and blueprint cache are replacement-owned or generation-local. The replacement keeps its fresh copies instead of restoring the retired sandbox's values. NemoClaw sanitizes machine-local authority from the durable OpenClaw database copy and rejects an archive that still contains one of those database companions, because replaying it could restore removed authority. For Deep Agents Code, NemoClaw scans `sessions.db-journal`, `sessions.db-shm`, and `sessions.db-wal` for credential material before it publishes a backup. A detected credential or scan that exceeds the backup deadline stops the backup and identifies the affected sidecar. All other unknown agent paths transfer intact, but any credential-bearing or otherwise uninspectable archive content stops the workflow before replacement. A restore failure happens after the replacement is created; NemoClaw retains the backup for manual recovery and does not publish the replacement as successful. Move credentials into supported OpenShell credential storage or bindings, remove them from the native home, and retry.
+Hermes PID and lock receipts, OpenClaw's post-upgrade doctor marker, warm-up sessions, and transient SQLite write-ahead-log, shared-memory, and rollback-journal companions, and NemoClaw's configuration and blueprint cache are replacement-owned or generation-local. The replacement keeps its fresh copies instead of restoring the retired sandbox's values. NemoClaw sanitizes machine-local authority from the durable OpenClaw database copy and rejects an archive that still contains one of those database companions, because replaying it could restore removed authority. For Deep Agents Code, NemoClaw scans `sessions.db-journal`, `sessions.db-shm`, and `sessions.db-wal` for credential material before it publishes a backup. A detected credential or scan that exceeds the backup deadline stops the backup and identifies the affected sidecar. Unknown agent paths transfer when their archive paths and link targets have no line breaks and their content is inspectable and credential-free. For a line break in a path or link target, [Recover and Rebuild Sandboxes](../operate-sandboxes/recover-and-rebuild-sandboxes) explains how to rename the path or recreate the link. A restore failure happens after the replacement is created; NemoClaw retains the backup for manual recovery and does not publish the replacement as successful. Move credentials into supported OpenShell credential storage or bindings, remove them from the native home, and retry.
 
 Credential sanitization can increase the size of a structured configuration.
 NemoClaw expands only the private archive copy and leaves the live configuration unchanged.
@@ -12431,7 +12431,24 @@ This fail-closed behavior also applies to `rebuild --force`; NemoClaw never publ
 NemoClaw removes failed native-state captures when cleanup succeeds instead of retaining them as incomplete recovery archives.
 If that cleanup also fails, NemoClaw reports and retains the incomplete backup path.
 Preserve that path while investigating the reported failure, or remove it only after the failure is resolved and you have confirmed that the original sandbox remains intact.
-Repair source access, free backup-disk space, or remove credential-bearing content identified by the error, then rerun the rebuild while the original sandbox remains intact.
+While the original sandbox remains intact, correct the reported failure:
+
+- If the error reports a source-access failure, repair source access.
+- If the error reports insufficient space, free backup-disk space.
+- If the error reports `archive entry contains a line break`, rename the affected file or directory.
+  For a symbolic link or contained hard link with a line break in its target path, recreate the link with a target path that has no line break.
+  Native backup turns contained source hard links into separate regular files before restore.
+  The message shows the JSON-encoded first 240 characters of the affected path or link target.
+- If the error reports `archive header inspection timed out` or `archive listing timed out`, reduce the native-home size, entry count, or host disk-read load.
+  A tar listing is limited to 60 seconds. During native-state backup, header inspection must also finish before the backup deadline.
+- If any tar listing error reports `exceeded 268435456 bytes`, reduce the native-home entry count or path lengths.
+  NemoClaw limits each archive listing to 256 MiB.
+- If the error reports `archive header cannot be inspected for line breaks`, the archive has a malformed or truncated tar header or an extended-header, long-name, or long-link block larger than 1 MiB.
+  Preserve the error output and ask a NemoClaw maintainer to review it.
+- If the error identifies credential-bearing content, remove it from the native home.
+  Store any credential you still need in supported OpenShell credential storage or bindings.
+
+Then rerun the original rebuild or onboarding command with the same settings.
 
 <Warning title="Forced Rebuild Scope">
   `rebuild --force` skips the confirmation prompt. When the sandbox has MCP

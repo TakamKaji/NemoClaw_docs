@@ -167,6 +167,9 @@ mismatched digests.
 
 Follow `nemoclaw-contributor-create-pr` for publication.
 
+Every PR must have the skill's opening authoring-session report in a collapsed comment, including unavailable fields.
+Publish it when opening a new PR. For an existing PR, add it on the next update; see the skill's migration guidance.
+
 - PRs that change `scripts/prepare-dgx-station-host.sh` must include reviewable DGX Station test evidence identifying the tested commit, Station profile or scenario, result, and a supporting link. Any maintainer may review the evidence; without acceptable evidence, the PR is not ready to approve or merge. Treat the evidence as human-reviewed, not authenticated hardware provenance. Exceptional bypasses use existing repository governance and must document the reason on the PR.
 - No secrets, API keys, or credentials committed
 - Check `.github/pr-limits.json` for the contributor's open PR limit.
@@ -338,6 +341,9 @@ mismatched digests.
 ## PR Requirements
 
 Follow `nemoclaw-contributor-create-pr` for publication.
+
+Every PR must have the skill's opening authoring-session report in a collapsed comment, including unavailable fields.
+Publish it when opening a new PR. For an existing PR, add it on the next update; see the skill's migration guidance.
 
 - PRs that change `scripts/prepare-dgx-station-host.sh` must include reviewable DGX Station test evidence identifying the tested commit, Station profile or scenario, result, and a supporting link. Any maintainer may review the evidence; without acceptable evidence, the PR is not ready to approve or merge. Treat the evidence as human-reviewed, not authenticated hardware provenance. Exceptional bypasses use existing repository governance and must document the reason on the PR.
 - No secrets, API keys, or credentials committed
@@ -626,6 +632,10 @@ The [pull request template](.github/PULL_REQUEST_TEMPLATE.md) is the source of t
 content and conditional evidence. The [contributor PR skill](.agents/skills/nemoclaw-contributor-create-pr/SKILL.md)
 owns the automated publication and review-follow-up workflow. The root
 [PR requirements](AGENTS.md#pr-requirements) own repository-specific exceptions.
+
+Every PR includes a collapsed opening [authoring-session report](.agents/skills/nemoclaw-contributor-create-pr/SKILL.md#session-report) comment, including existing and automated PRs.
+Post the report when opening a PR, or on the next update to an existing PR.
+The metadata job checks the PR author's posted comment and the shared template. Use unavailable fields when historical evidence is missing; preserve existing evidence and cutoffs. After posting, rerun a failed metadata job for the current PR revision. Comment events alone do not refresh this check.
 
 After each revision, follow CI and review to completion. Address valid findings with a change, or
 explain why they do not apply. Keep the PR description and validation evidence current.
