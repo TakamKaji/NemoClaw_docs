@@ -553,7 +553,18 @@ The host firewall must allow the outbound DNS, HTTPS, image-registry, package-re
 
 ## Keep Remote Access on Loopback
 
-The OpenShell gateway binds to `127.0.0.1` by default. Dashboard and API forwards also stay on loopback outside WSL unless you explicitly change the bind setting.
+The OpenShell gateway binds to `127.0.0.1` by default.
+Dashboard forwards stay on loopback outside WSL unless you explicitly change `NEMOCLAW_DASHBOARD_BIND`.
+
+<AgentOnly variant="hermes">
+New and successfully migrated Hermes API forwards bind to `127.0.0.1`, including on WSL and when the dashboard bind setting is enabled.
+If NemoClaw cannot prove ownership of a legacy wildcard forward, it refuses migration and leaves that listener unchanged.
+A missing or different gateway endpoint in the listener's process command also prevents migration.
+The old listener can remain remotely reachable.
+Run `$$nemoclaw headless-agent status` and `$$nemoclaw headless-agent recover`, then follow any refusal diagnostic.
+Do not assume loopback isolation until recovery succeeds.
+Use the [SSH forwarding procedure](/user-guide/hermes/get-started/quickstart#installation-and-runtime-details) for remote API access.
+</AgentOnly>
 
 Connect to the server from your workstation:
 
@@ -762,7 +773,15 @@ Print the Hermes dashboard URL:
 $$nemoclaw headless-agent dashboard-url --quiet
 ```
 
-The Hermes OpenAI-compatible API uses the loopback forward on the sandbox's own API port, which onboarding allocates from `8642` through `8652`. Run `openshell forward list` and select the `headless-agent` row whose local port is in that range. Replace `<api-port>` below with that port. For a Hermes sandbox, `gateway-token` is agent-aware and retrieves `API_SERVER_KEY` through the registered `bearer_token` web-auth contract. Use it as a bearer token, then clear the shell variable:
+The Hermes OpenAI-compatible API uses the sandbox's own API port, which onboarding allocates from `8642` through `8652`.
+Replace `<api-port>` below with the port in the OpenAI-compatible API URL printed after onboarding.
+Run `$$nemoclaw headless-agent status` to check sandbox readiness.
+Run `$$nemoclaw headless-agent recover` to verify or restore its required forwards.
+If recovery refuses a legacy wildcard migration, stop and follow its diagnostic before sending a token.
+The refused listener remains unchanged and can still accept remote connections.
+`openshell forward list` lists legacy and user-managed forwards; it can omit NemoClaw's receipt-owned API forward.
+For a Hermes sandbox, `gateway-token` is agent-aware and retrieves `API_SERVER_KEY` through the registered `bearer_token` web-auth contract.
+Use it as a bearer token, then clear the shell variable:
 
 ```bash
 TOKEN=$($$nemoclaw headless-agent gateway-token --quiet)
@@ -2607,7 +2626,10 @@ Use these details when your first-run path needs more control.
     Hermes forwards its dashboard on port `18789` and its OpenAI-compatible API on port `8642`.
     A sandbox receives those ports when no other sandbox or host listener already holds them.
     Otherwise, NemoClaw allocates the next free dashboard port from `18789` through `18799` and the next free API port from `8642` through `8652`.
-    Run `openshell forward list` to read the host bind for each of that sandbox's forwards.
+    Read the allocated API port from the OpenAI-compatible API URL printed after onboarding.
+    Run `nemohermes my-hermes status` to check sandbox readiness.
+    Run `nemohermes my-hermes recover` to verify or restore its required forwards.
+    `openshell forward list` lists legacy and user-managed forwards; it can omit NemoClaw's receipt-owned API forward.
     Choose how the remote client reaches the host forwards.
     If a reverse proxy or tunnel already reaches the loopback dashboard forward, set `CHAT_UI_URL` to its externally reachable HTTPS origin before onboarding.
     Do not include credentials in the URL.
@@ -2628,8 +2650,15 @@ Use these details when your first-run path needs more control.
     Hermes rejects an external HTTP URL when the sandbox starts.
     NemoClaw preserves an external browser URL across rebuild and clone operations.
 
-    For direct dashboard or API access to a non-WSL host, set `NEMOCLAW_DASHBOARD_BIND=0.0.0.0` before onboarding.
+    For direct dashboard access to a non-WSL host, set `NEMOCLAW_DASHBOARD_BIND=0.0.0.0` before onboarding.
     Use the same setting for later `nemohermes <sandbox> connect` calls.
+    New and successfully migrated API forwards bind to `127.0.0.1`, including on WSL and with this setting enabled.
+    If NemoClaw cannot prove ownership of a legacy wildcard forward, it refuses migration and leaves that listener unchanged.
+    A missing or different gateway endpoint in the listener's process command also prevents migration.
+    The old listener can remain remotely reachable.
+    Run `nemohermes my-hermes status` and `nemohermes my-hermes recover`, then follow any refusal diagnostic.
+    Do not assume loopback isolation until recovery succeeds.
+    Use SSH port forwarding for remote API access, as shown below.
 
     ```bash
     export NEMOCLAW_AGENT=hermes
@@ -2646,16 +2675,39 @@ Use these details when your first-run path needs more control.
 
     See the [environment-variable reference](../reference/commands#environment-variables) for the complete bind behavior.
     To keep the host forwards on loopback, leave the bind setting unset and use SSH port forwarding for remote access.
+    Replace `<api-port>` below with the port in the OpenAI-compatible API URL printed after onboarding.
+    Choose a free workstation port for `<local-api-port>`, such as `18642` if available.
+    The local port can differ from the server's allocated API port.
+    After onboarding and successful recovery, open the API tunnel in a local workstation terminal:
 
     ```bash
-    ssh -L 18789:127.0.0.1:18789 <user>@<host>
-    ssh -L 8642:127.0.0.1:8642 <user>@<host>
+    ssh -N -o ExitOnForwardFailure=yes \
+      -L '127.0.0.1:<local-api-port>:127.0.0.1:<api-port>' <user>@<host>
     ```
 
-    These commands forward the default ports.
-    Replace them with the sandbox's own ports when `openshell forward list` reports different values.
-    Configure API clients with the base URL `http://127.0.0.1:8642/v1` after forwarding the API port.
-    Run `nemohermes my-hermes gateway-token --quiet` to retrieve the API bearer token.
+    Keep that terminal open while using the API.
+    Press Ctrl+C in that terminal to close the API tunnel.
+    In a second local terminal, check API reachability:
+
+    ```bash
+    curl -sS -o /dev/null -w '%{http_code}\n' --max-time 3 "http://127.0.0.1:<local-api-port>/health"
+    ```
+
+    An HTTP status of `200` or `401` confirms reachability; it does not verify the API token.
+    If you also need the dashboard, open its tunnel in a separate local terminal.
+    Replace `<dashboard-port>` with the dashboard port printed in the onboarding summary, usually `18789`.
+    Choose a free workstation port for `<local-dashboard-port>`, such as `18790` if available.
+
+    ```bash
+    ssh -N -o ExitOnForwardFailure=yes \
+      -L '127.0.0.1:<local-dashboard-port>:127.0.0.1:<dashboard-port>' <user>@<host>
+    ```
+
+    Keep this terminal open while using the dashboard.
+    Open `http://127.0.0.1:<local-dashboard-port>` in a local browser to verify the dashboard tunnel.
+    Press Ctrl+C in the dashboard terminal to close only that tunnel; the API tunnel remains active.
+    Use the chosen workstation port in the client base URL, `http://127.0.0.1:<local-api-port>/v1`.
+    On the remote host, run `nemohermes my-hermes gateway-token --quiet` to retrieve the API bearer token.
     Pass the token in the client's `Authorization` header.
     Do not append an OpenClaw `#token=` fragment to either URL.
     Treat the dashboard as a local management UI and protect it before you expose it on a shared network.
@@ -2777,9 +2829,10 @@ Use these details when your first-run path needs more control.
     When Tavily is enabled, onboarding reads the generated Hermes configuration to confirm `web.backend: tavily` and sends a real search request through OpenShell's request-body credential rewrite path.
     This verification reports a warning instead of aborting onboarding when the configuration or egress path needs attention.
 
-    Hermes exposes its browser dashboard on port `18789` and forwards its OpenAI-compatible API on port `8642` for local clients.
+    By default, Hermes exposes its browser dashboard on port `18789` and forwards its OpenAI-compatible API on port `8642` for local clients.
     When another sandbox or a host listener already holds either port, NemoClaw allocates the next free port in that port's range.
-    The ready summary names the port this sandbox uses, and the examples below use the default ports.
+    The ready summary names the ports this sandbox uses.
+    The summary below shows the default ports.
     The dashboard assets are built into the sandbox image, so the dashboard starts without running `npm` as the sandbox user under `/opt/hermes`.
     Dashboard chat uses the prebuilt `/opt/hermes/ui-tui` bundle.
     To recover the dashboard manually, use `hermes dashboard --tui --skip-build` so recovery does not try to rebuild assets under root-owned installation paths.
@@ -2813,10 +2866,11 @@ Use these details when your first-run path needs more control.
     If forwarding then fails, onboarding removes the new sandbox and tells you to resolve the reported error before retrying.
     The Hermes dashboard URL does not include an OpenClaw `#token=` fragment.
     `nemohermes my-hermes dashboard-url --quiet` returns `http://127.0.0.1:18789/` when the default local forward is active.
+    Replace `<api-port>` below with the port in your sandbox's printed OpenAI-compatible API URL.
     Check the API health endpoint from the host.
 
     ```bash
-    curl -sf http://127.0.0.1:8642/health
+    curl -sf "http://127.0.0.1:<api-port>/health"
     ```
 
     If that command cannot connect after a reboot or terminal restart, restore the managed forward.
@@ -2825,7 +2879,8 @@ Use these details when your first-run path needs more control.
     nemohermes my-hermes recover
     ```
 
-    Configure OpenAI-compatible clients with `http://127.0.0.1:8642/v1`.
+    If recovery fails, follow its diagnostic before configuring a client.
+    Configure OpenAI-compatible clients with `http://127.0.0.1:<api-port>/v1`.
     Hermes uses API header authentication for client requests.
     Do not append an OpenClaw `#token=` fragment to the endpoint.
   </Accordion>
@@ -3097,7 +3152,21 @@ Deep Agents Code state lives in its native home under `/sandbox`. OpenShell keep
 
 Deep Agents Code does not currently have a NemoClaw-managed web-search feature. If your project code or a manually configured tool needs Tavily, opt the sandbox Python egress path into Tavily explicitly. Register the raw key only with the OpenShell gateway on the host, not inside the sandbox, in `.env`, or in Deep Agents config files. The gateway injects it at egress instead. The managed Deep Agents Code entry points reject credential-shaped process environment values, disable project `.env` and global `/sandbox/.deepagents/.env` loading, and block upstream `/auth`, `/connect`, startup/onboarding credential prompts, model-selector credential prompts, notification-service key prompts, and ChatGPT OAuth. These controls apply to Deep Agents Code and do not sanitize arbitrary Python programs in the sandbox. Use NemoClaw-managed credential paths when support is available instead of storing service keys inside Deep Agents Code state. NemoClaw does not enable Tavily or observability by default for this harness. The sandbox policy denies `api.tavily.com` until you opt into Tavily and continues to deny direct `api.smith.langchain.com` egress when you enable observability.
 
-To allow Tavily egress for the target sandbox, apply the maintained `tavily` policy preset, register the credential with the OpenShell gateway, then rebuild the sandbox so the new provider attaches. The policy preset is a per-sandbox managed-Python opt-in, but provider registration is gateway-wide: `tavily-search` attaches to every sandbox that you build or rebuild afterward.
+To allow Tavily egress for the current sandbox, apply the `tavily` preset, register the credential on the host, and attach the provider explicitly.
+Registration is gateway-wide, but a raw OpenShell attachment changes only live state.
+It does not change NemoClaw's saved web-search selection.
+A rebuild can omit this provider, including after Tavily removal recorded a disabled selection.
+Repeat the explicit attachment after rebuilding if the sandbox still needs Tavily.
+
+Identify the sandbox's recorded gateway before registering or attaching the provider.
+Find the entry keyed by your sandbox name in the `sandboxes` object of the host registry.
+The default registry is `~/.nemoclaw/sandboxes.json`; non-default gateway registries are `~/.nemoclaw/gateways/<port>/sandboxes.json`.
+Use its `gatewayName` and `gatewayPort` for `<gateway-name>` and `<gateway-port>` below.
+Gateway `nemoclaw` uses port `8080`; gateway `nemoclaw-<port>` uses the port in its name.
+Use this mapping if only one field is recorded.
+If an older entry has neither field, use the port from its gateway-specific registry directory, or `8080` for the top-level registry.
+Stop if the entry is missing, appears in multiple registries, or has conflicting gateway values.
+Do not use the active OpenShell gateway as a substitute for the recorded binding.
 
 ```bash
 # Preview the endpoints the preset opens:
@@ -3107,14 +3176,18 @@ nemo-deepagents <sandbox-name> policy add tavily --yes
 # Export the key on the host (NemoClaw reads it from the current shell):
 export TAVILY_API_KEY=tvly-...
 # Register the provider with the gateway:
-nemo-deepagents credentials add tavily-search --type tavily --agent dcode --credential TAVILY_API_KEY
+NEMOCLAW_GATEWAY_PORT=<gateway-port> nemo-deepagents credentials add tavily-search --type tavily --agent dcode --credential TAVILY_API_KEY
 # Remove the raw key from the host shell after the gateway stores it:
 unset TAVILY_API_KEY
-# Attach the new provider to the sandbox:
-nemo-deepagents <sandbox-name> rebuild
+# Attach the provider to the current sandbox:
+openshell sandbox provider attach -g <gateway-name> <sandbox-name> tavily-search
 ```
 
-The shared `tavily` preset only opens `POST /search` and `POST /extract` egress to `api.tavily.com:443`. Attaching the credential provider alone does not authorize the managed Python interpreter; the explicit policy preset is the interpreter-level opt-in. Export `TAVILY_API_KEY` only for registration, then remove it from the host shell; the gateway injects the stored value at egress, and the sandbox never sees the raw value. NemoClaw does not bake `TAVILY_API_KEY` into the managed config or image, and the managed wrapper rejects direct service-key injection into `dcode`. Because OpenShell attributes the harness's calls to the sandbox `python3` interpreter, this egress is process-wide for sandbox Python rather than a `dcode`-only boundary.
+The shared `tavily` preset only opens `POST /search` and `POST /extract` egress to `api.tavily.com:443`.
+The attached Tavily provider can independently grant managed-Python access to the same endpoint.
+Export `TAVILY_API_KEY` only for registration, then remove it from the host shell; the gateway injects the stored value at egress, and the sandbox never sees the raw value.
+NemoClaw does not bake `TAVILY_API_KEY` into the managed config or image, and the managed wrapper rejects direct service-key injection into `dcode`.
+Because OpenShell attributes the harness's calls to the sandbox `python3` interpreter, this egress is process-wide for sandbox Python rather than a `dcode`-only boundary.
 
 Remove the target sandbox's managed-Python opt-in when it is no longer needed.
 
@@ -3122,7 +3195,15 @@ Remove the target sandbox's managed-Python opt-in when it is no longer needed.
 nemo-deepagents <sandbox-name> policy remove tavily --yes
 ```
 
-This does not unregister the gateway-wide `tavily-search` provider; its credential and Node/curl routes remain available to sandboxes that attach it. When no sandbox needs the provider, remove it globally with `nemo-deepagents credentials reset tavily-search --yes`. The command detaches current sandbox attachments, removes the gateway provider, and reports every detached sandbox that you must rebuild after registering a replacement.
+Removal detaches every Tavily provider from this sandbox and verifies that effective policy no longer permits Tavily search or extraction requests.
+Rebuilds preserve that disabled selection.
+The gateway-wide `tavily-search` registration and its credential remain available to other sandboxes.
+To restore access to the current sandbox, add the preset and run `openshell sandbox provider attach -g <gateway-name> <sandbox-name> tavily-search`.
+This recovery is temporary: the saved selection remains disabled, and the next rebuild omits the Tavily provider again.
+Deep Agents Code has no NemoClaw-managed web-search configuration that makes this attachment durable.
+When no sandbox needs the provider, remove it globally with `NEMOCLAW_GATEWAY_PORT=<gateway-port> nemo-deepagents credentials reset tavily-search --yes`.
+The command detaches current sandbox attachments and removes the gateway provider.
+After registering a replacement, explicitly attach it to each sandbox that still needs Tavily, including after any required rebuild.
 
   </Accordion>
 
@@ -5843,6 +5924,14 @@ The runtime API differs by agent capability.
 
 ## Run Onboarding
 
+If you rerun onboarding for an existing sandbox with an attached custom provider, NemoClaw reads its base policy before changing the provider.
+When the provider pins destination IP addresses, existing rules that cover the endpoint's host and port must have matching IP pins.
+This includes wildcard host rules and IP-only rules on that port.
+If pins are absent or differ, follow [Customize the Sandbox Network Policy](../../network-policy/customize-network-policy) to inspect and correct the named policy before retrying.
+If NemoClaw cannot read the policy, resolve the reported OpenShell error before retrying.
+Either refusal leaves the provider unchanged.
+During rebuild, NemoClaw checks the retained base policy captured before deleting the original sandbox.
+
 Start the onboard wizard.
 
 ```bash
@@ -7190,6 +7279,14 @@ Endpoints configured with `COMPATIBLE_API_KEY` use a different authenticated pat
 </Warning>
 
 ## Run Onboarding
+
+If you rerun onboarding for an existing sandbox with an attached custom provider, NemoClaw reads its base policy before changing the provider.
+When the provider pins destination IP addresses, existing rules that cover the endpoint's host and port must have matching IP pins.
+This includes wildcard host rules and IP-only rules on that port.
+If pins are absent or differ, follow [Customize the Sandbox Network Policy](../../network-policy/customize-network-policy) to inspect and correct the named policy before retrying.
+If NemoClaw cannot read the policy, resolve the reported OpenShell error before retrying.
+Either refusal leaves the provider unchanged.
+During rebuild, NemoClaw checks the retained base policy captured before deleting the original sandbox.
 
 Start the onboard wizard.
 
@@ -9253,6 +9350,13 @@ $$nemoclaw inference set \
 ```
 
 NemoClaw validates the endpoint before it changes the route.
+For a custom compatible endpoint that uses a native provider, NemoClaw reads the sandbox's base policy before creating or detaching a provider.
+When the provider pins destination addresses, existing endpoint rules that cover its host and port must have matching IP pins.
+This includes wildcard host rules and IP-only rules on that port.
+If the pins are absent or differ, the command names the conflicting policy and leaves providers and the inference selection unchanged.
+{/* This page is published under inference/manage-inference; links follow the navigation slugs in docs/index.yml. */}
+Follow [Customize the Sandbox Network Policy](../../network-policy/customize-network-policy) to inspect the named rule before retrying.
+If NemoClaw cannot read the policy, resolve the reported OpenShell error before retrying.
 For an HTTPS IP-literal or DNS-pinned HTTP endpoint, NemoClaw registers and verifies an absent provider before selecting the route.
 If OpenShell still reports the provider as absent, NemoClaw retries the switch once.
 If provider verification fails or OpenShell confirms that it did not apply the route, NemoClaw leaves the inference selection unchanged.
@@ -10303,7 +10407,9 @@ $$nemoclaw my-assistant channels add googlechat
 Refer to [Set Up Google Chat](set-up-google-chat) before running the command.
 
 `channels add` accepts mixed-case input such as `Telegram`, then stores and prints the canonical lowercase name.
-It collects the channel inputs, validates or registers the OpenShell bridge provider profile, records the channel, and asks whether to rebuild immediately.
+After the channel inputs pass their configured checks, it validates or registers the OpenShell bridge provider profile, records the channel, and asks whether to rebuild immediately.
+For Discord, rejected, rate-limited, unreachable, or timed-out token verification skips enrollment without changing its provider, registry entry, or rebuild state.
+Correct the token or host access, then follow [Retry Authentication](set-up-discord#retry-authentication) to rerun the complete channel-add command.
 Before provider reuse, NemoClaw validates the complete checked-in profile contract, including endpoints, binaries, credential keys, and refresh settings when applicable.
 For an existing refresh provider with matching metadata, NemoClaw preserves its working credential until OpenShell mints the replacement.
 A later refresh failure can still leave changed gateway refresh material; follow the recovery guidance below.
@@ -10427,6 +10533,11 @@ If `WECHAT_BOT_TOKEN` is already cached for this sandbox, the command reuses it 
 Use `channels remove wechat` first if you intend to acquire a fresh account.
 
 ## Verify Delivery
+
+<AgentOnly variant="hermes">
+For Hermes Discord, run the authentication status check in [Retry Authentication](set-up-discord#retry-authentication).
+A connected adapter does not prove message delivery.
+</AgentOnly>
 
 Send a message to the configured bot or app after the rebuild.
 For Telegram, a Bot API `sendMessage` proves outbound delivery only.
@@ -10829,6 +10940,13 @@ Refer to [Set Up Google Chat](set-up-google-chat) before selecting it.
 If you select no channels, pressing **Enter** skips messaging setup.
 If the current host inputs do not include a token-based channel token, the wizard prompts for it and stages it for the current onboarding process.
 
+NemoClaw verifies Discord credentials before activating the channel.
+For a new enrollment, rejected, rate-limited, unreachable, or timed-out verification skips Discord without creating its provider, recording an active channel, or rebuilding for Discord.
+Correct the token or host access, then follow [Retry Authentication](set-up-discord#retry-authentication) to add Discord to the sandbox.
+Other onboarding work can continue.
+When replacing an active Discord credential, failed verification stops rotation before recreation and preserves the existing sandbox.
+Refer to [Rotate a Messaging Credential](../../security/credential-rotation#rotate-a-messaging-credential) for that procedure.
+
 If you enable WeChat, the wizard renders a QR code, polls Tencent's iLink gateway, and captures the bot token after you scan the QR with WeChat on your phone.
 The login has an eight-minute deadline, refreshes the QR up to three times on expiry, and follows iLink's IDC redirects automatically.
 
@@ -10907,6 +11025,11 @@ For in-sandbox QR-paired channels such as WhatsApp, `channels remove` clears ses
 Refer to that procedure for absent-channel behavior and recovery guidance.
 
 ## Verify the Result
+
+<AgentOnly variant="hermes">
+For Hermes Discord, run the authentication status check in [Retry Authentication](set-up-discord#retry-authentication).
+Registration and policy coverage alone do not prove authentication.
+</AgentOnly>
 
 After the sandbox is running, send a message to the configured bot or app.
 If delivery fails, inspect sandbox logs and confirm that the matching network policy preset is active.
@@ -12145,9 +12268,11 @@ The OpenShell CLI has no command that starts a gateway, and `openshell status` o
   instead of destroying and recreating.
 </AgentOnly>
 <AgentOnly variant="deepagents">
-  If you changed the underlying Dockerfile, upgraded Deep Agents Code, enabled
-  Tavily Search, or want to pick up a new base image without losing the complete
-  native home, use `rebuild` instead of destroying and recreating.
+  If you changed the underlying Dockerfile, upgraded Deep Agents Code, or want
+  to pick up a new base image without losing the complete native home, use
+  `rebuild` instead of destroying and recreating.
+  To enable Tavily egress, follow [Optional Tavily Egress](/user-guide/deepagents/get-started/quickstart#optional-tavily-egress).
+  The procedure requires an explicit provider attachment. Repeat the attachment after rebuilding if the sandbox still needs Tavily.
 </AgentOnly>
 
 ```bash
@@ -13479,8 +13604,41 @@ export DISCORD_REQUIRE_MENTION=1
 Replace `<your-discord-bot-token>` with the real token before you run onboarding or add the channel.
 NemoClaw rejects the literal placeholder and does not save it or configure Discord.
 
+During initial onboarding enrollment and `channels add discord`, NemoClaw verifies the token with Discord before activating the channel.
+If Discord rejects a new enrollment token, NemoClaw leaves Discord inactive and prints a credential warning.
+Other onboarding work can continue.
+If verification times out, is rate-limited, or cannot reach Discord, NemoClaw also skips the new enrollment.
+Failed `channels add discord` verification does not change an existing provider or active channel.
+The message that a token is available from the environment or credential store confirms input availability only.
+
+When replacing an active Discord credential through onboarding, failed or inconclusive verification stops rotation before recreation and preserves the existing sandbox.
+Refer to [Rotate a Messaging Credential](../../security/credential-rotation#rotate-a-messaging-credential) for replacement and retry steps.
+
 Continue with [Enable Channels During Onboarding](enable-channels-during-onboarding) or [Add Channels After Onboarding](add-channels-after-onboarding).
 If the bot logs in but delivery fails, refer to [Discord bot logs in, but the channel still does not work](../../reference/troubleshooting#discord-bot-logs-in-but-the-channel-still-does-not-work).
+
+## Retry Authentication
+
+If Discord rejects the token, replace `DISCORD_BOT_TOKEN` with a bot token from the Discord Developer Portal.
+If verification is inconclusive, check host access to `discord.com` and wait before retrying a rate-limited request.
+Retry enrollment for your sandbox:
+
+```bash
+$$nemoclaw <name> channels add discord
+```
+
+<AgentOnly variant="hermes">
+Check the Hermes Discord connection after enrollment:
+
+```bash
+nemohermes <name> channels status --channel discord
+```
+
+The command reports authentication rejection from Hermes' native runtime status as a `credential_rejected` verdict.
+A `healthy` verdict confirms the adapter connection; it does not prove message delivery.
+Missing, stale, or unreadable runtime evidence produces an `unknown` verdict with a warning.
+Registration and policy coverage alone do not prove authentication.
+</AgentOnly>
 
 
 ========================================
