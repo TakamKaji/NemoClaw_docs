@@ -2450,8 +2450,7 @@ Review the [Prerequisites](prerequisites) before you begin.
 <Steps>
   <Step title="Install NemoClaw for Hermes">
     NemoClaw collects operation telemetry to help improve the project.
-    Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-    Production delivery is not enabled.
+    Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
     To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
     Refer to [Operation Telemetry](/user-guide/hermes/security/best-practices#operation-telemetry) for details.
 
@@ -2991,8 +2990,7 @@ If you use the coding-agent prompt in the preceding section, you can skip this p
 <Steps>
   <Step title="Install NemoClaw for Deep Agents">
     NemoClaw collects operation telemetry to help improve the project.
-    Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-    Production delivery is not enabled.
+    Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
     To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
     Refer to [Operation Telemetry](/user-guide/deepagents/security/best-practices#operation-telemetry) for details.
 
@@ -3323,8 +3321,7 @@ Native Podman, macOS, Windows, WSL, messaging channels, dashboards, host mounts,
 
 After Pi activation is available in the selected NemoClaw release, install NemoClaw and select Pi explicitly.
 NemoClaw collects operation telemetry to help improve the project.
-Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-Production delivery is not enabled.
+Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
 To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
 Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 
@@ -3465,8 +3462,7 @@ Review the [Prerequisites](prerequisites) before you begin.
 <Steps>
   <Step title="Install NemoClaw">
     NemoClaw collects operation telemetry to help improve the project.
-    Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-    Production delivery is not enabled.
+    Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
     To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
     Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 
@@ -4042,8 +4038,7 @@ To reuse an existing distro named `Ubuntu`, pass `-DistroName Ubuntu`.
 
 The bootstrap script does not install NemoClaw itself.
 NemoClaw collects operation telemetry to help improve the project.
-Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-Production delivery is not enabled.
+Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
 To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each Ubuntu shell before installation or CLI use.
 Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 When Windows preparation is complete, it opens Ubuntu and prints the standard installer command to run inside Ubuntu:
@@ -4553,8 +4548,7 @@ The runtime stores an owner-only bearer API key and model artifacts on the host.
 </Warning>
 
 NemoClaw collects operation telemetry to help improve the project.
-Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-Production delivery is not enabled.
+Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
 To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
 Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 
@@ -7986,8 +7980,7 @@ Do not interpret two qualified `200,000 Mbps` rails as measured aggregate servin
 
 Run the interactive installer on the system that should become the head.
 NemoClaw collects operation telemetry to help improve the project.
-Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-Production delivery is not enabled.
+Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
 To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
 Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 
@@ -8186,8 +8179,7 @@ For the first non-interactive setup, pass the managed provider and peer to the s
 The installer qualifies the pair and creates the peer binding that managed vLLM requires.
 Do not set `NEMOCLAW_DGX_STATION_SSH_BINDING` yourself or run `$$nemoclaw onboard` directly for the first pair setup.
 NemoClaw collects operation telemetry to help improve the project.
-Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-Production delivery is not enabled.
+Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
 To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
 Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 
@@ -8958,8 +8950,7 @@ Refer to [Choose a Local Inference Server](choose-local-inference-server#install
 Refer to [Set Up vLLM on Two DGX Sparks](set-up-vllm-on-two-dgx-sparks) for automatic and explicit distributed-profile selection, profile requirements, and cleanup behavior.
 
 NemoClaw collects operation telemetry to help improve the project.
-Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-Production delivery is not enabled.
+Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
 To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
 Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 To select the existing `deepseek-v4-flash` recipe while retaining the same one-confirmation express flow, run:
@@ -9095,7 +9086,7 @@ When the array overrides `--gpu-memory-utilization`, NemoClaw validates the last
 
 ```bash
 NEMOCLAW_PROVIDER=install-vllm \
-  NEMOCLAW_VLLM_EXTRA_ARGS_JSON='["--max-num-seqs","2","--disable-log-requests"]' \
+  NEMOCLAW_VLLM_EXTRA_ARGS_JSON='["--max-num-seqs","2"]' \
   $$nemoclaw onboard --non-interactive
 ```
 
@@ -12601,7 +12592,7 @@ Keep the recovery files and rerun the affected sandbox's rebuild with the same s
 
 If `rebuild` stops after recording the journal, rerun the command with the same replacement settings. The rerun takes one of these actions:
 
-- It continues deletion when the live sandbox still has the journaled source identity.
+- It refuses to reuse a retained backup when the original sandbox still exists, including with `--yes` or `--force`.
 - It continues creation when the recorded OpenShell gateway explicitly reports the source sandbox as absent.
 - It accepts an existing replacement only after its live identity and sandbox registry generation match the journal and it completes or verifies the recorded final handoff.
 - It starts a new replacement when recovery proves that the recorded replacement is absent.
@@ -12615,11 +12606,16 @@ A successful reconciliation reports `Cleared absent replacement recovery for '<n
 If the gateway or Docker daemon cannot confirm absence, the runtime binding changed, or the recovery records disagree, the command exits nonzero and keeps the recovery state.
 Correct the reported condition and rerun the same rebuild command; keep the recovery files and backup in place.
 
-An older recovery marker can lack an MCP handoff, as can an interruption before NemoClaw records the handoff.
-NemoClaw reads MCP state again only when the source still exists and the matching journal remains in the `planned` or `deleting` phase.
-If either check fails, the rerun stops without another delete attempt.
+If the original sandbox still exists, its retained backup can exclude conversations, files, or MCP changes made after the interrupted attempt.
+The rerun stops before MCP preparation or sandbox deletion and preserves the backup and recovery files.
+This refusal also applies when the retained backup has no MCP handoff.
+Do not delete the sandbox, edit the journal, or use `--retire-recovery` to bypass the refusal.
+Ask a NemoClaw maintainer to reconcile the interrupted rebuild; there is no supported command to cancel it while preserving the original sandbox.
+Taking another backup does not replace the backup bound to the interrupted transaction.
 
-NemoClaw treats a journaled replacement as void when the sandbox registry row and the live same-name sandbox report the same OpenShell identity on the journaled gateway, and that identity is not the journaled replacement.
+If replacement creation still requires the absent source’s MCP state and its retained handoff is unavailable, the rerun stops because it cannot reconstruct that recovery state safely.
+
+When no retained backup is being reused, NemoClaw treats a journaled replacement as void when the sandbox registry row and the live same-name sandbox report the same OpenShell identity on the journaled gateway, and that identity is not the journaled replacement.
 A registry row or a live sandbox on any other gateway leaves the journal in place, because that journal may still own an unregistered replacement on its own gateway.
 The rerun atomically replaces the void journal with a fresh journal against that live source, without leaving an unjournaled interval. It then reports `Replaced the void replacement journal for '<name>'; its source sandbox is registered and live.`
 A journal whose replacement never took therefore stops blocking `rebuild` for the rest of the session.
@@ -15190,8 +15186,7 @@ If you manually retired the gateway, restore the previously installed OpenShell 
 </Warning>
 
 NemoClaw collects operation telemetry to help improve the project.
-Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed TEST receiver by default.
-Production delivery is not enabled.
+Ordinary installer and supported CLI operations attempt to send telemetry about completed operations to NVIDIA's fixed Production receiver by default.
 To disable NemoClaw telemetry, run `export NEMOCLAW_DISABLE_TELEMETRY=1` in each shell before installation or CLI use.
 Refer to [Operation Telemetry](/user-guide/openclaw/security/best-practices#operation-telemetry) for details.
 
