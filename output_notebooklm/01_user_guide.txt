@@ -9137,8 +9137,8 @@ keywords: ["switch nemoclaw model", "change inference model", "nemoclaw inferenc
 content:
   type: "how_to"
 ---
-Change the model on an existing provider route with a runtime update or a fresh sandbox recreation.
-The command requires both the provider and model even when the provider does not change.
+Change the model with a runtime update or onboard under a new sandbox name.
+Runtime updates require both the provider and model even when the provider does not change.
 
 ## Check the Current Route
 
@@ -9200,14 +9200,14 @@ When it cannot resolve a value, NemoClaw omits the field so Hermes can discover 
 
 <AgentOnly variant="deepagents">
 
-Deep Agents uses the fresh recreation path for model changes.
-This path keeps the OpenShell route and `/sandbox/.deepagents/config.toml` aligned.
-
-```bash
-$$nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
-```
-
-To validate a new model before replacing the current sandbox, onboard it under a new name and make it the default after validation.
+Deep Agents has no runtime `inference set` path.
+Named recreation restores `/sandbox/.deepagents/config.toml`, including saved model and endpoint preferences.
+If those preferences conflict with the requested selection, validation stops before NemoClaw updates the registry.
+The replacement still exists with an unverified route.
+Keep the backup and follow the printed recovery instructions; do not rebuild without verified registry metadata.
+For a different model, follow [Validate a Different Deep Agents Selection](switch-providers#validate-a-different-deep-agents-selection).
+That workflow creates a new native configuration under a new sandbox name.
+It also explains how to restore the existing default during testing because onboarding changes the default before final verification.
 
 </AgentOnly>
 
@@ -9369,12 +9369,52 @@ Endpoint-shape and shared-gateway compatibility checks still apply.
 
 ## Recreate a Deep Agents Sandbox
 
-Deep Agents uses fresh sandbox recreation for provider changes.
-The recreation validates the provider and rewrites `/sandbox/.deepagents/config.toml` with the OpenShell route.
+Named recreation replaces the Deep Agents sandbox and restores its saved native home, including `/sandbox/.deepagents/config.toml`.
+It preserves saved model and endpoint preferences.
+If those preferences conflict with the requested provider or model, validation stops before NemoClaw updates the registry.
+The replacement still exists, but its live route is unverified.
+Keep the backup and follow the printed recovery instructions.
+Do not rebuild that replacement without verified registry metadata.
+
+Use named recreation when you need a replacement image with the saved preferences:
 
 ```bash
 $$nemoclaw onboard --fresh --name <sandbox-name> --recreate-sandbox
 ```
+
+## Validate a Different Deep Agents Selection
+
+To select a different provider or model without restoring existing preferences, use a new sandbox name.
+Review [shared-gateway effects](#account-for-shared-gateways) before selecting a shared route.
+Record your existing default sandbox's name before starting.
+Onboarding selects the new sandbox as the default before final verification.
+A later verification failure can leave that default changed.
+Onboard the new sandbox and choose the requested provider and model:
+
+```bash
+$$nemoclaw onboard --fresh --name <new-sandbox-name>
+```
+
+This creates a separate sandbox and native configuration.
+After the onboarding attempt, restore your existing default before testing the new sandbox:
+
+```bash
+$$nemoclaw use <existing-sandbox-name>
+```
+
+If onboarding failed, follow the printed recovery instructions while keeping the existing sandbox as the default.
+After successful onboarding, inspect the new sandbox's route:
+
+```bash
+$$nemoclaw <new-sandbox-name> status
+$$nemoclaw <new-sandbox-name> inference get
+```
+
+Require the output to report the requested provider and model.
+Complete [Verify the Sandbox Inference Route](../validate-inference/verify-inference-route) using the new sandbox name for each command.
+Use the named `inference get` command above instead of the default-sandbox form.
+After validation succeeds, follow [Choose the Default Sandbox](../../manage-sandboxes/operate-sandboxes/run-deep-agents-code#choose-the-default-sandbox) to select it again.
+If validation fails, keep the restored default and follow the reported recovery instructions.
 
 </AgentOnly>
 
@@ -12585,12 +12625,38 @@ For a non-default gateway port, these files reside under `~/.nemoclaw/gateways/<
 Resume or clear an unfinished ordinary onboarding session before retrying retained rebuild recovery.
 To discard that ordinary onboarding attempt and start over, run `$$nemoclaw onboard --fresh` as described in [Previous onboarding session failed](../../reference/troubleshooting#previous-onboarding-session-failed).
 
+<AgentOnly variant="openclaw">
+
+### Recover a Retained Source After Maintenance Cleanup Fails
+
+If `rebuild` reports `OpenClaw source maintenance cleanup did not return retained sandbox` or `OpenClaw source maintenance cleanup failed`, do not follow the rerun instructions below yet.
+This recovery takes precedence over the ordinary interrupted-replacement steps.
+Preserve the source sandbox, backup, and rebuild recovery files.
+Inspect the recorded gateway and retained sandbox before another lifecycle action:
+
+```bash
+openshell gateway select <recorded-gateway>
+openshell status
+openshell sandbox get -g <recorded-gateway> <sandbox-name>
+$$nemoclaw <sandbox-name> logs --tail 100
+```
+
+If the warning says `The retained sandbox was stopped` and OpenShell confirms it remains stopped, keep it stopped.
+If the warning says the recovery marker could not be invalidated, the retained source still exists. Do not retry `rebuild`, even if the source is stopped: prepared recovery refuses a retained source. Preserve the source, backup, and recovery files. Ask a NemoClaw maintainer to reconcile the interrupted rebuild and any source writes before another rebuild.
+If source maintenance cleanup failed after the marker was removed, the old backup is inspection evidence, not retry authority. Keep the source stopped and ask a NemoClaw maintainer to reconcile its maintenance state and any writes before another rebuild. A later rebuild creates a new backup.
+If NemoClaw could not verify the stop or maintenance reconciliation, preserve the current state and ask a NemoClaw maintainer to review the warning, redacted logs, and backup path.
+Do not delete the source or start another replacement until its maintenance state is reconciled.
+
+</AgentOnly>
+
 <Warning title="Preserve Rebuild Recovery Files">
 Do not manually delete `onboard-session.json` or retained `.onboard-rebuild-<sandbox>.json` files to resolve an interrupted replacement.
-Keep the recovery files and rerun the affected sandbox's rebuild with the same settings.
+Keep the recovery files.
+After any source maintenance cleanup failure is reconciled, rerun the affected sandbox's rebuild with the same settings.
 </Warning>
 
-If `rebuild` stops after recording the journal, rerun the command with the same replacement settings. The rerun takes one of these actions:
+If `rebuild` stops after recording the journal, resolve any source maintenance cleanup failure first.
+Then rerun the command with the same replacement settings. The rerun takes one of these actions:
 
 - It refuses to reuse a retained backup when the original sandbox still exists, including with `--yes` or `--force`.
 - It continues creation when the recorded OpenShell gateway explicitly reports the source sandbox as absent.
@@ -13064,15 +13130,18 @@ It then exits without starting the interactive UI.
 `dcode --help` lists the managed aliases before the upstream Deep Agents Code help.
 The sandbox name resolves when you run the command from a `nemo-deepagents <sandbox-name> connect` shell, which loads the NemoClaw runtime environment.
 
-Inspect the generated Deep Agents configuration from the host:
+Inspect the native Deep Agents configuration from the host:
 
 ```bash
 nemo-deepagents <sandbox-name> config get
 ```
 
+NemoClaw generates the initial `config.toml`.
+Native preference saves can update it, and native-home restoration preserves those saved preferences.
+Current images keep managed route and upstream provider metadata in protected files outside the native home.
 NemoClaw parses `config.toml`, removes gateway auth data, and redacts credential-shaped values before printing it.
-`config set` is not supported for this image-baked configuration.
-Re-onboard the named sandbox to change its managed provider or model selection.
+`config set` is not supported for Deep Agents sandboxes.
+To change the provider or model without restoring existing preferences, follow [Validate a Different Deep Agents Selection](../../inference/manage-inference/switch-providers#validate-a-different-deep-agents-selection).
 
 ## Related Topics
 
