@@ -2326,6 +2326,11 @@ Managed llama.cpp and Windows-host Ollama remain Docker Desktop-only on WSL. Man
 If you choose the native Linux Ollama install path, the onboard wizard also requires `zstd` for Ollama archive extraction.
 The installer also requires `strings` from `binutils` to verify the OpenShell binary before it continues with OpenShell install work.
 
+The native Linux Ollama system install needs outbound HTTPS to `raw.githubusercontent.com` for the pinned installer.
+Both system and user-local installs download release tarballs through `ollama.com`, `github.com`, and `release-assets.githubusercontent.com`.
+On native Linux hosts outside JetPack, the system installer also needs `developer.download.nvidia.com` when it detects NVIDIA hardware but cannot find `nvidia-smi` and attempts to install the NVIDIA driver.
+If a download fails, check the error for the failed host, allow it through your firewall or proxy, then rerun onboarding.
+
 <Warning title="Docker Group Access (Default Docker Path)">
 The default Docker runtime path needs Docker access.
 On personal Linux development machines, adding your user to the `docker` group is the standard way to run Docker without sudo.
@@ -4132,6 +4137,7 @@ The Podman path does not enable the Docker-specific managed llama.cpp or Windows
 If the installer offers Express on WSL, a qualifying N1x or Station GB300 WSL host uses managed llama.cpp with Qwen 3.6 35B-A3B.
 The installer leaves inference selection to onboarding.
 Onboarding requires Linux ARM64 WSL, the default local Docker context, at least 48,000 MiB of Docker and GPU memory, driver version `580.65.06` or later, Docker storage and runtime readiness, NVIDIA GPU integration, and a successful Docker Desktop GPU passthrough proof.
+For GPU detection, NemoClaw checks `nvidia-smi` on `PATH` and then `/usr/lib/wsl/lib/nvidia-smi` when `PATH` reports no GPU.
 N1x qualification also requires one GPU whose normalized identity is `NVIDIA RTX Spark N1X`, `NVIDIA RTX Spark N1X (5120-core Blackwell RTX GPU)`, or `NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)`.
 Station GB300 qualification instead requires a bounded matching Windows product observation and a proof that reconciles every reported GPU and includes an `NVIDIA GB300` device.
 Managed llama.cpp requires that proof to identify exactly one GB300 GPU UUID.
@@ -4903,12 +4909,16 @@ Set `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` when OpenShell needs more than 120 
 
 After OpenShell reports the sandbox ready, `$$nemoclaw <sandbox-name> start` waits up to 120 seconds for the OpenClaw gateway process.
 This wait applies after both an intentional stop and an external Docker restart, regardless of the recorded stop intent.
+`$$nemoclaw <sandbox-name> recover` uses the same startup budget after it starts a stopped sandbox.
 The startup budget includes probe execution and delays.
 It is separate from the preceding 300-second OpenShell readiness wait.
-If the startup budget expires, `start` exits nonzero before gateway-health verification and host-forward restoration.
-Set `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` before `start` to override the startup budget, not the preceding OpenShell readiness wait.
-With a value of `0`, a sandbox not recorded as intentionally stopped skips process observation but still runs normal gateway and inference verification.
-An intentionally stopped sandbox with a zero budget exits nonzero before those checks.
+If the final startup observation reports a stopped gateway at expiry, `start` exits nonzero before gateway-health verification and host-forward restoration.
+If the final observation is unavailable, `start` continues ordinary gateway and inference verification.
+If the startup budget expires, `recover` exits nonzero before ordinary process recovery and host-forward repair.
+Set `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` before `start` or `recover` to override the startup budget, not the preceding OpenShell readiness wait.
+With a value of `0`, `start` skips process observation for a sandbox not recorded as intentionally stopped but still runs normal gateway and inference verification.
+For an intentionally stopped sandbox, `start` with a zero budget exits nonzero before those checks.
+With a zero budget, `recover` skips the startup wait and continues ordinary recovery and verification.
 OpenClaw gateway-health recovery and onboarding process observation retain their 30-second defaults.
 
 </AgentOnly>
@@ -6774,6 +6784,9 @@ When `NGC_API_KEY` or `NVIDIA_INFERENCE_API_KEY` is already exported, NemoClaw p
 
 ## Understand Model Detection
 
+NemoClaw accepts NIM as healthy only when its recorded container is running and `/v1/models` returns HTTP `200` with an OpenAI-style JSON response containing a `data` array.
+It rejects redirects, error responses, HTML, and other response bodies.
+If NemoClaw cannot inspect the recorded container, onboarding stops.
 If the NIM container exits before its health endpoint becomes ready, onboarding stops and prints the last container log lines.
 If recent NIM logs report that estimated memory exceeds usable GPU memory, onboarding ends the health wait before the 1,200-second timeout and removes the NIM container.
 After confirmed removal, onboarding stops without changing providers.
@@ -6890,8 +6903,10 @@ The wizard checks `ollama --version` and `/api/version` on port `11434` independ
 If NemoClaw detects an installed CLI or local running daemon but cannot read its version, onboarding uses the upgrade path instead of reusing it.
 
 On macOS, the wizard uses `brew upgrade ollama` for the platform upgrade path.
-On Linux, the wizard downloads a pinned snapshot of the official Ollama installer and verifies its SHA-256 digest before execution.
-If the download cannot be verified, onboarding stops without running it.
+On Linux, the system install path downloads a pinned snapshot of the official Ollama installer from `raw.githubusercontent.com` and verifies its SHA-256 digest before execution.
+That installer then downloads the release tarball from `ollama.com`; the sudo-free user-local path downloads the tarball from `ollama.com` directly.
+If the pinned installer download fails, onboarding stops without running it and reports the URL, host, curl exit code, a summary for common network errors, and recovery steps.
+If its digest does not match, onboarding also stops without running it.
 When the installed binary is stale, the verified installer asks for `0.32.9` by name because the version it calls latest is below the minimum on some hosts.
 If the installed binary is already at or above the minimum and only the daemon is stale, the wizard restarts the daemon without running the installer or replacing the newer binary.
 Linux upgrades use the sudo-driven system path because a user-local fallback would leave an existing system daemon serving the stale binary.
@@ -8365,7 +8380,8 @@ $$nemoclaw onboard
 Select **Local vLLM**.
 On generic hosts, the entry includes an experimental label.
 On N1x, the existing-server route remains unvalidated even after standard-onboarding intent admits it.
-NemoClaw validates the detected endpoint and records the model reported by `/v1/models`.
+NemoClaw accepts the detected endpoint only when `/v1/models` returns HTTP `200` and an OpenAI-style JSON response with a `data` array.
+It then records the model reported by that response.
 
 When you request a vLLM serving profile, the detected server must report the profile's served model alias or a safe `root` that matches the profile's declared model.
 NemoClaw stops onboarding when neither identifier matches, rather than recording a route that the profile does not declare.
@@ -10274,8 +10290,16 @@ Restore the configured endpoint or proxy, run `$$nemoclaw onboard --resume` to c
 ## Understand Local Provider Post-Ready Checks
 
 For local Ollama, local vLLM, and local NVIDIA NIM on Docker GPU sandboxes using the compatibility route, onboarding performs an additional check after the sandbox becomes ready.
-Local NIM uses the `vllm-local` route, so it receives the same reversible post-ready check as local vLLM.
-It requests `https://inference.local/v1/models` from inside the sandbox and accepts only a 2xx response.
+The check follows the selected inference route from inside the sandbox:
+
+- For a sandbox-attached local provider, it requests `/models` at the recorded native endpoint with the supervisor-issued scoped credential reference.
+- For local NVIDIA NIM and retained shared routes, it requests `https://inference.local/v1/models`.
+
+When the check runs, the request must succeed with a 2xx response before onboarding commits the GPU runtime and registers the sandbox.
+If the sandbox lacks curl, onboarding warns and skips this check.
+Runtime commitment and sandbox registration can then proceed without this reachability check.
+If a native-route check fails, repair that endpoint or its scoped credential binding.
+Do not configure shared inference as a fallback for a native route.
 If this check fails after compatibility recreation, onboarding prints failure diagnostics and attempts to restore the pre-patch container before it exits.
 If that rollback fails, onboarding reports that the pre-patch container was not restored and prints container-cleanup guidance.
 The local-provider failure output includes the endpoint and recovery steps before the first agent prompt.
@@ -12279,6 +12303,10 @@ $$nemoclaw <sandbox-name> recover
 ```
 
 The command verifies the native gateway and re-establishes the dashboard port forward.
+After starting a stopped sandbox, `recover` waits up to 120 seconds for the OpenClaw gateway before ordinary process recovery and host-forward repair.
+Set `NEMOCLAW_GATEWAY_RECOVERY_WAIT_SECONDS` to override this startup budget.
+If the budget expires, recovery exits nonzero before those repairs.
+With a value of `0`, recovery skips the startup wait and continues ordinary recovery and verification.
 If the gateway is stopped, `recover` reports it and does not relaunch it.
 Run `gateway restart` to request a native restart.
 If the host forward is already active, recovery accepts it only after OpenShell ownership is reconciled and the local endpoint is reachable.
@@ -13544,9 +13572,12 @@ $$nemoclaw <sandbox-name> start
 <AgentOnly variant="openclaw,hermes">
 After OpenShell accepts the start, NemoClaw waits for it to report the sandbox in the `Ready` or `Running` state.
 The startup wait observes the agent gateway without relaunching it.
-If the gateway does not respond before that wait expires, `start` exits nonzero.
+If startup observations still report a stopped gateway when the wait expires, `start` exits nonzero.
 After startup observation, NemoClaw verifies gateway health and checks or restores host-side port forwards.
 If the gateway remains stopped, follow the [native gateway restart procedure](recover-and-rebuild-sandboxes#recover-the-agent-runtime) before retrying `start`.
+</AgentOnly>
+<AgentOnly variant="openclaw">
+If startup observations remain unavailable until the wait expires, `start` continues ordinary gateway and inference verification.
 </AgentOnly>
 <AgentOnly variant="deepagents">
 After OpenShell accepts the start, NemoClaw waits for it to report the sandbox in the `Ready` or `Running` state, then verifies the managed terminal runtime before the command reports success.
