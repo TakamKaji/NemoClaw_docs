@@ -3514,7 +3514,16 @@ Review the [Prerequisites](prerequisites) before you begin.
     Onboarding reports whether settlement failed because of an unavailable or incompatible pairing, failed warm-up, missing request, persistent pending request, stopped watcher, policy rejection, approval timeout, or approval failure.
     The failure message omits device identifiers, request identifiers, public keys, tokens, and child command output.
     If this bounded readiness check does not settle, NemoClaw keeps onboarding resumable.
-    Run `nemoclaw onboard --resume` after you correct the reported condition.
+    If the native gateway times out during startup or exits before pairing, read its persistent startup log from the host:
+
+    ```bash
+    nemoclaw my-assistant exec -- tail -n 100 /sandbox/.openclaw/logs/gateway-persistent.log
+    ```
+
+    This command uses the running OpenShell sandbox and does not require a healthy OpenClaw gateway or completed onboarding.
+    Correct the reported startup error, then run `nemoclaw my-assistant gateway restart` from the host.
+    After the restart succeeds, run `nemoclaw onboard --resume`.
+    For other readiness failures, resume onboarding after you correct the reported condition.
 
     ```bash
     nemoclaw my-assistant status
@@ -10664,6 +10673,8 @@ Load real values from an approved secret manager or masked prompt so the credent
 NemoClaw writes only the variable name as an OpenShell resolver placeholder in agent-native MCP configuration.
 OpenShell resolves the placeholder at egress.
 
+During `mcp add`, NemoClaw reports when it opens the route policy, binds the credential, waits for credential synchronization, and registers the server with the agent.
+Credential synchronization is required even with `--no-probe`.
 After `mcp add` commits, NemoClaw performs a fresh status inspection and runs the gated credential-resolution probe once unless you pass `--no-probe`.
 If readiness is inconclusive, the command reports a probe skip without failing the committed add.
 
@@ -10896,6 +10907,20 @@ Most lifecycle operations do not need a backup or restore step. When `$$nemoclaw
 3. Clear the replacement's fresh native home/workspace and restore the complete archive.
 4. Validate the replacement before retiring the temporary handoff.
 
+<AgentOnly variant="openclaw">
+
+NemoClaw checks restored OpenClaw state before running the pinned `2026.9.5` and `2026.9.7` migration runtimes.
+It runs each runtime only when the database schemas and recorded writer version are compatible with that runtime.
+It skips an intermediate runtime when the restored state is too new for it.
+If legacy JSON sessions coexist with populated SQLite sessions, restoration stops and keeps the gateway stopped.
+Before checking eligibility for the `2026.9.7` migration runtime, NemoClaw inspects retired Telegram state.
+Incompatible retained Telegram state stops restoration and keeps the gateway stopped, even when that runtime would be skipped.
+The original backup remains available for recovery.
+Restore a consistent backup or reconcile the incompatible state before retrying.
+Keep the original host backup until you verify the restored sandbox.
+
+</AgentOnly>
+
 OpenClaw's `gateway.auth` value and Hermes's `.hermes/.env` `API_SERVER_KEY` are machine-local.
 NemoClaw leaves both live source files unchanged, omits those values only from the private archive copy, and lets the replacement establish fresh local authority.
 Existing OpenClaw device and scope approvals do not transfer; approve the replacement's fresh pairing or scope-upgrade request when prompted.
@@ -10950,6 +10975,22 @@ If cleanup fails, the error identifies the retained incomplete backup for inspec
 For an eligible stopped OpenClaw or Deep Agents Code container, NemoClaw captures the provider-owned stopped state without executing in the source sandbox. The operation fails before replacement if that stopped-state authority changes during capture. Stopped Hermes rebuilds instead use the bounded OpenShell start, capture, and return-to-`Stopped` lifecycle described below.
 
 For Hermes, the restored complete home may contain the retired `profiles/dashboard-home` layout from an older release. After restore, NemoClaw runs a one-time migration that moves safe legacy files, including a legacy WhatsApp session, into the shared native Hermes home and removes the retired directory. User-created named profiles remain unchanged. A collision, unsafe link, or other unsafe legacy path fails closed and leaves both copies available for trusted recovery instead of choosing one.
+
+<AgentOnly variant="openclaw">
+
+## Recover Interrupted Telegram Archival
+
+If migration reports `Incomplete Telegram archival`, keep the gateway stopped and preserve the original host backup.
+Inspect the retained `.nemoclaw-telegram-empty-*` directory without a `.migrated` suffix inside the restored OpenClaw state's `telegram/` directory.
+The default state location is `/sandbox/.openclaw`.
+The retained directory can contain a source file whose move or verification did not finish, including a file that changed during archival.
+Preserve it for recovery rather than deleting it or adding the `.migrated` suffix to bypass the refusal.
+
+Restore a consistent backup before retrying the failed rebuild or installer upgrade.
+If you cannot establish which copy contains the required state, retain both the directory and original backup and request recovery assistance from a maintainer.
+After recovery, verify the sandbox status and required Telegram state before discarding the backup.
+
+</AgentOnly>
 
 ## Backup Before Upgrade
 
@@ -15180,6 +15221,21 @@ Run `$$nemoclaw <name> status` to see the agent version currently running in a s
 After updating the host CLI, run `$$nemoclaw <name> rebuild` to recreate the sandbox with the newer pin while transferring the complete OpenShell-provided native home and workspace, apart from the documented credential and control-plane exclusions.
 
 <AgentOnly variant="openclaw">
+
+This source version builds managed OpenClaw images with OpenClaw `2026.10.5`.
+To move an existing managed sandbox to that version, install the NemoClaw release containing this update and rebuild the sandbox.
+Confirm the running version with `$$nemoclaw <name> status` after the rebuild.
+
+NemoClaw checks restored OpenClaw state before running the pinned `2026.9.5` and `2026.9.7` migration runtimes.
+It runs each runtime only when the database schemas and recorded writer version are compatible with that runtime.
+It skips an intermediate runtime when the restored state is too new for it.
+If legacy JSON sessions coexist with populated SQLite sessions, restoration stops and keeps the gateway stopped.
+Before checking eligibility for the `2026.9.7` migration runtime, NemoClaw inspects retired Telegram state.
+Incompatible retained Telegram state stops restoration and keeps the gateway stopped, even when that runtime would be skipped.
+The original backup remains available for recovery.
+Restore a consistent backup or reconcile the incompatible state before retrying.
+Keep the original host backup until you verify the restored sandbox.
+For an `Incomplete Telegram archival` error, follow [Recover Interrupted Telegram Archival](../state-and-backups/create-and-restore-snapshots#recover-interrupted-telegram-archival) before retrying.
 
 The OpenClaw runtime build target is declared by `OPENCLAW_VERSION` in the NemoClaw Dockerfiles.
 The `min_openclaw_version` field in `nemoclaw-blueprint/blueprint.yaml` is the compatibility floor for direct blueprint consumers, so it can be lower than the Dockerfile target.
