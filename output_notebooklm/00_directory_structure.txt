@@ -13,7 +13,8 @@
 │       │   ├── implementation-discovery.md
 │       │   ├── pr-follow-up.md
 │       │   ├── root-cause-and-state-checks.md
-│       │   └── security-rubric.md
+│       │   ├── security-rubric.md
+│       │   └── task-continuation.md
 │       ├── nemoclaw-contributor-create-pr
 │       │   ├── SKILL.md
 │       │   ├── agents
@@ -3399,4 +3400,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-296 directories, 3104 files
+296 directories, 3105 files
