@@ -2953,8 +2953,14 @@ Prompt construction only selects tools and adds context.
 Ordinary local work and retrieval from user-supplied sources retain their tools when the request does not also ask for external research.
 Quoted research topics do not supply local sources.
 For a filename with spaces, quote an explicit path such as `"./my folder/report.md"`.
-The classifier checks a limit of 4,096 UTF-16 code units before parsing and shares one work budget across all clauses and relationships between local resources.
-If either limit is exceeded while search is disabled, the whole turn loses tool access and supplied-source grants.
+The classifier splits a prompt at sentence and line ends and parses it in windows of about 1,024 UTF-16 code units.
+Each window shares one work budget across its clauses and relationships between local resources, so a long setup prompt that only reads and writes files keeps its tools.
+A prompt of up to 4,096 code units may contain a single sentence or line of that length.
+A longer prompt must break into sentences or lines of at most 1,024 code units, not counting the line break or space that ends each one, and no prompt may exceed 16,384 code units.
+A request that continues across a line break counts as one sentence or line for that limit.
+This applies to an instruction followed by a line break and its URL, and to coordinated verbs such as `Search and` on one line and `read README.md` on the next.
+Keep the combined text within 1,024 code units, or split it into separate turns.
+If any limit is exceeded while search is disabled, the whole turn loses tool access and supplied-source grants.
 Split an overly complex request into smaller turns before retrying.
 After a denied search attempt, tool interception permits `web_fetch` only for the recorded URLs, including wrapped calls.
 Local-source turns retain local reads and memory queries, but cannot use a shell, browser, or unrelated URL as a substitute.
@@ -3964,6 +3970,14 @@ Neither `--resume --switchyard-config <file>` nor `--recreate-sandbox` enables r
 While routing is configured, `inference set` refuses changes.
 To use different selections, preserve the existing sandbox and onboard with a new name.
 For a new single-model sandbox, omit `--switchyard-config`.
+
+The generated efficient and capable clients set `timeout_ms = 120000` and `max_retries = 0`.
+This policy configures a 120-second deadline for each physical provider call, including its full response stream, with no automatic provider retries.
+The capable client uses the same settings when reused as the routing judge.
+These fixed settings are not user overrides and do not define a whole-turn deadline or response-byte limit.
+
+Configuration generation and package validation do not prove runtime deadline enforcement, cancellation, or interception of every Hermes request.
+Adaptive routing remains opt-in and is disabled by default.
 
 ```json
 {
@@ -8152,13 +8166,13 @@ For OpenClaw, `NEMOCLAW_DASHBOARD_PORT` controls the OpenClaw dashboard forward.
 </AgentOnly>
 <AgentOnly variant="hermes">
 
-For Hermes, `NEMOCLAW_DASHBOARD_PORT` controls the built-in dashboard forward, which defaults to `18789`. The OpenAI-compatible API is separate and serves `/v1` on a per-sandbox port that defaults to `8642`. If `8642` is already held by another sandbox or by a non-OpenShell host listener, onboarding scans `8642` through `8652` and uses the next free API port. Set `NEMOCLAW_HERMES_API_PORT=<N>` before you onboard a new sandbox to pin a port from `8642` through `8652`. If another sandbox or host listener holds the pinned port, onboarding exits instead of selecting a different port. The sandbox relay binds the port when the sandbox starts, so set this variable for an existing sandbox only together with `--recreate-sandbox`. For an existing sandbox, a different value without `--recreate-sandbox` exits before the host forward changes. Set `NEMOCLAW_HERMES_DASHBOARD=1` to enable the optional Hermes dashboard. The dashboard port overrides apply only when this variable is enabled. Set `NEMOCLAW_HERMES_DASHBOARD_TUI=1` only when you want the optional in-browser TUI tab.
+For Hermes, `NEMOCLAW_DASHBOARD_PORT` controls the built-in dashboard forward, which defaults to `18789`. The OpenAI-compatible API is separate and serves `/v1` on a per-sandbox port that defaults to `8642`. If `8642` is already held by another sandbox or by a non-OpenShell host listener, onboarding scans `8642` through `8652` and uses the next free API port. Set `NEMOCLAW_HERMES_API_PORT=<N>` before you onboard a new sandbox to pin a port from `8642` through `8652`. If another sandbox or host listener holds the pinned port, onboarding exits instead of selecting a different port. The sandbox relay binds the port when the sandbox starts, so set this variable for an existing sandbox only together with `--recreate-sandbox`. For an existing sandbox, a different value without `--recreate-sandbox` exits before the host forward changes. The Hermes dashboard always starts. Set `NEMOCLAW_HERMES_DASHBOARD=1` to apply the dashboard port and TUI overrides and to record them for rebuild and forward recovery. Onboarding ignores `NEMOCLAW_HERMES_DASHBOARD_TUI=1` unless `NEMOCLAW_HERMES_DASHBOARD=1` is also set. Set it only when you want the optional in-browser TUI tab. Portable onboarding does not manage the dashboard forward, so leave these variables unset with the Portable profile.
 
 | Variable                                  | Default | Service                                                                          |
 | ----------------------------------------- | ------- | -------------------------------------------------------------------------------- |
 | `NEMOCLAW_DASHBOARD_PORT`                 | 18789   | Hermes built-in dashboard forward port                                           |
 | `NEMOCLAW_HERMES_API_PORT`                | 8642    | Hermes OpenAI-compatible API forward port                                        |
-| `NEMOCLAW_HERMES_DASHBOARD`               | 0       | Enable the optional Hermes dashboard                                             |
+| `NEMOCLAW_HERMES_DASHBOARD`               | 0       | Apply and record the dashboard overrides; the dashboard always starts            |
 | `NEMOCLAW_HERMES_DASHBOARD_PORT`          | 18789   | Hermes dashboard forward port; when set, it must match `NEMOCLAW_DASHBOARD_PORT` |
 | `NEMOCLAW_HERMES_DASHBOARD_INTERNAL_PORT` | 19119   | Hermes dashboard backend port                                                    |
 | `NEMOCLAW_HERMES_DASHBOARD_TUI`           | 0       | Optional Hermes in-browser TUI tab                                               |
