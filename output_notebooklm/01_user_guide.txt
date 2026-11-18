@@ -10912,9 +10912,11 @@ Most lifecycle operations do not need a backup or restore step. When `$$nemoclaw
 NemoClaw checks restored OpenClaw state before running the pinned `2026.9.5` and `2026.9.7` migration runtimes.
 It runs each runtime only when the database schemas and recorded writer version are compatible with that runtime.
 It skips an intermediate runtime when the restored state is too new for it.
+
 If legacy JSON sessions coexist with populated SQLite sessions, restoration stops and keeps the gateway stopped.
 Before checking eligibility for the `2026.9.7` migration runtime, NemoClaw inspects retired Telegram state.
 Incompatible retained Telegram state stops restoration and keeps the gateway stopped, even when that runtime would be skipped.
+
 The original backup remains available for recovery.
 Restore a consistent backup or reconcile the incompatible state before retrying.
 Keep the original host backup until you verify the restored sandbox.
@@ -10965,7 +10967,29 @@ If restore or validation fails, NemoClaw reports failure and retains the backup.
 Preserve that backup and inspect the reported cause before another mutation; repeating a failed rebuild is not a general recovery procedure.
 </AgentOnly>
 
-Hermes PID and lock receipts, OpenClaw's post-upgrade doctor marker, warm-up sessions, and transient SQLite write-ahead-log, shared-memory, and rollback-journal companions, and NemoClaw's configuration and blueprint cache are replacement-owned or generation-local. The replacement keeps its fresh copies instead of restoring the retired sandbox's values. NemoClaw sanitizes machine-local authority from the durable OpenClaw database copy and rejects an archive that still contains one of those database companions, because replaying it could restore removed authority. For Deep Agents Code, NemoClaw scans `sessions.db-journal`, `sessions.db-shm`, and `sessions.db-wal` for credential material before it publishes a backup. A detected credential or scan that exceeds the backup deadline stops the backup and identifies the affected sidecar. Unknown agent paths transfer when their archive paths and link targets have no line breaks and their content is inspectable and credential-free. For a line break in a path or link target, [Recover and Rebuild Sandboxes](../operate-sandboxes/recover-and-rebuild-sandboxes) explains how to rename the path or recreate the link. A restore failure happens after the replacement is created; NemoClaw retains the backup for manual recovery and does not publish the replacement as successful. Move credentials into supported OpenShell credential storage or bindings, remove them from the native home, and retry.
+Hermes PID and lock receipts, OpenClaw's post-upgrade doctor marker, warm-up sessions, and transient SQLite write-ahead-log, shared-memory, and rollback-journal companions, and NemoClaw's configuration and blueprint cache are replacement-owned or generation-local.
+The replacement keeps its fresh copies instead of restoring the retired sandbox's values.
+NemoClaw sanitizes machine-local authority from the durable OpenClaw database copy and rejects an archive that still contains one of those database companions, because replaying it could restore removed authority.
+
+For Deep Agents Code, NemoClaw scans `sessions.db-journal`, `sessions.db-shm`, and `sessions.db-wal` for credential material before it publishes a backup.
+A detected credential or scan that exceeds the backup deadline stops the backup and identifies the affected sidecar.
+
+<AgentOnly variant="deepagents">
+
+Before retrying a Deep Agents Code backup, follow [Resolve a Deep Agents Code Backup Refusal](/user-guide/deepagents/manage-sandboxes/operate-sandboxes/recover-and-rebuild-sandboxes#resolve-a-deep-agents-code-backup-refusal).
+Credential bytes can remain in `sessions.db-wal` after you delete conversation content.
+Do not edit SQLite rows or remove the session database to bypass the refusal.
+
+</AgentOnly>
+
+If a backup credential scan detects credential material, move credentials into supported OpenShell credential storage or bindings.
+Remove them from the native home.
+Then retry the backup.
+
+Unknown agent paths transfer when their archive paths and link targets have no line breaks and their content is inspectable and credential-free.
+For a line break in a path or link target, [Recover and Rebuild Sandboxes](../operate-sandboxes/recover-and-rebuild-sandboxes) explains how to rename the path or recreate the link.
+
+A restore failure happens after the replacement is created; NemoClaw retains the backup for manual recovery and does not publish the replacement as successful.
 
 Credential sanitization can increase the size of a structured configuration.
 NemoClaw expands only the private archive copy and leaves the live configuration unchanged.
@@ -12346,7 +12370,7 @@ A successful complete preflight for `$$nemoclaw launch <sandbox-name>` can publi
 During the lease, `launch` still verifies the owning OpenShell gateway, exact live sandbox identity, registry and agent configuration, effective policy, inference route, required forwards, and semantic runtime health.
 
 <AgentOnly variant="openclaw,hermes">
-Every configured route must serve a valid response to a bounded request for the recorded model before NemoClaw accepts or publishes launch readiness.
+Every configured single-model route must serve a valid response to a bounded request for the recorded model before NemoClaw accepts or publishes launch readiness.
 Shared-route providers use `inference.local`.
 Their models probe must return HTTP 2xx, except that a retained legacy `openrouter-api` shared route can return HTTP 404 for `GET /v1/models` when the bounded model request succeeds.
 NVIDIA Endpoints, supported fixed hosted selections, and new OpenClaw Ollama, standalone vLLM, and llama.cpp selections verify their recorded sandbox-attached provider and run the bounded model request at its native endpoint without the shared-route models probe.
@@ -12355,6 +12379,17 @@ Retained OpenClaw local selections with a valid shared route continue to use `in
 A failed required probe or model request rejects launch readiness.
 This check is stricter than the HTTP 200–499 reachability diagnostic used by ordinary `connect`.
 </AgentOnly>
+<AgentOnly variant="hermes">
+
+For Switchyard routing, [launch readiness](../../reference/commands#$$nemoclaw-launch-name) checks the recorded provider bindings.
+Gateway startup separately qualifies the judge with bounded model calls.
+
+If judge qualification fails, the gateway remains stopped.
+Check model access, or select a supported judge in your Switchyard configuration and onboard with a new sandbox name.
+For configuration requirements, refer to [`--switchyard-config`](../../reference/commands#--switchyard-config-file).
+
+</AgentOnly>
+
 <AgentOnly variant="deepagents">
 Every configured route must serve a valid response to a bounded request for the recorded model before NemoClaw accepts or publishes launch readiness.
 For new Deep Agents Code standalone local selections, NemoClaw verifies the recorded sandbox-attached provider and requests the model through its qualified host-local endpoint. Older Deep Agents Code standalone local shared routes without an attachment stop before resume or rebuild; back up and recreate the sandbox with `nemo-deepagents onboard --fresh --name <sandbox-name> --recreate-sandbox`. Owned Local NVIDIA NIM retains its shared route and does not require a native attachment to resume or rebuild. For retained legacy and custom shared routes, the models probe must return HTTP 2xx, except that a legacy `openrouter-api` route can return HTTP 404 for `GET /v1/models` when the model request succeeds. NVIDIA Endpoints and supported fixed hosted selections instead verify the recorded native attachment and request the model through its native endpoint.
@@ -12362,7 +12397,17 @@ A failed request rejects launch readiness and identifies the inference request a
 </AgentOnly>
 <AgentOnly variant="openclaw">
 
-For OpenClaw, `connect --probe-only` settles the existing allowlisted pairing flow before it publishes a credential-free pairing qualification with the lease. The readiness evidence binds the OpenClaw version and trusted registry and agent manifest configuration. Its pairing qualification binds the canonical CLI client, exact paired device identity, required operator role and scopes, owning OpenShell gateway, sandbox lifecycle identity, and fixed lease epoch. Before lease acceptance, `launch` makes a bounded, read-only observation of the current OpenClaw-owned pairing state through the owning OpenShell gateway. It skips the complete pairing approval pass only when the qualification still matches exactly and no relevant allowlisted request is pending. Any missing, unreadable, malformed, ambiguous, or changed observation runs the complete pairing approval pass. A relevant allowlisted pending request also runs that complete path.
+For OpenClaw, `connect --probe-only` settles the existing allowlisted pairing flow before it publishes a credential-free pairing qualification with the lease.
+The readiness evidence binds the OpenClaw version and trusted registry and agent manifest configuration.
+Its pairing qualification binds the settled CLI or native terminal user interface (TUI) client, exact paired device identity, and required operator role and scopes.
+It also binds the owning OpenShell gateway, sandbox lifecycle identity, and fixed lease epoch.
+Native TUI state must have the required grants and no pending pairing requests.
+Qualification does not change its credentials or grants.
+
+Before lease acceptance, `launch` makes a bounded, read-only observation of the current OpenClaw-owned pairing state through the owning OpenShell gateway.
+It skips the complete pairing approval pass only when the qualification still matches exactly and no relevant allowlisted request is pending.
+Any missing, unreadable, malformed, ambiguous, or changed observation runs the complete pairing approval pass.
+A relevant allowlisted pending request also runs that complete path.
 
 </AgentOnly>
 Hermes and LangChain Deep Agents Code retain their existing session setup on the lease-accepted path.
@@ -12657,9 +12702,20 @@ $$nemoclaw <sandbox-name> logs --tail 100
 ```
 
 If the warning says `The retained sandbox was stopped` and OpenShell confirms it remains stopped, keep it stopped.
-If the warning says the recovery marker could not be invalidated, the retained source still exists. Do not retry `rebuild`, even if the source is stopped: prepared recovery refuses a retained source. Preserve the source, backup, and recovery files. Ask a NemoClaw maintainer to reconcile the interrupted rebuild and any source writes before another rebuild.
-If source maintenance cleanup failed after the marker was removed, the old backup is inspection evidence, not retry authority. Keep the source stopped and ask a NemoClaw maintainer to reconcile its maintenance state and any writes before another rebuild. A later rebuild creates a new backup.
-If NemoClaw could not verify the stop or maintenance reconciliation, preserve the current state and ask a NemoClaw maintainer to review the warning, redacted logs, and backup path.
+
+If the warning says the recovery marker could not be invalidated, the retained source still exists.
+Do not retry `rebuild`, even if the source is stopped, because prepared recovery refuses a retained source.
+Preserve the source, backup, and recovery files.
+Ask a NemoClaw maintainer to reconcile the interrupted rebuild and any source writes before another rebuild.
+
+If source maintenance cleanup failed after the marker was removed, keep the old backup for inspection.
+Do not use it to retry the rebuild.
+Keep the source stopped.
+Ask a NemoClaw maintainer to reconcile its maintenance state and any writes before another rebuild.
+A later rebuild creates a new backup.
+
+If NemoClaw could not verify the stop or maintenance reconciliation, preserve the current state.
+Ask a NemoClaw maintainer to review the warning, redacted logs, and backup path.
 Do not delete the source or start another replacement until its maintenance state is reconciled.
 
 </AgentOnly>
@@ -15287,9 +15343,11 @@ Confirm the running version with `$$nemoclaw <name> status` after the rebuild.
 NemoClaw checks restored OpenClaw state before running the pinned `2026.9.5` and `2026.9.7` migration runtimes.
 It runs each runtime only when the database schemas and recorded writer version are compatible with that runtime.
 It skips an intermediate runtime when the restored state is too new for it.
+
 If legacy JSON sessions coexist with populated SQLite sessions, restoration stops and keeps the gateway stopped.
 Before checking eligibility for the `2026.9.7` migration runtime, NemoClaw inspects retired Telegram state.
 Incompatible retained Telegram state stops restoration and keeps the gateway stopped, even when that runtime would be skipped.
+
 The original backup remains available for recovery.
 Restore a consistent backup or reconcile the incompatible state before retrying.
 Keep the original host backup until you verify the restored sandbox.
@@ -16096,6 +16154,12 @@ If the request fails, check these items.
 2. Run `$$nemoclaw <name> logs --follow` to view error messages from the blueprint runner.
 3. Verify that the host can reach the inference endpoint.
 4. If the agent reports a context-overflow or token-limit error, clear the conversation with `/reset` (or start a fresh one with `/new`) in the TUI before retrying.
+
+<AgentOnly variant="openclaw">
+## Inspect OpenClaw Conversation Traces
+
+To enable OpenClaw's optional conversation trace export and view traces in a collector, follow [OpenClaw Conversation OTEL Diagnostics](../reference/commands#openclaw-conversation-otel-diagnostics).
+</AgentOnly>
 
 ## Related Topics
 
