@@ -578,6 +578,8 @@
 │   │   ├── quickstart-pi.mdx
 │   │   ├── quickstart.mdx
 │   │   └── windows-preparation.mdx
+│   ├── images
+│   │   └── nemoclaw-agent-configs-workflow.png
 │   ├── index.mdx
 │   ├── index.yml
 │   ├── inference
@@ -3402,4 +3404,4 @@
 ├── uninstall.sh
 └── vitest.config.ts
 
-296 directories, 3107 files
+297 directories, 3108 files
